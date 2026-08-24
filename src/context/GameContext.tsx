@@ -63,33 +63,32 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
 };
 export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
   {
-    id: 'sys-1',
-    username: 'admin',
-    password: 'Machete12*',
-    role: 'Super Admin',
-    displayName: 'SuperAdmin Master',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    status: 'active',
-  },
-  {
-    id: 'sys-3',
-    username: 'Pagador15',
-    password: 'Rapidito15*',
-    role: 'Operador Financiero',
-    displayName: 'Operador Financiero Central',
-    createdAt: '2026-01-03T00:00:00.000Z',
-    status: 'active',
-  },
-  {
-    id: 'sys-4',
-    username: 'Chismoso13',
-    password: 'Deposito13*',
-    role: 'Auditor',
-    displayName: 'Auditor General',
-    createdAt: '2026-01-04T00:00:00.000Z',
-    status: 'active',
-  },
-];
+      id: 'sys-1', // Asegúrate de que este ID sea el correcto para Super Admin
+      usuario: process.env.SUPER_ADMIN_USER,
+      contrasena: process.env.SUPER_ADMIN_PASS,
+      role: 'Super Admin',
+      displayName: 'Super Administrador',
+      createdAt: '2026-01-03T00:00:00.000Z',
+      status: 'active',
+    },
+ {
+      id: 'sys-3',
+      usuario: process.env.FINANZAS_USER,
+      contrasena: process.env.FINANZAS_PASS,
+      role: 'Operador Financiero',
+      displayName: 'Operador Financiero',
+      createdAt: '2026-01-03T00:00:00.000Z',
+      status: 'active',
+    }, 
+    {
+      id: 'sys-4',
+      usuario: process.env.AUDITOR_USER,
+      contrasena: process.env.AUDITOR_PASS,
+      role: 'Auditor',
+      displayName: 'Auditor del Sistema',
+      createdAt: '2026-01-03T00:00:00.000Z',
+      status: 'active',
+    }
 interface GameContextType {
   currentUser: AppUser;
   currentRole: UserRole;
