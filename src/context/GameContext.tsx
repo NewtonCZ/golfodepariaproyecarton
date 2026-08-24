@@ -64,8 +64,8 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
 export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
   {
     id: 'sys-1',
-    username: process.env.SUPER_ADMIN_USER!,
-    password: process.env.SUPER_ADMIN_PASS!,
+    username: 'admin',
+    password: 'Machete12*',
     role: 'Super Admin',
     displayName: 'SuperAdmin Master',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -73,8 +73,8 @@ export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
   },
   {
     id: 'sys-3',
-    username: process.env.FINANZAS_USER!,
-    password: process.env.FINANZAS_PASS!,
+    username: 'Pagador15',
+    password: 'Rapidito15*',
     role: 'Operador Financiero',
     displayName: 'Operador Financiero Central',
     createdAt: '2026-01-03T00:00:00.000Z',
@@ -82,8 +82,8 @@ export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
   },
   {
     id: 'sys-4',
-    username: process.env.AUDITOR_USER!,
-    password: process.env.AUDITOR_PASS!,
+    username: 'Chismoso13',
+    password: 'Deposito13*',
     role: 'Auditor',
     displayName: 'Auditor General',
     createdAt: '2026-01-04T00:00:00.000Z',
