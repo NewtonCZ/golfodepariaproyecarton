@@ -64,7 +64,7 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
 export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
  {
   id: 'sys-1',
-  username: 'superadmin',
+  username: process.env.SUPER_ADMIN_NAME!,
   password: process.env.SUPER_ADMIN_PASS!,
   role: 'Super Admin',
   displayName: 'SuperAdmin Master',
