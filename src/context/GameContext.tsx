@@ -61,29 +61,39 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
   }
   return { valid: errors.length === 0, errors };
 };
-export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
- {
-    id: 'sys-1',
-    username: process.env.SUPER_ADMIN_USER!,
-    password: process.env.SUPER_ADMIN_PASS!,
-    role: 'Super Admin',
-    displayName: 'SuperAdmin Master',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    status: 'active',
-  },
-  {
-    id: 'sys-3',
-    username: process.env.FINANZAS_USER!,
-    password: process.env.FINANZAS_PASS!,
-    role: 'Operador Financiero',
-    displayName: 'Operador Financiero Central',
-    createdAt: '2026-01-03T00:00:00.000Z',
-    status: 'active',
-  },
-  {
+import { supabase } from '../../services/realtimeService';
+
+// YA NO usa process.env, ahora lee directo de tu tabla configuracion
+export const INITIAL_SYSTEM_CREDENTIALS: any[] = [];
+
+export const getCredentialsFromDB = async () => {
+  const { data } = await supabase.from('configuracion').select('*').eq('id', 1).single();
+  if (!data) return [];
+  
+  return [
+    {
+      id: 'sys-1',
+      username: data.admin_user,
+      password: data.admin_pass,
+      role: 'Super Admin',
+      displayName: 'SuperAdmin Master',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      status: 'active',
+    },
+    {
+      id: 'sys-3',
+      username: data.finanzas_user,
+      password: data.finanzas_pass,
+      role: 'Operador Financiero',
+      displayName: 'Operador Financiero Central',
+      createdAt: '2026-01-03T00:00:00.000Z',
+      status: 'active',
+    }
+  ];
+};
     id: 'sys-4',
-    username: process.env.AUDITOR_USER!,
-    password: process.env.AUDITOR_PASS!,
+    username: data.auditor_user,
+    password: data.auditor_pass,
     role: 'Auditor',
     displayName: 'Auditor General',
     createdAt: '2026-01-04T00:00:00.000Z',
@@ -426,22 +436,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
 
-  const [systemCredentials, setSystemCredentials] = useState<SystemCredential[]>(() => {
-    try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_system_credentials`);
-      return saved ? JSON.parse(saved) : INITIAL_SYSTEM_CREDENTIALS;
-    } catch {
-      return INITIAL_SYSTEM_CREDENTIALS;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(`${STORAGE_KEY}_system_credentials`, JSON.stringify(systemCredentials));
-    } catch (err) {
-      console.error('Error saving system credentials:', err);
-    }
-  }, [systemCredentials]);
+const [systemCredentials, setSystemCredentials] = useState<SystemCredential[]>(INITIAL_SYSTEM_CREDENTIALS);
 
   // Session state: preserved across page navigation and refreshes via sessionStorage
   const initialSession = useMemo(() => LotteryStorageService.getSession(), []);
