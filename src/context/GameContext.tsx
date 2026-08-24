@@ -61,43 +61,34 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
   }
   return { valid: errors.length === 0, errors };
 };
-import { supabase } from '../../services/realtimeService';
-
-// YA NO usa process.env, ahora lee directo de tu tabla configuracion
 export const INITIAL_SYSTEM_CREDENTIALS: any[] = [];
-
-import React, { createContext, useContext, useState, useEffect } from 'react';
-
-export interface SystemCredential {
-  id: string;
-  username: string;
-  password: string;
-  role: string;
-  displayName: string;
-  createdAt: string;
-  status: string;
-}
-export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
-  {
-    id: 'super-1',
-    username: 'superadmin',
-    password: 'Machete12*',
+id: 'sys-1',
+    username: process.env.SUPER_ADMIN_USER!,
+    password: process.env.SUPER_ADMIN_PASS!,
     role: 'Super Admin',
-    displayName: 'Super Administrador',
-    createdAt: new Date().toISOString(),
+    displayName: 'SuperAdmin Master',
+    createdAt: '2026-01-01T00:00:00.000Z',
     status: 'active',
-  }
-];
-const GameContext = createContext<any>(null);
-export const GameProvider = ({ children }: { children: React.ReactNode }) => {
-  const [credentials] = useState(INITIAL_SYSTEM_CREDENTIALS);
-  return (
-    <GameContext.Provider value={{ credentials }}>
-      {children}
-    </GameContext.Provider>
-  );
-};
-export const useGame = () => useContext(GameContext);
+  },
+  {
+    id: 'sys-3',
+    username: process.env.FINANZAS_USER!,
+    password: process.env.FINANZAS_PASS!,
+    role: 'Operador Financiero',
+    displayName: 'Operador Financiero Central',
+    createdAt: '2026-01-03T00:00:00.000Z',
+    status: 'active',
+  },
+  {
+    id: 'sys-4',
+    username: process.env.AUDITOR_USER!,
+    password: process.env.AUDITOR_PASS!,
+    role: 'Auditor',
+    displayName: 'Auditor General',
+    createdAt: '2026-01-04T00:00:00.000Z',
+    status: 'active',
+  },
+]; 
 interface GameContextType {
   currentUser: AppUser;
   currentRole: UserRole;
