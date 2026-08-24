@@ -65,12 +65,13 @@ export const INITIAL_SYSTEM_CREDENTIALS: any[] = [
   {
     id: 'sys-1',
     username: 'superadmin',
-    password: 'Machete12*',
+    password: 'Machete26*',
     role: 'Super Admin',
     displayName: 'SuperAdmin Master',
     createdAt: '2026-01-01T00:00:00.000Z',
     status: 'active',
   }
+]
 interface GameContextType {
   currentUser: AppUser;
   currentRole: UserRole;
