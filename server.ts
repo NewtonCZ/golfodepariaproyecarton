@@ -74,34 +74,34 @@ let serverUsers: any[] = [
 // In-memory persistent server state for credentials - VERSIÓN SEGURA
 // Las claves REALES están en Cloudflare > Environment Variables, no aquí
 
-let serverCredentials: any[] = [
-{
-  id: 'cred-1',
-  displayName: 'Director General',
-  username: process.env.SUPER_ADMIN_USER,
-  role: 'Super Admin',
-  status: 'active',
-  createdAt: '2026-07-01T00:00:000Z',
-  password: process.env.SUPER_ADMIN_PASS,
-},
-{
-  id: 'cred-2',
-  displayName: 'Auditor Principal',
-  username: process.env.AUDITOR_USER,
-  role: 'Auditor',
-  status: 'active',
-  createdAt: '2026-07-01T00:00:000Z',
-  password: process.env.AUDITOR_PASS,
-},
-{
-  id: 'cred-3',
-  displayName: 'Operador Bóveda Central',
-  username: process.env.FINANZAS_USER,
-  role: 'Operador Financiero',
-  status: 'active',
-  createdAt: '2026-07-01T00:00:000Z',
-  password: process.env.FINANZAS_PASS,
-}
+const getCredentials = (env: any) => [
+  {
+    id: 'cred-1',
+    displayName: 'Director General',
+    username: env.SUPER_ADMIN_USER,
+    role: 'Super Admin',
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    password: env.SUPER_ADMIN_PASS,
+  },
+  {
+    id: 'cred-2',
+    displayName: 'Auditor Principal',
+    username: env.AUDITOR_USER,
+    role: 'Auditor',
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    password: env.AUDITOR_PASS,
+  },
+  {
+    id: 'cred-3',
+    displayName: 'Operador Bóveda Central',
+    username: env.FINANZAS_USER,
+    role: 'Operador Financiero',
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    password: env.FINANZAS_PASS,
+  },
 ];
 let serverRounds: GameRoundServer[] = [
   {
