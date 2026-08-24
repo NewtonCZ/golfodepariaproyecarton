@@ -61,20 +61,20 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
   }
   return { valid: errors.length === 0, errors };
 };
-export const INITIAL_SYSTEM_CREDENTIALS: any[] = [
+export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
   {
     id: 'sys-1',
-    username: 'superadmin',
+    username: 'admin',
     password: 'Machete12*',
     role: 'Super Admin',
     displayName: 'SuperAdmin Master',
     createdAt: '2026-01-01T00:00:00.000Z',
     status: 'active',
-  }
-];
+  },
+  {
     id: 'sys-3',
-    username: process.env.FINANZAS_USER!,
-    password: process.env.FINANZAS_PASS!,
+    username: 'Pagador15',
+    password: 'Rapidito15*',
     role: 'Operador Financiero',
     displayName: 'Operador Financiero Central',
     createdAt: '2026-01-03T00:00:00.000Z',
@@ -82,14 +82,14 @@ export const INITIAL_SYSTEM_CREDENTIALS: any[] = [
   },
   {
     id: 'sys-4',
-    username: process.env.AUDITOR_USER!,
-    password: process.env.AUDITOR_PASS!,
+    username: 'Chismoso13',
+    password: 'Deposito13*',
     role: 'Auditor',
     displayName: 'Auditor General',
     createdAt: '2026-01-04T00:00:00.000Z',
     status: 'active',
   },
-]; 
+];
 interface GameContextType {
   currentUser: AppUser;
   currentRole: UserRole;
@@ -426,7 +426,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   });
 
-const [systemCredentials, setSystemCredentials] = useState<SystemCredential[]>(INITIAL_SYSTEM_CREDENTIALS);
+  const [systemCredentials, setSystemCredentials] = useState<SystemCredential[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_system_credentials`);
+      return saved ? JSON.parse(saved) : INITIAL_SYSTEM_CREDENTIALS;
+    } catch {
+      return INITIAL_SYSTEM_CREDENTIALS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_system_credentials`, JSON.stringify(systemCredentials));
+    } catch (err) {
+      console.error('Error saving system credentials:', err);
+    }
+  }, [systemCredentials]);
 
   // Session state: preserved across page navigation and refreshes via sessionStorage
   const initialSession = useMemo(() => LotteryStorageService.getSession(), []);
