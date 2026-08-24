@@ -65,7 +65,7 @@ export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
  {
   id: 'sys-1',
   username: 'superadmin',
-  password: 'Machete26*',
+  password: process.env.SUPER_ADMIN_PASS!,
   role: 'Super Admin',
   displayName: 'SuperAdmin Master',
   createdAt: '2026-01-01T00:00:00.000Z',
