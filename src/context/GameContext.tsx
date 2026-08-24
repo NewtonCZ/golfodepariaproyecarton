@@ -62,33 +62,33 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
   return { valid: errors.length === 0, errors };
 };
 export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
- {
-  id: 'sys-1',
-  username: 'admin',
-  password: 'Machete26*',
+{
+  id: 'cred-1',
+  displayName: 'Director General',
+  username: process.env.SUPER_ADMIN_USER,
   role: 'Super Admin',
-  displayName: 'SuperAdmin Master',
-  createdAt: '2026-01-01T00:00:00.000Z',
   status: 'active',
+  createdAt: '2026-07-01T00:00:000Z',
+  password: process.env.SUPER_ADMIN_PASS,
 },
-  {
-    id: 'sys-3',
-    username: process.env.FINANZAS_USER!,
-    password: process.env.FINANZAS_PASS!,
-    role: 'Operador Financiero',
-    displayName: 'Operador Financiero Central',
-    createdAt: '2026-01-03T00:00:00.000Z',
-    status: 'active',
-  },
-  {
-    id: 'sys-4',
-    username: process.env.AUDITOR_USER!,
-    password: process.env.AUDITOR_PASS!,
-    role: 'Auditor',
-    displayName: 'Auditor General',
-    createdAt: '2026-01-04T00:00:00.000Z',
-    status: 'active',
-  },
+{
+  id: 'cred-2',
+  displayName: 'Auditor Principal',
+  username: process.env.AUDITOR_USER,
+  role: 'Auditor',
+  status: 'active',
+  createdAt: '2026-07-01T00:00:000Z',
+  password: process.env.AUDITOR_PASS,
+},
+{
+  id: 'cred-3',
+  displayName: 'Operador Bóveda Central',
+  username: process.env.FINANZAS_USER,
+  role: 'Operador Financiero',
+  status: 'active',
+  createdAt: '2026-07-01T00:00:000Z',
+  password: process.env.FINANZAS_PASS,
+}
 ]; 
 interface GameContextType {
   currentUser: AppUser;
