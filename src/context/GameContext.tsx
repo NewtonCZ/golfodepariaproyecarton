@@ -66,40 +66,38 @@ import { supabase } from '../../services/realtimeService';
 // YA NO usa process.env, ahora lee directo de tu tabla configuracion
 export const INITIAL_SYSTEM_CREDENTIALS: any[] = [];
 
-export const getCredentialsFromDB = async () => {
-  const { data } = await supabase.from('configuracion').select('*').eq('id', 1).single();
-  if (!data) return [];
-  
-  return [
-    {
-      id: 'sys-1',
-      username: data.admin_user,
-      password: data.admin_pass,
-      role: 'Super Admin',
-      displayName: 'SuperAdmin Master',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      status: 'active',
-    },
-    {
-      id: 'sys-3',
-      username: data.finanzas_user,
-      password: data.finanzas_pass,
-      role: 'Operador Financiero',
-      displayName: 'Operador Financiero Central',
-      createdAt: '2026-01-03T00:00:00.000Z',
-      status: 'active',
-    }
-  ];
-};
-    id: 'sys-4',
-    username: data.auditor_user,
-    password: data.auditor_pass,
-    role: 'Auditor',
-    displayName: 'Auditor General',
-    createdAt: '2026-01-04T00:00:00.000Z',
+import React, { createContext, useContext, useState, useEffect } from 'react';
+
+export interface SystemCredential {
+  id: string;
+  username: string;
+  password: string;
+  role: string;
+  displayName: string;
+  createdAt: string;
+  status: string;
+}
+export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
+  {
+    id: 'super-1',
+    username: 'superadmin',
+    password: 'Machete12*',
+    role: 'Super Admin',
+    displayName: 'Super Administrador',
+    createdAt: new Date().toISOString(),
     status: 'active',
-  },
-]; 
+  }
+];
+const GameContext = createContext<any>(null);
+export const GameProvider = ({ children }: { children: React.ReactNode }) => {
+  const [credentials] = useState(INITIAL_SYSTEM_CREDENTIALS);
+  return (
+    <GameContext.Provider value={{ credentials }}>
+      {children}
+    </GameContext.Provider>
+  );
+};
+export const useGame = () => useContext(GameContext);
 interface GameContextType {
   currentUser: AppUser;
   currentRole: UserRole;
