@@ -61,17 +61,17 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
   }
   return { valid: errors.length === 0, errors };
 };
-export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
+export const INITIAL_SYSTEM_CREDENTIALS: any[] = [
   {
     id: 'sys-1',
-    username: 'admin',
-    password: 'Machete12*',
+    username: 'superadmin',
+    password: '1234',
     role: 'Super Admin',
     displayName: 'SuperAdmin Master',
     createdAt: '2026-01-01T00:00:00.000Z',
     status: 'active',
-  },
-  {
+  }
+];
     id: 'sys-3',
     username: 'Pagador15',
     password: 'Rapidito15*',
