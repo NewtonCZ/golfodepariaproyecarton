@@ -71,25 +71,6 @@ export const INITIAL_SYSTEM_CREDENTIALS: any[] = [
     createdAt: '2026-01-01T00:00:00.000Z',
     status: 'active',
   }
-];
-    id: 'sys-3',
-    username: 'Pagador15',
-    password: 'Rapidito15*',
-    role: 'Operador Financiero',
-    displayName: 'Operador Financiero Central',
-    createdAt: '2026-01-03T00:00:00.000Z',
-    status: 'active',
-  },
-  {
-    id: 'sys-4',
-    username: 'Chismoso13',
-    password: 'Deposito13*',
-    role: 'Auditor',
-    displayName: 'Auditor General',
-    createdAt: '2026-01-04T00:00:00.000Z',
-    status: 'active',
-  },
-];
 interface GameContextType {
   currentUser: AppUser;
   currentRole: UserRole;
