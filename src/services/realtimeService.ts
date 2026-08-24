@@ -1,0 +1,433 @@
+/**
+ * Real-Time WebSocket & Supabase-compatible Event Service
+ *
+ * Provides:
+ * 1. Persistent WebSocket connection to backend with auto-reconnection & exponential backoff.
+ * 2. Supabase-compatible channel API: `channel('public:rounds').on('INSERT', ...)` / `on('new_round_created', ...)`.
+ * 3. Immediate event dispatching for 'new_round_created' when an admin creates a round.
+ * 4. Automatic fallback and synergy with syncEngine (BroadcastChannel & LocalStorage).
+ */
+
+import { GameRound } from '../types';
+
+export type RealtimeEventHandler = (data: any) => void;
+
+class RealtimeService {
+  private socket: WebSocket | null = null;
+  private isConnecting: boolean = false;
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 15;
+  private reconnectTimer: any = null;
+  private pingTimer: any = null;
+  private listeners: Map<string, Set<RealtimeEventHandler>> = new Map();
+  public isConnected: boolean = false;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      this.connect();
+    }
+  }
+
+  public connect(): void {
+    if (typeof window === 'undefined') return;
+    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    this.isConnecting = true;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/ws`;
+
+    try {
+      this.socket = new WebSocket(wsUrl);
+
+      this.socket.onopen = () => {
+        this.isConnected = true;
+        this.isConnecting = false;
+        this.reconnectAttempts = 0;
+        console.log('[RealtimeService] WebSocket connected successfully');
+
+        // Setup ping keepalive
+        this.startPing();
+
+        // Emit connected event locally
+        this.emit('connected', { timestamp: Date.now() });
+      };
+
+      this.socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          const eventType = data.event || data.type;
+          const payload = data.payload !== undefined ? data.payload : data;
+
+          if (eventType === 'pong') return;
+
+          // Dispatch event to specific listeners
+          if (eventType) {
+            this.emit(eventType, payload);
+          }
+
+          // Universal wildcard listener
+          this.emit('*', { event: eventType, data: payload });
+        } catch (err) {
+          console.warn('[RealtimeService] Error parsing incoming WS message:', err);
+        }
+      };
+
+      this.socket.onclose = () => {
+        this.isConnected = false;
+        this.isConnecting = false;
+        this.stopPing();
+        this.scheduleReconnect();
+      };
+
+      this.socket.onerror = (err) => {
+        console.warn('[RealtimeService] WebSocket error:', err);
+        this.isConnected = false;
+        this.isConnecting = false;
+      };
+    } catch (e) {
+      console.warn('[RealtimeService] Connection creation failed:', e);
+      this.scheduleReconnect();
+    }
+  }
+
+  private startPing(): void {
+    this.stopPing();
+    this.pingTimer = setInterval(() => {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        try {
+          this.socket.send(JSON.stringify({ type: 'ping' }));
+        } catch (e) {}
+      }
+    }, 25000);
+  }
+
+  private stopPing(): void {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) return;
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.warn('[RealtimeService] Max reconnect attempts reached. Backing off to 30s.');
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        this.connect();
+      }, 30000);
+      return;
+    }
+
+    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 10000);
+    this.reconnectAttempts++;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
+  }
+
+  /**
+   * Send message to WebSocket server
+   */
+  public send(type: string, payload: any): void {
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      try {
+        this.socket.send(JSON.stringify({ type, event: type, payload, timestamp: Date.now() }));
+      } catch (err) {
+        console.error('[RealtimeService] Send error:', err);
+      }
+    }
+  }
+
+  /**
+   * Broadcast new round created event
+   */
+  public broadcastNewRoundCreated(round: GameRound): void {
+    this.send('new_round_created', { round });
+    // Also trigger local listeners immediately
+    this.emit('new_round_created', { round });
+  }
+
+  /**
+   * Broadcast newly registered user/player event
+   */
+  public broadcastUserRegistered(user: any): void {
+    this.send('user_registered', { user });
+    this.emit('user_registered', { user });
+    this.emit('player_registered', { player: user });
+  }
+
+  /**
+   * Broadcast commercial config / bank details update event
+   */
+  public broadcastCommercialConfig(config: any): void {
+    this.send('commercial_config_updated', { config });
+    this.emit('commercial_config_updated', { config });
+  }
+
+  /**
+   * Broadcast withdrawal submitted / created event
+   */
+  public broadcastWithdrawalCreated(withdrawal: any): void {
+    this.send('withdrawal_created', { withdrawal });
+    this.send('withdrawal_submitted', { withdrawal });
+    this.send('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'withdrawals',
+      new: withdrawal,
+      record: withdrawal,
+    });
+    this.emit('withdrawal_created', { withdrawal });
+  }
+
+  /**
+   * Broadcast withdrawal status changed / completed / rejected event
+   */
+  public broadcastWithdrawalStatus(withdrawal: any): void {
+    this.send('withdrawal_updated', { withdrawal });
+    this.send('withdrawal_status_changed', { withdrawal });
+    this.send('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'withdrawals',
+      new: withdrawal,
+      record: withdrawal,
+    });
+    this.emit('withdrawal_updated', { withdrawal });
+  }
+
+  /**
+   * Broadcast round updated event across all connected clients
+   */
+  public broadcastRoundUpdated(round: any): void {
+    this.send('round_updated', { round });
+    this.send('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'rounds',
+      new: round,
+      record: round,
+    });
+    this.emit('round_updated', { round });
+  }
+
+  /**
+   * Broadcast official draw result published (single source of truth)
+   */
+  public broadcastDrawResultPublished(data: {
+    roundId: string;
+    drawnFichas: number[];
+    winnersCount: number;
+    totalPaidVes: number;
+    updatedRound: any;
+    updatedCards?: any[];
+  }): void {
+    this.send('draw_result_published', data);
+    this.send('live_draw_finished', data);
+    this.send('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'rounds',
+      new: data.updatedRound,
+      record: data.updatedRound,
+    });
+    this.emit('draw_result_published', data);
+    this.emit('round_updated', { round: data.updatedRound });
+  }
+
+  /**
+   * Subscribe to specific event type
+   */
+  public on(event: string, handler: RealtimeEventHandler): () => void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(handler);
+
+    return () => {
+      const set = this.listeners.get(event);
+      if (set) {
+        set.delete(handler);
+        if (set.size === 0) {
+          this.listeners.delete(event);
+        }
+      }
+    };
+  }
+
+  /**
+   * Emit event to local listeners
+   */
+  public emit(event: string, data: any): void {
+    const set = this.listeners.get(event);
+    if (set) {
+      set.forEach((handler) => {
+        try {
+          handler(data);
+        } catch (err) {
+          console.error(`[RealtimeService] Error in handler for event "${event}":`, err);
+        }
+      });
+    }
+  }
+
+  /**
+   * Supabase-compatible Realtime API:
+   * e.g.
+   * const channel = supabase
+   *   .channel('auditoria-pago-movil-realtime')
+   *   .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharges' }, () => {
+   *      fetchRecargasPendientes();
+   *   })
+   *   .subscribe();
+   */
+  public channel(channelName: string) {
+    const unsubs: Array<() => void> = [];
+
+    const channelObj = {
+      on: (
+        typeOrEvent: string,
+        filterOrCallback: any,
+        maybeCallback?: (payload: any) => void
+      ) => {
+        let callback: (payload: any) => void;
+        let eventFilter = typeOrEvent;
+        let tableFilter: string | null = null;
+
+        if (typeof filterOrCallback === 'function') {
+          callback = filterOrCallback;
+        } else if (filterOrCallback && typeof filterOrCallback === 'object') {
+          callback = maybeCallback || (() => {});
+          eventFilter = filterOrCallback.event || typeOrEvent;
+          tableFilter = filterOrCallback.table || null;
+        } else {
+          callback = maybeCallback || (() => {});
+        }
+
+        // Listener for postgres_changes
+        const unregPostgres = this.on('postgres_changes', (data) => {
+          const matchEvent =
+            eventFilter === '*' ||
+            !eventFilter ||
+            eventFilter === 'postgres_changes' ||
+            String(data?.event || '').toUpperCase() === String(eventFilter).toUpperCase();
+
+          const matchTable =
+            !tableFilter ||
+            tableFilter === '*' ||
+            String(data?.table || '').toLowerCase() === String(tableFilter).toLowerCase();
+
+          if (matchEvent && matchTable) {
+            callback({
+              eventType: data?.event || 'INSERT',
+              new: data?.new || data?.record || data,
+              old: data?.old || null,
+              table: data?.table || tableFilter,
+              schema: data?.schema || 'public',
+              ...data,
+            });
+          }
+        });
+        unsubs.push(unregPostgres);
+
+        // Also listen to direct event names: 'INSERT', 'UPDATE', 'recharge_created', 'new_round_created'
+        if (eventFilter === 'INSERT' || typeOrEvent === 'INSERT') {
+          const unregInsert = this.on('recharge_created', (data) => {
+            if (!tableFilter || tableFilter === 'recharges' || tableFilter === 'auditoria_pago_movil') {
+              callback({ eventType: 'INSERT', new: data.recharge || data, old: null });
+            }
+          });
+          unsubs.push(unregInsert);
+
+          const unregRound = this.on('new_round_created', (data) => {
+            if (!tableFilter || tableFilter === 'rounds') {
+              callback({ eventType: 'INSERT', new: data.round || data, old: null });
+            }
+          });
+          unsubs.push(unregRound);
+
+          const unregWithdrawalInsert = this.on('withdrawal_created', (data) => {
+            if (!tableFilter || tableFilter === 'withdrawals' || tableFilter === 'solicitudes_retiro') {
+              callback({ eventType: 'INSERT', new: data.withdrawal || data, old: null });
+            }
+          });
+          unsubs.push(unregWithdrawalInsert);
+        }
+
+        if (eventFilter === 'UPDATE' || typeOrEvent === 'UPDATE') {
+          const unregUpdate = this.on('recharge_updated', (data) => {
+            if (!tableFilter || tableFilter === 'recharges' || tableFilter === 'auditoria_pago_movil') {
+              callback({ eventType: 'UPDATE', new: data.recharge || data, old: null });
+            }
+          });
+          unsubs.push(unregUpdate);
+
+          const unregWithdrawalUpdate = this.on('withdrawal_updated', (data) => {
+            if (!tableFilter || tableFilter === 'withdrawals' || tableFilter === 'solicitudes_retiro') {
+              callback({ eventType: 'UPDATE', new: data.withdrawal || data, old: null });
+            }
+          });
+          unsubs.push(unregWithdrawalUpdate);
+
+          const unregRoundUpdate = this.on('round_updated', (data) => {
+            if (!tableFilter || tableFilter === 'rounds' || tableFilter === 'sorteos') {
+              callback({ eventType: 'UPDATE', new: data.round || data, old: null });
+            }
+          });
+          unsubs.push(unregRoundUpdate);
+
+          const unregDrawResult = this.on('draw_result_published', (data) => {
+            if (!tableFilter || tableFilter === 'rounds' || tableFilter === 'sorteos') {
+              callback({ eventType: 'UPDATE', new: data.round || data.updatedRound || data, old: null });
+            }
+          });
+          unsubs.push(unregDrawResult);
+        }
+
+        // Wildcard or table-specific custom event
+        if (tableFilter) {
+          const unregTable = this.on(`table:${tableFilter}`, (data) => {
+            callback(data);
+          });
+          unsubs.push(unregTable);
+        }
+
+        return channelObj;
+      },
+      subscribe: (statusCallback?: (status: string) => void) => {
+        this.send('subscribe', { channel: channelName });
+        if (statusCallback) {
+          statusCallback('SUBSCRIBED');
+        }
+        return channelObj;
+      },
+      unsubscribe: () => {
+        unsubs.forEach((unsub) => unsub());
+        unsubs.length = 0;
+      },
+    };
+
+    return channelObj;
+  }
+}
+
+export const realtimeService = new RealtimeService();
+
+/**
+ * Supabase client emulation with Realtime channel management
+ */
+export const supabase = {
+  channel: (channelName: string) => realtimeService.channel(channelName),
+  removeChannel: (channel: any) => {
+    if (channel && typeof channel.unsubscribe === 'function') {
+      channel.unsubscribe();
+    }
+  },
+};
+
+export { onSnapshot, doc, db } from './configService';

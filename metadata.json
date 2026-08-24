@@ -1,0 +1,6 @@
+{
+  "name": "TÚ SUPERCARTÓN",
+  "description": "Aplicación de Gestión de tarjetas 4x4 de 70 fichas, recargas y retiros por Pago Móvil, cantador de voz en español y panel de administración Backoffice.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

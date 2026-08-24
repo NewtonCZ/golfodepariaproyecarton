@@ -1,0 +1,171 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Clock, AlertTriangle } from 'lucide-react';
+import { timeSync } from '../../services/timeSyncService';
+
+interface CountdownTimerProps {
+  targetDate: string;
+  onExpire?: () => void;
+  label?: string;
+  compact?: boolean;
+}
+
+export const CountdownTimer: React.FC<CountdownTimerProps> = ({
+  targetDate,
+  onExpire,
+  label = 'Cierre de apuestas en',
+  compact = false,
+}) => {
+  const [timeLeft, setTimeLeft] = useState<{
+    hours: number;
+    minutes: number;
+    seconds: number;
+    isExpired: boolean;
+    totalSeconds: number;
+  }>({
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    isExpired: false,
+    totalSeconds: 0,
+  });
+
+  const calculateTime = useCallback(() => {
+    // 1. Calculate remaining time using synchronized server clock and safe ISO parsing
+    const now = timeSync.getServerNow();
+    const target = timeSync.parseIsoToEpochMs(targetDate);
+
+    if (isNaN(target)) {
+      setTimeLeft({
+        hours: 0,
+        minutes: 0,
+        seconds: 0,
+        isExpired: true,
+        totalSeconds: 0,
+      });
+      return;
+    }
+
+    const difference = target - now;
+
+    if (difference <= 0) {
+      setTimeLeft({
+        hours: 0,
+        minutes: 0,
+        seconds: 0,
+        isExpired: true,
+        totalSeconds: 0,
+      });
+      if (onExpire) onExpire();
+      return;
+    }
+
+    const totalSeconds = Math.floor(difference / 1000);
+    const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((difference % (1000 * 60)) / 1000);
+
+    setTimeLeft({
+      hours,
+      minutes,
+      seconds,
+      isExpired: false,
+      totalSeconds,
+    });
+  }, [targetDate, onExpire]);
+
+  useEffect(() => {
+    calculateTime();
+    const timer = setInterval(calculateTime, 1000);
+
+    // Reactive update on tab visibility and screen unlock
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        calculateTime();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', calculateTime);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', calculateTime);
+    };
+  }, [calculateTime]);
+
+  const pad = (n: number) => n.toString().padStart(2, '0');
+
+  const isUrgent = timeLeft.totalSeconds > 0 && timeLeft.totalSeconds < 180; // Less than 3 minutes
+
+  if (compact) {
+    return (
+      <div
+        id="compact-countdown-timer"
+        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all ${
+          timeLeft.isExpired
+            ? 'bg-slate-200 text-slate-700'
+            : isUrgent
+            ? 'bg-red-500 text-white animate-pulse shadow-md shadow-red-500/30'
+            : 'bg-amber-100 text-amber-900 border border-amber-300'
+        }`}
+      >
+        <Clock className="w-3.5 h-3.5" />
+        <span>
+          {timeLeft.isExpired
+            ? 'Cerrado'
+            : `${pad(timeLeft.hours)}:${pad(timeLeft.minutes)}:${pad(timeLeft.seconds)}`}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      id="main-countdown-timer"
+      className={`relative overflow-hidden rounded-2xl p-3 sm:p-4 text-center border-2 transition-all ${
+        timeLeft.isExpired
+          ? 'bg-slate-100 border-slate-300 text-slate-600'
+          : isUrgent
+          ? 'bg-gradient-to-r from-red-600 to-rose-600 border-red-400 text-white shadow-lg shadow-red-500/20'
+          : 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 border-amber-300 text-amber-950 shadow-md shadow-amber-500/20'
+      }`}
+    >
+      <div className="flex items-center justify-center gap-2 mb-1">
+        {isUrgent && <AlertTriangle className="w-4 h-4 text-yellow-200 animate-bounce" />}
+        <span className="text-xs sm:text-sm font-extrabold tracking-wide uppercase">
+          {timeLeft.isExpired ? 'Sorteo en Proceso / Cerrado' : label}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-center gap-2 sm:gap-3 font-mono font-black text-2xl sm:text-3xl">
+        <div className="flex flex-col items-center">
+          <span className="bg-black/20 backdrop-blur-xs px-2.5 py-1 rounded-lg">
+            {pad(timeLeft.hours)}
+          </span>
+          <span className="text-[10px] font-sans font-bold tracking-wider mt-0.5 opacity-80">
+            HORAS
+          </span>
+        </div>
+        <span className="opacity-60 -mt-3">:</span>
+        <div className="flex flex-col items-center">
+          <span className="bg-black/20 backdrop-blur-xs px-2.5 py-1 rounded-lg">
+            {pad(timeLeft.minutes)}
+          </span>
+          <span className="text-[10px] font-sans font-bold tracking-wider mt-0.5 opacity-80">
+            MIN
+          </span>
+        </div>
+        <span className="opacity-60 -mt-3">:</span>
+        <div className="flex flex-col items-center">
+          <span className="bg-black/20 backdrop-blur-xs px-2.5 py-1 rounded-lg">
+            {pad(timeLeft.seconds)}
+          </span>
+          <span className="text-[10px] font-sans font-bold tracking-wider mt-0.5 opacity-80">
+            SEG
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
