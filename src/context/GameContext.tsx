@@ -61,17 +61,35 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
   }
   return { valid: errors.length === 0, errors };
 };
-export const INITIAL_SYSTEM_CREDENTIALS: any[] = [
-  {
+export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
+ {
   id: 'sys-1',
-    username: 'Millionaire13',
-    password: 'Yaguaraparo12%',
-    role: 'Super Admin',
-    displayName: 'SuperAdmin Master',
-    createdAt: '2026-01-01T00:00:00.000Z',
+  username: 'superadmin',
+  password: 'Machete26*',
+  role: 'Super Admin',
+  displayName: 'SuperAdmin Master',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  status: 'active',
+},
+  {
+    id: 'sys-3',
+    username: process.env.FINANZAS_USER!,
+    password: process.env.FINANZAS_PASS!,
+    role: 'Operador Financiero',
+    displayName: 'Operador Financiero Central',
+    createdAt: '2026-01-03T00:00:00.000Z',
     status: 'active',
-  }
-]
+  },
+  {
+    id: 'sys-4',
+    username: process.env.AUDITOR_USER!,
+    password: process.env.AUDITOR_PASS!,
+    role: 'Auditor',
+    displayName: 'Auditor General',
+    createdAt: '2026-01-04T00:00:00.000Z',
+    status: 'active',
+  },
+]; 
 interface GameContextType {
   currentUser: AppUser;
   currentRole: UserRole;
