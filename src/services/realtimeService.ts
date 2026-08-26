@@ -27,16 +27,20 @@ class RealtimeService {
   public isWsDisabled: boolean = false;
 
   constructor() {
-    // Check if running in production static mode (e.g. Cloudflare Pages)
+    // Check if running in production static mode (e.g. Cloudflare Pages / Workers static)
     const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : null;
     const isProd = Boolean(metaEnv?.PROD);
     const isWsExplicitlyEnabled = metaEnv?.VITE_ENABLE_WS === 'true';
 
     // In production static environment, disable direct WebSocket to avoid wss://.../ws 200 failed handshakes
     if (isProd && !isWsExplicitlyEnabled) {
+      console.log('Realtime desactivado en prod, usando polling');
       this.isWsDisabled = true;
       this.startPolling();
-    } else if (typeof window !== 'undefined') {
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
       try {
         this.connect();
       } catch (err) {
@@ -47,6 +51,16 @@ class RealtimeService {
   }
 
   public connect(): void {
+    const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : null;
+    const isProd = Boolean(metaEnv?.PROD);
+    const isWsExplicitlyEnabled = metaEnv?.VITE_ENABLE_WS === 'true';
+
+    if (isProd && !isWsExplicitlyEnabled) {
+      this.isWsDisabled = true;
+      this.startPolling();
+      return;
+    }
+
     if (typeof window === 'undefined' || this.isWsDisabled) {
       return;
     }
