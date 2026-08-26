@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 
@@ -1745,6 +1746,21 @@ async function startServer() {
       });
     }
     res.json({ success: true, count: serverUsers.length });
+  });
+
+  // Endpoint para descargar el zip del build de producción
+  app.get('/dist-production.zip', (req, res) => {
+    const zipPath = path.join(process.cwd(), 'dist-production.zip');
+    if (fs.existsSync(zipPath)) {
+      res.download(zipPath, 'dist-production.zip');
+    } else {
+      const publicZip = path.join(process.cwd(), 'public', 'dist-production.zip');
+      if (fs.existsSync(publicZip)) {
+        res.download(publicZip, 'dist-production.zip');
+      } else {
+        res.status(404).send('ZIP no encontrado');
+      }
+    }
   });
 
   // -------------------------------------------------------------
