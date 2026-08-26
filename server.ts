@@ -23,26 +23,21 @@ function normalizeAdminRoleServer(roleStr?: string): 'Super Admin' | 'Operador F
   }
   return 'Super Admin';
 }
-
-// Supabase server-side client using Anon Key (no Service Role Key)
+// Supabase client para VITE - Corregido
 function getSupabaseServerClient(): SupabaseClient | null {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+  const url = import.meta.env.VITE_SUPABASE_URL as string
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string
   if (url && key && url.startsWith('http')) {
     try {
       return createClient(url, key, {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-        },
+        auth: { persistSession: false, autoRefreshToken: false },
       });
     } catch (e) {
-      console.warn('[server] Error al inicializar Supabase Server Client:', e);
+      console.warn('[server] Error al inicializar Supabase Client:', e);
     }
   }
   return null;
 }
-
 interface GameRoundServer {
   id: string;
   roundNumber: number;

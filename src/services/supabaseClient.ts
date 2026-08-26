@@ -1,18 +1,20 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Retrieve Supabase environment variables safely using ANON KEY only
+// Retrieve Supabase environment variables safely using NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
 const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env || {} : {};
 
 const SUPABASE_URL =
   metaEnv.NEXT_PUBLIC_SUPABASE_URL ||
+  (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_URL : '') ||
   metaEnv.VITE_SUPABASE_URL ||
-  (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_URL || process.env?.SUPABASE_URL : '') ||
+  (typeof process !== 'undefined' ? process.env?.SUPABASE_URL : '') ||
   '';
 
 const SUPABASE_ANON_KEY =
   metaEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY : '') ||
   metaEnv.VITE_SUPABASE_ANON_KEY ||
-  (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env?.SUPABASE_ANON_KEY : '') ||
+  (typeof process !== 'undefined' ? process.env?.SUPABASE_ANON_KEY : '') ||
   '';
 
 let realSupabaseClient: SupabaseClient | null = null;
