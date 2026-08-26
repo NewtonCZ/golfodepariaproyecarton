@@ -14,6 +14,15 @@ export const BRAND_NAME = 'TÚ SUPERCARTÓN';
 
 export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
   {
+    id: 'cred-0',
+    displayName: 'Administrador Principal',
+    username: 'MiprimerCommit1',
+    role: 'Super Admin',
+    status: 'active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    password: 'PrimerCommit123$',
+  },
+  {
     id: 'cred-1',
     displayName: 'Director General',
     username: 'admin',

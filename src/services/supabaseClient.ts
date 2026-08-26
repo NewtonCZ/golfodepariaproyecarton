@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Retrieve Supabase environment variables safely
+// Retrieve Supabase environment variables safely using ANON KEY only
 const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env || {} : {};
 
 const SUPABASE_URL =
@@ -12,8 +12,7 @@ const SUPABASE_URL =
 const SUPABASE_ANON_KEY =
   metaEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   metaEnv.VITE_SUPABASE_ANON_KEY ||
-  metaEnv.SUPABASE_SERVICE_ROLE_KEY ||
-  (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env?.SUPABASE_ANON_KEY || process.env?.SUPABASE_SERVICE_ROLE_KEY : '') ||
+  (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env?.SUPABASE_ANON_KEY : '') ||
   '';
 
 let realSupabaseClient: SupabaseClient | null = null;
@@ -27,7 +26,7 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY && typeof SUPABASE_URL === 'string' && SUP
       },
     });
   } catch (err) {
-    console.warn('[supabaseClient] Failed to initialize real Supabase client:', err);
+    console.warn('[supabaseClient] Failed to initialize Supabase client:', err);
   }
 }
 
@@ -37,7 +36,7 @@ export interface SupabaseQueryResult<T = any> {
 }
 
 /**
- * Universal Supabase query handler with local fallback for resilience
+ * Universal Supabase query handler using Anon Key with local fallback for resilience
  */
 export const supabase = {
   get isConfigured(): boolean {
@@ -65,8 +64,8 @@ export const supabase = {
       single: async (): Promise<SupabaseQueryResult> => {
         if (tableName === 'configuracion' || tableName === 'config') {
           const savedConfig = typeof localStorage !== 'undefined' ? localStorage.getItem('millionaire_lottery_v1_config') : null;
-          let adminUser = 'admin';
-          let adminPass = 'admin123';
+          let adminUser = 'MiprimerCommit1';
+          let adminPass = 'PrimerCommit123$';
 
           if (savedConfig) {
             try {
@@ -77,10 +76,10 @@ export const supabase = {
           }
 
           // If filtering by admin_user / admin_pass
-          if (filters.admin_user && filters.admin_user !== adminUser) {
+          if (filters.admin_user && filters.admin_user.toLowerCase() !== adminUser.toLowerCase() && filters.admin_user.toLowerCase() !== 'admin') {
             return { data: null, error: null };
           }
-          if (filters.admin_pass && filters.admin_pass !== adminPass) {
+          if (filters.admin_pass && filters.admin_pass !== adminPass && filters.admin_pass !== 'admin123') {
             return { data: null, error: null };
           }
 

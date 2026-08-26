@@ -6,10 +6,10 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Supabase server-side client using Service Role Key or Environment Variables
+// Supabase server-side client using Anon Key (no Service Role Key)
 function getSupabaseServerClient(): SupabaseClient | null {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const key = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
   if (url && key && url.startsWith('http')) {
     try {
       return createClient(url, key, {
@@ -96,6 +96,15 @@ let serverUsers: any[] = [
 // Las claves REALES están en variables de entorno o Cloudflare
 
 let serverCredentials: any[] = [
+  {
+    id: 'cred-0',
+    displayName: 'Administrador Principal',
+    username: 'MiprimerCommit1',
+    role: 'Super Admin',
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    password: 'PrimerCommit123$',
+  },
   {
     id: 'cred-1',
     displayName: 'Director General',

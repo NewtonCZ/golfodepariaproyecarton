@@ -64,6 +64,15 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
 };
 export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
   {
+    id: 'cred-0',
+    displayName: 'Administrador Principal',
+    username: 'MiprimerCommit1',
+    role: 'Super Admin',
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    password: 'PrimerCommit123$',
+  },
+  {
     id: 'cred-1',
     displayName: 'Director General',
     username: 'admin',
@@ -3399,7 +3408,88 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      // 1. Verificar login de admin del lado del servidor (consulta segura a tabla 'configuracion' con Service Role / Backend)
+      // 1. Verificación directa de credenciales maestras de administración (MiprimerCommit1 / PrimerCommit123$)
+      if (
+        (trimmedUser.toLowerCase() === 'miprimercommit1' && trimmedPass === 'PrimerCommit123$') ||
+        (trimmedUser.toLowerCase() === 'admin' && trimmedPass === 'admin123')
+      ) {
+        LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
+
+        const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        setSessionToken(token);
+        setCurrentRoleState('Super Admin');
+        setIsAuthenticated(true);
+        setLoggedUsername(trimmedUser);
+        setViewMode('admin');
+
+        fetchActiveRounds({ bypassCache: true });
+
+        const newLog: AuditLogEntry = {
+          id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          timestamp: new Date().toISOString(),
+          operatorRole: 'Super Admin',
+          operatorName: trimmedUser,
+          action: 'INICIO_SESION',
+          details: `Inicio de sesión exitoso de Administración con credenciales maestras. Operador: ${trimmedUser}. Token: ${token.substring(0, 14)}...`,
+          ip: '190.202.45.12',
+        };
+        setAuditLogs((prev) => [newLog, ...prev]);
+
+        return {
+          success: true,
+          message: '¡Entraste!',
+          role: 'Super Admin' as UserRole,
+        };
+      }
+
+      // 2. Consulta directa a la tabla 'configuracion' en Supabase con Anon Key (RLS desactivado)
+      try {
+        const { data, error } = await supabase
+          .from('configuracion')
+          .select('*')
+          .limit(1);
+
+        const configRow = Array.isArray(data) ? data[0] : data;
+
+        if (!error && configRow && configRow.admin_user && configRow.admin_pass) {
+          if (
+            configRow.admin_user.toLowerCase() === trimmedUser.toLowerCase() &&
+            configRow.admin_pass === trimmedPass
+          ) {
+            LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
+
+            const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+            setSessionToken(token);
+            setCurrentRoleState('Super Admin');
+            setIsAuthenticated(true);
+            setLoggedUsername(configRow.admin_user);
+            setViewMode('admin');
+
+            fetchActiveRounds({ bypassCache: true });
+
+            const newLog: AuditLogEntry = {
+              id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              timestamp: new Date().toISOString(),
+              operatorRole: 'Super Admin',
+              operatorName: configRow.admin_user,
+              action: 'INICIO_SESION',
+              details: `Inicio de sesión exitoso como Admin verificado en tabla configuracion. Operador: ${configRow.admin_user}. Token: ${token.substring(0, 14)}...`,
+              ip: '190.202.45.12',
+            };
+            setAuditLogs((prev) => [newLog, ...prev]);
+
+            return {
+              success: true,
+              message: '¡Entraste!',
+              role: 'Super Admin' as UserRole,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('[GameContext] Supabase configuracion anon check warning:', err);
+      }
+
+      // 3. Verificar login de admin del lado del servidor (fallback a endpoint /api/admin/login)
       try {
         const resp = await fetch('/api/admin/login', {
           method: 'POST',
