@@ -497,18 +497,6 @@ class RealtimeService {
 
 export const realtimeService = new RealtimeService();
 
-/**
- * Supabase client emulation with Realtime channel management
- */
-export const supabase = {
-  channel: (channelName: string) => realtimeService.channel(channelName),
-  removeChannel: (channel: any) => {
-    if (channel && typeof channel.unsubscribe === 'function') {
-      try {
-        channel.unsubscribe();
-      } catch (e) {}
-    }
-  },
-};
+export { supabase } from './supabaseClient';
 
 export { onSnapshot, doc, db } from './configService';

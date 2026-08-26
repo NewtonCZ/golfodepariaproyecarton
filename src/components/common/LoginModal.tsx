@@ -132,20 +132,20 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const res = login(username, password);
+    const res = await login(username, password);
     if (res.success) {
       setSuccessMsg(res.message);
       setTimeout(() => {
         onClose();
         setSuccessMsg(null);
-      }, 1200);
+      }, 1000);
     } else {
-      setErrorMsg(res.message);
+      setErrorMsg(res.message || 'Clave mala');
     }
   };
 

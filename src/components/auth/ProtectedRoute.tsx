@@ -58,7 +58,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <>{children}</>;
   }
 
-  const handleAdminLoginSubmit = (e: React.FormEvent) => {
+  const handleAdminLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
 
@@ -67,13 +67,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       return;
     }
 
-    const res = login(usernameInput.trim(), passwordInput.trim());
+    const res = await login(usernameInput.trim(), passwordInput.trim());
     if (res.success) {
       if (res.role === 'Player') {
         setLoginError('Acceso Denegado: Esta cuenta es de Jugador. Se requieren credenciales de personal administrativo para acceder al Backoffice.');
       }
     } else {
-      setLoginError(res.message || 'Credenciales administrativas inválidas.');
+      setLoginError(res.message || 'Clave mala');
     }
   };
 

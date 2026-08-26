@@ -4,6 +4,26 @@ import path from 'path';
 import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+// Supabase server-side client using Service Role Key or Environment Variables
+function getSupabaseServerClient(): SupabaseClient | null {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  if (url && key && url.startsWith('http')) {
+    try {
+      return createClient(url, key, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      });
+    } catch (e) {
+      console.warn('[server] Error al inicializar Supabase Server Client:', e);
+    }
+  }
+  return null;
+}
 
 interface GameRoundServer {
   id: string;
@@ -1747,6 +1767,77 @@ async function startServer() {
     }
     res.json({ success: true, count: serverUsers.length });
   });
+
+  // -------------------------------------------------------------
+  // API Routes: Admin Login seguro del lado del servidor (tabla 'configuracion' con Service Role / directa)
+  // -------------------------------------------------------------
+  const handleAdminServerLogin = async (req: express.Request, res: express.Response) => {
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ success: false, message: 'Por favor ingresa usuario y contraseña.' });
+    }
+
+    const trimmedUser = String(username).trim();
+    const trimmedPass = String(password).trim();
+
+    // 1. Busca en la tabla configuracion del lado del servidor (usando Service Role o cliente de servidor)
+    try {
+      const supabaseServer = getSupabaseServerClient();
+      if (supabaseServer) {
+        // Consultar la única fila en la tabla configuracion
+        const { data, error } = await supabaseServer
+          .from('configuracion')
+          .select('*')
+          .limit(1);
+
+        const configRow = Array.isArray(data) ? data[0] : data;
+
+        if (!error && configRow && configRow.admin_user && configRow.admin_pass) {
+          if (trimmedUser === configRow.admin_user && trimmedPass === configRow.admin_pass) {
+            const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+            return res.json({
+              success: true,
+              message: '¡Entraste!',
+              role: 'Super Admin',
+              username: configRow.admin_user,
+              token,
+            });
+          } else {
+            return res.status(401).json({
+              success: false,
+              message: 'Clave mala',
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[server] Error consultando tabla configuracion en servidor:', err);
+    }
+
+    // 2. Fallback: verificar credenciales administrativas del servidor
+    const foundCred = serverCredentials.find(
+      (c) => c.username.toLowerCase() === trimmedUser.toLowerCase() && c.password === trimmedPass && c.status === 'active'
+    );
+
+    if (foundCred) {
+      const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      return res.json({
+        success: true,
+        message: '¡Entraste!',
+        role: foundCred.role || 'Super Admin',
+        username: foundCred.username,
+        token,
+      });
+    }
+
+    return res.status(401).json({
+      success: false,
+      message: 'Clave mala',
+    });
+  };
+
+  app.post('/api/admin/login', handleAdminServerLogin);
+  app.post('/api/auth/admin-login', handleAdminServerLogin);
 
   // Endpoint para descargar el zip del build de producción
   app.get('/dist-production.zip', (req, res) => {

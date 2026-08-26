@@ -24,6 +24,7 @@ import {
   getJugadores,
   JugadorBingo,
 } from '../services/playerStorage';
+import { supabase } from '../services/supabaseClient';
 
 export { getJugadores, saveJugador };
 export type { JugadorBingo };
@@ -104,12 +105,12 @@ interface GameContextType {
   login: (
     username: string,
     password: string
-  ) => {
+  ) => Promise<{
     success: boolean;
     message: string;
     role?: UserRole;
     user?: AppUser;
-  };
+  }>;
   logout: () => void;
   requestPasswordRecovery: (identifierOrEmail: string) => {
     success: boolean;
@@ -3376,9 +3377,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [systemCredentials, loggedUsername, currentRole]
   );
 
-  // Authentication: Login function with maximum 3 failed attempts lockout
+  // Authentication: Login function with Supabase real-time query & maximum 3 failed attempts lockout
   const login = useCallback(
-    (username: string, password: string) => {
+    async (username: string, password: string) => {
       const trimmedUser = username.trim();
       const trimmedPass = password.trim();
 
@@ -3398,7 +3399,51 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      // Check system admin credentials
+      // 1. Verificar login de admin del lado del servidor (consulta segura a tabla 'configuracion' con Service Role / Backend)
+      try {
+        const resp = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: trimmedUser, password: trimmedPass }),
+        });
+
+        if (resp.ok) {
+          const result = await resp.json();
+          if (result.success) {
+            LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
+
+            const token = result.token || `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+            setSessionToken(token);
+            setCurrentRoleState((result.role as UserRole) || 'Super Admin');
+            setIsAuthenticated(true);
+            setLoggedUsername(result.username || trimmedUser);
+            setViewMode('admin');
+
+            fetchActiveRounds({ bypassCache: true });
+
+            const newLog: AuditLogEntry = {
+              id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              timestamp: new Date().toISOString(),
+              operatorRole: (result.role as UserRole) || 'Super Admin',
+              operatorName: result.username || trimmedUser,
+              action: 'INICIO_SESION',
+              details: `Inicio de sesión exitoso de Administración verificado en servidor (configuracion). Token: ${token.substring(0, 14)}...`,
+              ip: '190.202.45.12',
+            };
+            setAuditLogs((prev) => [newLog, ...prev]);
+
+            return {
+              success: true,
+              message: '¡Entraste!',
+              role: (result.role as UserRole) || 'Super Admin',
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('[GameContext] Intento de login admin en servidor offline o fallback:', err);
+      }
+
+      // Check system admin credentials from local state (Fallback)
       const foundCred = systemCredentials.find(
         (c) =>
           c.username.toLowerCase() === trimmedUser.toLowerCase() &&
@@ -3434,8 +3479,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         return {
           success: true,
-          message: `¡Bienvenido! Has iniciado sesión como ${foundCred.role}.`,
-          role: foundCred.role,
+          message: '¡Entraste!',
+          role: foundCred.role as UserRole,
         };
       }
 
@@ -3499,7 +3544,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return {
         success: false,
-        message: failResult.message,
+        message: 'Clave mala',
       };
     },
     [systemCredentials, users]
