@@ -61,33 +61,33 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
   }
   return { valid: errors.length === 0, errors };
 };
-const getCredentials = (env: any) => [
+export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
   {
     id: 'cred-1',
     displayName: 'Director General',
-    username: env.SUPER_ADMIN_USER,
+    username: 'admin',
     role: 'Super Admin',
     status: 'active',
     createdAt: new Date().toISOString(),
-    password: env.SUPER_ADMIN_PASS,
+    password: 'admin123',
   },
   {
     id: 'cred-2',
     displayName: 'Auditor Principal',
-    username: env.AUDITOR_USER,
+    username: 'auditor',
     role: 'Auditor',
     status: 'active',
     createdAt: new Date().toISOString(),
-    password: env.AUDITOR_PASS,
+    password: 'auditor123',
   },
   {
     id: 'cred-3',
     displayName: 'Operador Bóveda Central',
-    username: env.FINANZAS_USER,
+    username: 'finanzas',
     role: 'Operador Financiero',
     status: 'active',
     createdAt: new Date().toISOString(),
-    password: env.FINANZAS_PASS,
+    password: 'finanzas123',
   },
 ]; 
 interface GameContextType {

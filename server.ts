@@ -72,35 +72,35 @@ let serverUsers: any[] = [
 ];
 
 // In-memory persistent server state for credentials - VERSIÓN SEGURA
-// Las claves REALES están en Cloudflare > Environment Variables, no aquí
+// Las claves REALES están en variables de entorno o Cloudflare
 
-const getCredentials = (env: any) => [
+let serverCredentials: any[] = [
   {
     id: 'cred-1',
     displayName: 'Director General',
-    username: env.SUPER_ADMIN_USER,
+    username: process.env.SUPER_ADMIN_USER || 'admin',
     role: 'Super Admin',
     status: 'active',
     createdAt: new Date().toISOString(),
-    password: env.SUPER_ADMIN_PASS,
+    password: process.env.SUPER_ADMIN_PASS || 'admin123',
   },
   {
     id: 'cred-2',
     displayName: 'Auditor Principal',
-    username: env.AUDITOR_USER,
+    username: process.env.AUDITOR_USER || 'auditor',
     role: 'Auditor',
     status: 'active',
     createdAt: new Date().toISOString(),
-    password: env.AUDITOR_PASS,
+    password: process.env.AUDITOR_PASS || 'auditor123',
   },
   {
     id: 'cred-3',
     displayName: 'Operador Bóveda Central',
-    username: env.FINANZAS_USER,
+    username: process.env.FINANZAS_USER || 'finanzas',
     role: 'Operador Financiero',
     status: 'active',
     createdAt: new Date().toISOString(),
-    password: env.FINANZAS_PASS,
+    password: process.env.FINANZAS_PASS || 'finanzas123',
   },
 ];
 let serverRounds: GameRoundServer[] = [

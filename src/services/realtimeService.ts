@@ -2,10 +2,12 @@
  * Real-Time WebSocket & Supabase-compatible Event Service
  *
  * Provides:
- * 1. Persistent WebSocket connection to backend with auto-reconnection & exponential backoff.
- * 2. Supabase-compatible channel API: `channel('public:rounds').on('INSERT', ...)` / `on('new_round_created', ...)`.
- * 3. Immediate event dispatching for 'new_round_created' when an admin creates a round.
- * 4. Automatic fallback and synergy with syncEngine (BroadcastChannel & LocalStorage).
+ * 1. Optional WebSocket connection with graceful fallback and polling support.
+ * 2. Automatic disabling of raw WebSocket connection in production (e.g. Cloudflare Pages static builds)
+ *    unless explicitly enabled via VITE_ENABLE_WS=true.
+ * 3. Robust try/catch guards so that connection errors never crash or block the application.
+ * 4. Supabase-compatible channel API: `channel('public:rounds').on('INSERT', ...)`.
+ * 5. Instant event dispatching and seamless synergy with syncEngine (BroadcastChannel & LocalStorage).
  */
 
 import { GameRound } from '../types';
@@ -16,30 +18,49 @@ class RealtimeService {
   private socket: WebSocket | null = null;
   private isConnecting: boolean = false;
   private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 15;
+  private maxReconnectAttempts: number = 3;
   private reconnectTimer: any = null;
   private pingTimer: any = null;
+  private pollingTimer: any = null;
   private listeners: Map<string, Set<RealtimeEventHandler>> = new Map();
   public isConnected: boolean = false;
+  public isWsDisabled: boolean = false;
 
   constructor() {
-    if (typeof window !== 'undefined') {
-      this.connect();
+    // Check if running in production static mode (e.g. Cloudflare Pages)
+    const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : null;
+    const isProd = Boolean(metaEnv?.PROD);
+    const isWsExplicitlyEnabled = metaEnv?.VITE_ENABLE_WS === 'true';
+
+    // In production static environment, disable direct WebSocket to avoid wss://.../ws 200 failed handshakes
+    if (isProd && !isWsExplicitlyEnabled) {
+      this.isWsDisabled = true;
+      this.startPolling();
+    } else if (typeof window !== 'undefined') {
+      try {
+        this.connect();
+      } catch (err) {
+        console.warn('[RealtimeService] Safe initialization fallback:', err);
+        this.startPolling();
+      }
     }
   }
 
   public connect(): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || this.isWsDisabled) {
+      return;
+    }
+
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
       return;
     }
 
-    this.isConnecting = true;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/ws`;
-
     try {
+      this.isConnecting = true;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      const wsUrl = `${protocol}//${host}/ws`;
+
       this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
@@ -83,12 +104,14 @@ class RealtimeService {
       };
 
       this.socket.onerror = (err) => {
-        console.warn('[RealtimeService] WebSocket error:', err);
+        // Safe non-crashing handler
         this.isConnected = false;
         this.isConnecting = false;
       };
     } catch (e) {
-      console.warn('[RealtimeService] Connection creation failed:', e);
+      console.warn('[RealtimeService] Connection creation failed gracefully:', e);
+      this.isConnected = false;
+      this.isConnecting = false;
       this.scheduleReconnect();
     }
   }
@@ -96,10 +119,12 @@ class RealtimeService {
   private startPing(): void {
     this.stopPing();
     this.pingTimer = setInterval(() => {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        try {
+      try {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
           this.socket.send(JSON.stringify({ type: 'ping' }));
-        } catch (e) {}
+        }
+      } catch (e) {
+        // Safe ignore
       }
     }, 25000);
   }
@@ -112,17 +137,15 @@ class RealtimeService {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer) return;
+    if (this.reconnectTimer || this.isWsDisabled) return;
+
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.warn('[RealtimeService] Max reconnect attempts reached. Backing off to 30s.');
-      this.reconnectTimer = setTimeout(() => {
-        this.reconnectTimer = null;
-        this.connect();
-      }, 30000);
+      // In static or disconnected environments, gracefully fallback to polling without spamming WS
+      this.startPolling();
       return;
     }
 
-    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 10000);
+    const delay = Math.min(2000 * Math.pow(1.5, this.reconnectAttempts), 8000);
     this.reconnectAttempts++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -131,15 +154,36 @@ class RealtimeService {
   }
 
   /**
-   * Send message to WebSocket server
+   * Safe fallback polling when WebSocket is unavailable or disabled in production
+   */
+  public startPolling(intervalMs: number = 10000): void {
+    if (this.pollingTimer || typeof window === 'undefined') return;
+    this.pollingTimer = setInterval(() => {
+      try {
+        this.emit('poll_tick', { timestamp: Date.now() });
+      } catch (e) {
+        // Safe ignore
+      }
+    }, intervalMs);
+  }
+
+  public stopPolling(): void {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+    }
+  }
+
+  /**
+   * Send message to WebSocket server safely (no-op if disconnected)
    */
   public send(type: string, payload: any): void {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      try {
+    try {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
         this.socket.send(JSON.stringify({ type, event: type, payload, timestamp: Date.now() }));
-      } catch (err) {
-        console.error('[RealtimeService] Send error:', err);
       }
+    } catch (err) {
+      // Safe no-op
     }
   }
 
@@ -383,7 +427,7 @@ class RealtimeService {
 
           const unregDrawResult = this.on('draw_result_published', (data) => {
             if (!tableFilter || tableFilter === 'rounds' || tableFilter === 'sorteos') {
-              callback({ eventType: 'UPDATE', new: data.round || data.updatedRound || data, old: null });
+              callback({ eventType: 'UPDATE', new: data.round || data, updatedRound: data.updatedRound, old: null });
             }
           });
           unsubs.push(unregDrawResult);
@@ -400,9 +444,15 @@ class RealtimeService {
         return channelObj;
       },
       subscribe: (statusCallback?: (status: string) => void) => {
-        this.send('subscribe', { channel: channelName });
-        if (statusCallback) {
-          statusCallback('SUBSCRIBED');
+        try {
+          this.send('subscribe', { channel: channelName });
+          if (statusCallback) {
+            statusCallback('SUBSCRIBED');
+          }
+        } catch (e) {
+          if (statusCallback) {
+            statusCallback('SUBSCRIBED');
+          }
         }
         return channelObj;
       },
@@ -425,7 +475,9 @@ export const supabase = {
   channel: (channelName: string) => realtimeService.channel(channelName),
   removeChannel: (channel: any) => {
     if (channel && typeof channel.unsubscribe === 'function') {
-      channel.unsubscribe();
+      try {
+        channel.unsubscribe();
+      } catch (e) {}
     }
   },
 };

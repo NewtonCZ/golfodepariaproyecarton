@@ -42,6 +42,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const [loginError, setLoginError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AdminRole>('Super Admin');
 
+  const handleSelectDemoRole = (role: AdminRole) => {
+    setActiveTab(role);
+    setLoginError(null);
+  };
+
   // Check if current user meets strict authorization requirements for admin panel
   const isAuthorizedAdmin =
     isAuthenticated &&
