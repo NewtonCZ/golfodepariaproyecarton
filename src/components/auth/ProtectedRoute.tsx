@@ -116,62 +116,17 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
           </div>
         )}
 
-        {/* Administrative Roles Quick Selector Tabs (Testing) */}
-        <div className="mt-6 mb-4">
-          <label className="block text-[11px] font-black uppercase tracking-wider text-purple-300 mb-2">
-            Selecciona el Perfil Administrativo para Autenticar:
-          </label>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {[
-              {
-                role: 'Super Admin' as const,
-                label: 'Superadmin',
-                badge: '👑 Acceso Total',
-                color: 'from-amber-500 to-yellow-500',
-              },
-              {
-                role: 'Operador Financiero' as const,
-                label: 'Operador Finanzas',
-                badge: '💼 Recargas & Retiros',
-                color: 'from-emerald-600 to-teal-600',
-              },
-              {
-                role: 'Auditor' as const,
-                label: 'Auditor',
-                badge: '🔍 Solo Lectura',
-                color: 'from-cyan-600 to-blue-600',
-              },
-            ].map((item) => {
-              const isSelected = activeTab === item.role;
-              return (
-                <button
-                  key={item.role}
-                  type="button"
-                  onClick={() => handleSelectDemoRole(item.role)}
-                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                    isSelected
-                      ? `bg-slate-800 border-purple-400 ring-2 ring-purple-500/50 shadow-lg`
-                      : `bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-400`
-                  }`}
-                >
-                  <span className="text-[10px] font-bold text-slate-400 block mb-1">
-                    {item.badge}
-                  </span>
-                  <span className="text-xs font-black text-white">{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         {/* Login Form */}
-        <form onSubmit={handleAdminLoginSubmit} className="space-y-4 bg-slate-950/80 p-5 rounded-2xl border border-slate-800">
+        <form onSubmit={handleAdminLoginSubmit} className="space-y-4 bg-slate-950/80 p-5 rounded-2xl border border-slate-800 mt-6">
           <div className="flex items-center justify-between pb-2 border-b border-slate-800">
             <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
               <KeyRound className="w-4 h-4 text-purple-400" />
-              <span>Ingresar Credenciales para {ROLE_PERMISSIONS[activeTab]?.displayName || 'Super Admin'}</span>
+              <span>Ingreso de Personal Autorizado</span>
             </span>
-            <span className="text-[10px] text-slate-500 font-mono">2FA / Encriptado SSL</span>
+            <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Supabase Auth Segura
+            </span>
           </div>
 
           {loginError && (
@@ -190,8 +145,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
                 type="text"
                 value={usernameInput}
                 onChange={(e) => setUsernameInput(e.target.value)}
-                placeholder="Ej. Millionaire13"
+                placeholder="Usuario de administración"
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-purple-400 font-medium"
+                required
               />
             </div>
 
@@ -206,6 +162,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
                   onChange={(e) => setPasswordInput(e.target.value)}
                   placeholder="••••••••"
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-white focus:outline-none focus:border-purple-400 font-medium"
+                  required
                 />
                 <button
                   type="button"
@@ -220,19 +177,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
             </div>
           </div>
 
-          {/* Quick Demo Helper box */}
-          <div className="bg-purple-950/40 border border-purple-800/40 rounded-xl p-3 text-[11px] text-purple-200 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>
-                Credenciales Demo Cargadas: <strong className="text-white">{usernameInput}</strong> / <strong className="text-white">{passwordInput}</strong>
-              </span>
-            </div>
+          <div className="flex items-center justify-end pt-2">
             <button
               type="submit"
-              className="bg-amber-500 hover:bg-amber-400 text-indigo-950 font-black text-xs px-4 py-2 rounded-xl transition-all shadow-md active:scale-95 shrink-0 cursor-pointer"
+              className="w-full sm:w-auto bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs px-6 py-2.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center gap-2"
             >
-              Iniciar Sesión
+              <LogIn className="w-4 h-4" />
+              <span>Iniciar Sesión Administrativa</span>
             </button>
           </div>
         </form>

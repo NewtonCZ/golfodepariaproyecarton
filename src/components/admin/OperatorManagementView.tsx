@@ -100,7 +100,7 @@ export const OperatorManagementView: React.FC = () => {
     setIsCreateModalOpen(true);
   };
 
-  const handleSaveUser = (e: React.FormEvent) => {
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
 
@@ -119,7 +119,7 @@ export const OperatorManagementView: React.FC = () => {
 
     if (editingUser) {
       // Edit mode
-      const result = updateSystemCredential(editingUser.id, {
+      const result = await updateSystemCredential(editingUser.id, {
         displayName: formDisplayName,
         username: formUsername,
         role: formRole,
@@ -138,7 +138,7 @@ export const OperatorManagementView: React.FC = () => {
       }
     } else {
       // Create mode
-      const result = createSystemCredential({
+      const result = await createSystemCredential({
         displayName: formDisplayName,
         username: formUsername,
         role: formRole,
@@ -157,7 +157,7 @@ export const OperatorManagementView: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = () => {
+  const handleDeleteUser = async () => {
     if (!deletingUser) return;
     setFeedback(null);
 
@@ -167,7 +167,7 @@ export const OperatorManagementView: React.FC = () => {
       return;
     }
 
-    const result = deleteSystemCredential(deletingUser.id);
+    const result = await deleteSystemCredential(deletingUser.id);
     if (result.success) {
       setDeletingUser(null);
     } else {

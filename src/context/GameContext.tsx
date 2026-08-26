@@ -25,6 +25,7 @@ import {
   JugadorBingo,
 } from '../services/playerStorage';
 import { supabase } from '../services/supabaseClient';
+import { hashPassword, normalizeAdminRole, toDbRole } from '../utils/crypto';
 
 export { getJugadores, saveJugador };
 export type { JugadorBingo };
@@ -35,7 +36,7 @@ export type UserRole = AdminRole | 'Player';
 export interface SystemCredential {
   id: string;
   username: string;
-  password: string;
+  password?: string;
   role: AdminRole;
   displayName: string;
   createdAt?: string;
@@ -62,44 +63,8 @@ export const validatePasswordComplexity = (password: string): { valid: boolean; 
   }
   return { valid: errors.length === 0, errors };
 };
-export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [
-  {
-    id: 'cred-0',
-    displayName: 'Administrador Principal',
-    username: 'MiprimerCommit1',
-    role: 'Super Admin',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    password: 'PrimerCommit123$',
-  },
-  {
-    id: 'cred-1',
-    displayName: 'Director General',
-    username: 'admin',
-    role: 'Super Admin',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    password: 'admin123',
-  },
-  {
-    id: 'cred-2',
-    displayName: 'Auditor Principal',
-    username: 'auditor',
-    role: 'Auditor',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    password: 'auditor123',
-  },
-  {
-    id: 'cred-3',
-    displayName: 'Operador Bóveda Central',
-    username: 'finanzas',
-    role: 'Operador Financiero',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    password: 'finanzas123',
-  },
-]; 
+export const INITIAL_SYSTEM_CREDENTIALS: SystemCredential[] = [];
+
 interface GameContextType {
   currentUser: AppUser;
   currentRole: UserRole;
@@ -158,12 +123,13 @@ interface GameContextType {
   ) => void;
   verifyCurrentAccount: () => { success: boolean; message: string };
   systemCredentials: SystemCredential[];
+  fetchSystemCredentials: () => Promise<void>;
   createSystemCredential: (data: {
     username: string;
     password: string;
     role: AdminRole;
     displayName: string;
-  }) => { success: boolean; message: string };
+  }) => Promise<{ success: boolean; message: string }>;
   updateSystemCredential: (
     id: string,
     data: {
@@ -173,8 +139,8 @@ interface GameContextType {
       displayName?: string;
       status?: 'active' | 'inactive';
     }
-  ) => { success: boolean; message: string };
-  deleteSystemCredential: (id: string) => { success: boolean; message: string };
+  ) => Promise<{ success: boolean; message: string }>;
+  deleteSystemCredential: (id: string) => Promise<{ success: boolean; message: string }>;
   users: AppUser[];
   viewMode: 'player' | 'admin';
   setViewMode: (mode: 'player' | 'admin') => void;
@@ -439,11 +405,36 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [systemCredentials, setSystemCredentials] = useState<SystemCredential[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_system_credentials`);
-      return saved ? JSON.parse(saved) : INITIAL_SYSTEM_CREDENTIALS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_SYSTEM_CREDENTIALS;
+      return [];
     }
   });
+
+  const fetchSystemCredentials = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('admin_users')
+        .select('id, username, role, status, created_at, display_name');
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const mapped: SystemCredential[] = data.map((row: any) => ({
+          id: String(row.id),
+          username: row.username,
+          displayName: row.display_name || row.username,
+          role: normalizeAdminRole(row.role),
+          status: row.status === 'inactive' ? 'inactive' : 'active',
+          createdAt: row.created_at || new Date().toISOString(),
+        }));
+        setSystemCredentials(mapped);
+      }
+    } catch (err) {
+      console.warn('[GameContext] Error fetching admin_users from Supabase:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSystemCredentials();
+  }, [fetchSystemCredentials]);
 
   useEffect(() => {
     try {
@@ -3185,9 +3176,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [users, systemCredentials]);
 
-  // Create System Operator Account
+  // Create System Operator Account (Saved to Supabase admin_users table)
   const createSystemCredential = useCallback(
-    (data: {
+    async (data: {
       username: string;
       password: string;
       role: AdminRole;
@@ -3196,7 +3187,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (operatorRole !== 'Super Admin') {
         return {
           success: false,
-          message: 'Acceso Denegado: Solo el Super Admin tiene la capacidad exclusiva de asignar contraseñas a los usuarios.',
+          message: 'Acceso Denegado: Solo el Super Admin tiene la capacidad exclusiva de crear operadores.',
         };
       }
 
@@ -3207,7 +3198,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, message: 'Todos los campos son obligatorios.' };
       }
 
-      // Check username uniqueness
+      // Check username uniqueness in local state
       if (systemCredentials.some((c) => c.username.toLowerCase() === trimmedUser.toLowerCase())) {
         return { success: false, message: `El nombre de usuario "${trimmedUser}" ya existe en el sistema.` };
       }
@@ -3221,17 +3212,62 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
+      const hashedPassword = await hashPassword(data.password);
+      const dbRole = toDbRole(data.role);
+
+      // 1. Insert directly into Supabase admin_users table
+      let newId = `sys-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      try {
+        const { data: dbData, error } = await supabase
+          .from('admin_users')
+          .insert({
+            username: trimmedUser,
+            password: hashedPassword,
+            role: dbRole,
+            status: 'active',
+            display_name: trimmedName,
+          })
+          .select()
+          .single();
+
+        if (error) {
+          if (error.message?.includes('duplicate') || error.message?.includes('unique')) {
+            return { success: false, message: `El usuario "${trimmedUser}" ya está registrado en la base de datos.` };
+          }
+          console.warn('[GameContext] Error inserting into admin_users:', error);
+        } else if (dbData && dbData.id) {
+          newId = String(dbData.id);
+        }
+      } catch (err) {
+        console.warn('[GameContext] Supabase admin_users insert error:', err);
+      }
+
+      // 2. Sync to backend API if available
+      try {
+        await fetch('/api/credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: newId,
+            username: trimmedUser,
+            password: data.password,
+            role: data.role,
+            displayName: trimmedName,
+            status: 'active',
+          }),
+        });
+      } catch (e) {}
+
       const newCred: SystemCredential = {
-        id: `sys-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        id: newId,
         username: trimmedUser,
-        password: data.password,
         role: data.role,
         displayName: trimmedName,
         createdAt: new Date().toISOString(),
         status: 'active',
       };
 
-      setSystemCredentials((prev) => [newCred, ...prev]);
+      setSystemCredentials((prev) => [newCred, ...prev.filter((c) => c.username.toLowerCase() !== trimmedUser.toLowerCase())]);
 
       const log: AuditLogEntry = {
         id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -3249,9 +3285,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [systemCredentials, operatorRole, loggedUsername]
   );
 
-  // Update System Operator Account
+  // Update System Operator Account (Saved to Supabase admin_users table)
   const updateSystemCredential = useCallback(
-    (
+    async (
       id: string,
       updates: {
         username?: string;
@@ -3266,16 +3302,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, message: 'Usuario no encontrado en el sistema.' };
       }
 
-      // Check if trying to update password without Super Admin role
+      let hashedPassword: string | undefined;
       if (updates.password && updates.password.trim().length > 0) {
         if (operatorRole !== 'Super Admin') {
           return {
             success: false,
-            message: 'Acceso Denegado: Solo el Super Admin tiene la capacidad de cambiar o asignar contraseñas a los usuarios.',
+            message: 'Acceso Denegado: Solo el Super Admin tiene la capacidad de cambiar contraseñas.',
           };
         }
 
-        // Check password complexity if updating password
         const val = validatePasswordComplexity(updates.password);
         if (!val.valid) {
           return {
@@ -3283,9 +3318,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             message: `La contraseña no cumple los requisitos de seguridad:\n• ${val.errors.join('\n• ')}`,
           };
         }
+        hashedPassword = await hashPassword(updates.password);
       }
 
-      // Check username uniqueness if changed
       if (updates.username && updates.username.trim().toLowerCase() !== target.username.toLowerCase()) {
         const trimmed = updates.username.trim();
         if (systemCredentials.some((c) => c.id !== id && c.username.toLowerCase() === trimmed.toLowerCase())) {
@@ -3293,13 +3328,39 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
+      // Update in Supabase admin_users
+      try {
+        const updatePayload: any = {
+          updated_at: new Date().toISOString(),
+        };
+        if (updates.displayName) updatePayload.display_name = updates.displayName.trim();
+        if (updates.username) updatePayload.username = updates.username.trim();
+        if (updates.role) updatePayload.role = toDbRole(updates.role);
+        if (updates.status) updatePayload.status = updates.status;
+        if (hashedPassword) updatePayload.password = hashedPassword;
+
+        await supabase.from('admin_users').update(updatePayload).eq('id', id);
+      } catch (e) {
+        console.warn('[GameContext] Supabase admin_users update error:', e);
+      }
+
+      // Update via backend API
+      try {
+        await fetch(`/api/credentials/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...updates,
+          }),
+        });
+      } catch (e) {}
+
       setSystemCredentials((prev) =>
         prev.map((c) => {
           if (c.id === id) {
             return {
               ...c,
               username: updates.username !== undefined ? updates.username.trim() : c.username,
-              password: updates.password && updates.password.trim() && operatorRole === 'Super Admin' ? updates.password : c.password,
               role: updates.role || c.role,
               displayName: updates.displayName !== undefined ? updates.displayName.trim() : c.displayName,
               status: updates.status || c.status,
@@ -3310,7 +3371,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
       );
 
-      // Immediately sync active session state if modifying current user
+      // Sync active session if modifying self
       if (target.username.toLowerCase() === loggedUsername.toLowerCase()) {
         if (updates.status === 'inactive') {
           setIsAuthenticated(false);
@@ -3318,15 +3379,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           if (updates.role) {
             setCurrentRoleState(updates.role);
-            try {
-              localStorage.setItem(`${STORAGE_KEY}_auth_role`, updates.role);
-            } catch {}
           }
           if (updates.username && updates.username.trim()) {
             setLoggedUsername(updates.username.trim());
-            try {
-              localStorage.setItem(`${STORAGE_KEY}_logged_username`, updates.username.trim());
-            } catch {}
           }
         }
       }
@@ -3337,7 +3392,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         operatorRole: operatorRole,
         operatorName: loggedUsername || 'Super Admin',
         action: 'OPERADOR_ACTUALIZADO',
-        details: `Cuenta modificada: Usuario ${target.username} (${target.role}).${updates.password ? ' (Contraseña actualizada por Super Admin)' : ''}`,
+        details: `Cuenta modificada: Usuario ${target.username} (${target.role}).${updates.password ? ' (Contraseña actualizada)' : ''}`,
         ip: '190.202.45.12',
       };
       setAuditLogs((prev) => [log, ...prev]);
@@ -3347,9 +3402,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [systemCredentials, operatorRole, loggedUsername]
   );
 
-  // Delete System Operator Account
+  // Delete System Operator Account (Deleted from Supabase admin_users table)
   const deleteSystemCredential = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const target = systemCredentials.find((c) => c.id === id);
       if (!target) {
         return { success: false, message: 'Usuario no encontrado.' };
@@ -3367,6 +3422,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return { success: false, message: 'No se puede eliminar el único Super Admin activo del sistema.' };
         }
       }
+
+      try {
+        await supabase.from('admin_users').delete().eq('id', id);
+      } catch (e) {
+        console.warn('[GameContext] Supabase admin_users delete error:', e);
+      }
+
+      try {
+        await fetch(`/api/credentials/${id}`, { method: 'DELETE' });
+      } catch (e) {}
 
       setSystemCredentials((prev) => prev.filter((c) => c.id !== id));
 
@@ -3386,7 +3451,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [systemCredentials, loggedUsername, currentRole]
   );
 
-  // Authentication: Login function with Supabase real-time query & maximum 3 failed attempts lockout
+  // Authentication: Login function with Supabase real-time query against admin_users & maximum 3 failed attempts lockout
   const login = useCallback(
     async (username: string, password: string) => {
       const trimmedUser = username.trim();
@@ -3404,65 +3469,34 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (lockoutCheck.isLocked) {
         return {
           success: false,
-          message: lockoutCheck.message || `Cuenta bloqueada temporalmente por 15 minutos debido a 3 intentos fallidos. Por favor restablece tu contraseña mediante correo electrónico.`,
+          message: lockoutCheck.message || `Cuenta bloqueada temporalmente por 15 minutos debido a 3 intentos fallidos.`,
         };
       }
 
-      // 1. Verificación directa de credenciales maestras de administración (MiprimerCommit1 / PrimerCommit123$)
-      if (
-        (trimmedUser.toLowerCase() === 'miprimercommit1' && trimmedPass === 'PrimerCommit123$') ||
-        (trimmedUser.toLowerCase() === 'admin' && trimmedPass === 'admin123')
-      ) {
-        LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
+      const hashedInput = await hashPassword(trimmedPass);
 
-        const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        setSessionToken(token);
-        setCurrentRoleState('Super Admin');
-        setIsAuthenticated(true);
-        setLoggedUsername(trimmedUser);
-        setViewMode('admin');
-
-        fetchActiveRounds({ bypassCache: true });
-
-        const newLog: AuditLogEntry = {
-          id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          timestamp: new Date().toISOString(),
-          operatorRole: 'Super Admin',
-          operatorName: trimmedUser,
-          action: 'INICIO_SESION',
-          details: `Inicio de sesión exitoso de Administración con credenciales maestras. Operador: ${trimmedUser}. Token: ${token.substring(0, 14)}...`,
-          ip: '190.202.45.12',
-        };
-        setAuditLogs((prev) => [newLog, ...prev]);
-
-        return {
-          success: true,
-          message: '¡Entraste!',
-          role: 'Super Admin' as UserRole,
-        };
-      }
-
-      // 2. Consulta directa a la tabla 'configuracion' en Supabase con Anon Key (RLS desactivado)
+      // 1. Validar contra la tabla admin_users en Supabase con status = 'active'
       try {
         const { data, error } = await supabase
-          .from('configuracion')
+          .from('admin_users')
           .select('*')
+          .ilike('username', trimmedUser)
+          .eq('status', 'active')
           .limit(1);
 
-        const configRow = Array.isArray(data) ? data[0] : data;
+        const adminRow = Array.isArray(data) ? data[0] : data;
 
-        if (!error && configRow && configRow.admin_user && configRow.admin_pass) {
-          if (
-            configRow.admin_user.toLowerCase() === trimmedUser.toLowerCase() &&
-            configRow.admin_pass === trimmedPass
-          ) {
+        if (!error && adminRow && adminRow.username && adminRow.password) {
+          const isPasswordMatch = adminRow.password === hashedInput || adminRow.password === trimmedPass;
+          if (isPasswordMatch) {
             LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
 
+            const mappedRole = normalizeAdminRole(adminRow.role);
             const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
             setSessionToken(token);
-            setCurrentRoleState('Super Admin');
+            setCurrentRoleState(mappedRole);
             setIsAuthenticated(true);
-            setLoggedUsername(configRow.admin_user);
+            setLoggedUsername(adminRow.username);
             setViewMode('admin');
 
             fetchActiveRounds({ bypassCache: true });
@@ -3470,10 +3504,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const newLog: AuditLogEntry = {
               id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
               timestamp: new Date().toISOString(),
-              operatorRole: 'Super Admin',
-              operatorName: configRow.admin_user,
+              operatorRole: mappedRole,
+              operatorName: adminRow.display_name || adminRow.username,
               action: 'INICIO_SESION',
-              details: `Inicio de sesión exitoso como Admin verificado en tabla configuracion. Operador: ${configRow.admin_user}. Token: ${token.substring(0, 14)}...`,
+              details: `Inicio de sesión exitoso validado en Supabase (admin_users). Rol: ${mappedRole}. Token: ${token.substring(0, 14)}...`,
               ip: '190.202.45.12',
             };
             setAuditLogs((prev) => [newLog, ...prev]);
@@ -3481,15 +3515,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return {
               success: true,
               message: '¡Entraste!',
-              role: 'Super Admin' as UserRole,
+              role: mappedRole as UserRole,
             };
           }
         }
       } catch (err) {
-        console.warn('[GameContext] Supabase configuracion anon check warning:', err);
+        console.warn('[GameContext] Supabase admin_users login check warning:', err);
       }
 
-      // 3. Verificar login de admin del lado del servidor (fallback a endpoint /api/admin/login)
+      // 2. Verificar login de admin del lado del servidor (/api/admin/login)
       try {
         const resp = await fetch('/api/admin/login', {
           method: 'POST',
@@ -3502,9 +3536,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (result.success) {
             LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
 
+            const mappedRole = normalizeAdminRole(result.role);
             const token = result.token || `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
             setSessionToken(token);
-            setCurrentRoleState((result.role as UserRole) || 'Super Admin');
+            setCurrentRoleState(mappedRole);
             setIsAuthenticated(true);
             setLoggedUsername(result.username || trimmedUser);
             setViewMode('admin');
@@ -3514,10 +3549,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const newLog: AuditLogEntry = {
               id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
               timestamp: new Date().toISOString(),
-              operatorRole: (result.role as UserRole) || 'Super Admin',
+              operatorRole: mappedRole,
               operatorName: result.username || trimmedUser,
               action: 'INICIO_SESION',
-              details: `Inicio de sesión exitoso de Administración verificado en servidor (configuracion). Token: ${token.substring(0, 14)}...`,
+              details: `Inicio de sesión exitoso de Administración verificado en servidor (admin_users). Token: ${token.substring(0, 14)}...`,
               ip: '190.202.45.12',
             };
             setAuditLogs((prev) => [newLog, ...prev]);
@@ -3525,7 +3560,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return {
               success: true,
               message: '¡Entraste!',
-              role: (result.role as UserRole) || 'Super Admin',
+              role: mappedRole as UserRole,
             };
           }
         }
@@ -3533,36 +3568,34 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('[GameContext] Intento de login admin en servidor offline o fallback:', err);
       }
 
-      // Check system admin credentials from local state (Fallback)
+      // 3. Fallback en cache local de credenciales
       const foundCred = systemCredentials.find(
         (c) =>
           c.username.toLowerCase() === trimmedUser.toLowerCase() &&
-          c.password === trimmedPass &&
+          (c.password === hashedInput || c.password === trimmedPass) &&
           c.status === 'active'
       );
 
       if (foundCred) {
-        // Clear any failed attempts
         LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
 
-        // Generate ephemeral session token
+        const mappedRole = normalizeAdminRole(foundCred.role);
         const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         setSessionToken(token);
-        setCurrentRoleState(foundCred.role);
+        setCurrentRoleState(mappedRole);
         setIsAuthenticated(true);
         setLoggedUsername(foundCred.username);
         setViewMode('admin');
 
-        // Immediate fresh fetch of active rounds without cache on login
         fetchActiveRounds({ bypassCache: true });
 
         const newLog: AuditLogEntry = {
           id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           timestamp: new Date().toISOString(),
-          operatorRole: foundCred.role,
+          operatorRole: mappedRole,
           operatorName: foundCred.displayName,
           action: 'INICIO_SESION',
-          details: `Inicio de sesión exitoso. Operador: ${foundCred.username} (${foundCred.role}). Token: ${token.substring(0, 14)}...`,
+          details: `Inicio de sesión exitoso. Operador: ${foundCred.username} (${mappedRole}). Token: ${token.substring(0, 14)}...`,
           ip: '190.202.45.12',
         };
         setAuditLogs((prev) => [newLog, ...prev]);
@@ -3570,11 +3603,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return {
           success: true,
           message: '¡Entraste!',
-          role: foundCred.role as UserRole,
+          role: mappedRole as UserRole,
         };
       }
 
-      // Check player account
+      // 4. Check player account
       const playerMatch = users.find(
         (u) =>
           u.name.toLowerCase() === trimmedUser.toLowerCase() ||
@@ -3586,11 +3619,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const isValidPlayerPass =
         playerMatch &&
-        ((playerMatch.password && playerMatch.password === trimmedPass) ||
+        ((playerMatch.password && (playerMatch.password === trimmedPass || playerMatch.password === hashedInput)) ||
           (!playerMatch.password && (trimmedPass === '123456' || trimmedPass === 'player123')));
 
       if (playerMatch && isValidPlayerPass) {
-        // Clear failed attempts on successful match
         LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
         if (playerMatch.email) {
           LotteryStorageService.clearFailedLoginAttempts(playerMatch.email);
@@ -3604,7 +3636,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoggedUsername(playerMatch.name);
         setViewMode('player');
 
-        // Immediate fresh fetch of active rounds without cache on player login
         fetchActiveRounds({ bypassCache: true });
 
         return {
@@ -3615,7 +3646,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      // Record failed login attempt and check for lockout (3 max attempts)
+      // 5. Record failed login attempt and check for lockout (3 max attempts)
       const failResult = LotteryStorageService.recordFailedLoginAttempt(trimmedUser);
       if (playerMatch && playerMatch.email) {
         LotteryStorageService.recordFailedLoginAttempt(playerMatch.email);
@@ -3637,7 +3668,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         message: 'Clave mala',
       };
     },
-    [systemCredentials, users]
+    [systemCredentials, users, fetchActiveRounds]
   );
 
   // Request Password Recovery via Email
@@ -4176,6 +4207,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateUserKyc,
         verifyCurrentAccount,
         systemCredentials,
+        fetchSystemCredentials,
         createSystemCredential,
         updateSystemCredential,
         deleteSystemCredential,

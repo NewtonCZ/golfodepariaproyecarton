@@ -2,9 +2,27 @@ import express from 'express';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+// Hashing helper for server authentication (SHA-256)
+function hashPasswordServer(password: string): string {
+  return crypto.createHash('sha256').update(password.trim()).digest('hex');
+}
+
+function normalizeAdminRoleServer(roleStr?: string): 'Super Admin' | 'Operador Financiero' | 'Auditor' {
+  if (!roleStr) return 'Super Admin';
+  const clean = roleStr.toLowerCase().replace(/[\s_-]/g, '');
+  if (clean.includes('finan') || clean === 'operadorfinanciero') {
+    return 'Operador Financiero';
+  }
+  if (clean.includes('audit') || clean === 'auditor') {
+    return 'Auditor';
+  }
+  return 'Super Admin';
+}
 
 // Supabase server-side client using Anon Key (no Service Role Key)
 function getSupabaseServerClient(): SupabaseClient | null {
@@ -92,47 +110,9 @@ let serverCommercialConfig: any = {
 let serverUsers: any[] = [
 ];
 
-// In-memory persistent server state for credentials - VERSIÓN SEGURA
-// Las claves REALES están en variables de entorno o Cloudflare
+// In-memory runtime cache for credentials loaded dynamically from Supabase admin_users table
+let serverCredentials: any[] = [];
 
-let serverCredentials: any[] = [
-  {
-    id: 'cred-0',
-    displayName: 'Administrador Principal',
-    username: 'MiprimerCommit1',
-    role: 'Super Admin',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    password: 'PrimerCommit123$',
-  },
-  {
-    id: 'cred-1',
-    displayName: 'Director General',
-    username: process.env.SUPER_ADMIN_USER || 'admin',
-    role: 'Super Admin',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    password: process.env.SUPER_ADMIN_PASS || 'admin123',
-  },
-  {
-    id: 'cred-2',
-    displayName: 'Auditor Principal',
-    username: process.env.AUDITOR_USER || 'auditor',
-    role: 'Auditor',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    password: process.env.AUDITOR_PASS || 'auditor123',
-  },
-  {
-    id: 'cred-3',
-    displayName: 'Operador Bóveda Central',
-    username: process.env.FINANZAS_USER || 'finanzas',
-    role: 'Operador Financiero',
-    status: 'active',
-    createdAt: new Date().toISOString(),
-    password: process.env.FINANZAS_PASS || 'finanzas123',
-  },
-];
 let serverRounds: GameRoundServer[] = [
   {
     id: 'round-101',
@@ -1710,7 +1690,7 @@ async function startServer() {
       role: cred.role || 'Super Admin',
       status: cred.status || 'active',
       createdAt: cred.createdAt || new Date().toISOString(),
-      password: cred.password.trim(),
+      password: cred.password ? hashPasswordServer(cred.password) : '',
     };
 
     const existingIdx = serverCredentials.findIndex((c) => c.username.toLowerCase() === newCred.username.toLowerCase());
@@ -1719,6 +1699,20 @@ async function startServer() {
     } else {
       serverCredentials = [newCred, ...serverCredentials];
     }
+
+    // Sync to Supabase admin_users if connected
+    try {
+      const supabaseServer = getSupabaseServerClient();
+      if (supabaseServer) {
+        supabaseServer.from('admin_users').upsert({
+          username: newCred.username,
+          password: newCred.password,
+          role: newCred.role === 'Operador Financiero' ? 'operador_financiero' : newCred.role === 'Auditor' ? 'auditor' : 'super_admin',
+          status: newCred.status,
+          display_name: newCred.displayName,
+        }, { onConflict: 'username' }).then(() => {});
+      }
+    } catch (e) {}
 
     broadcastRealtimeEvent('credentials_updated', { credentials: serverCredentials });
     res.status(201).json({ success: true, message: 'Credencial de operador guardada exitosamente', data: newCred });
@@ -1735,7 +1729,7 @@ async function startServer() {
     serverCredentials[idx] = {
       ...serverCredentials[idx],
       ...updates,
-      password: updates.password ? updates.password.trim() : serverCredentials[idx].password,
+      password: updates.password && updates.password.trim() ? hashPasswordServer(updates.password) : serverCredentials[idx].password,
     };
 
     broadcastRealtimeEvent('credentials_updated', { credentials: serverCredentials });
@@ -1744,7 +1738,16 @@ async function startServer() {
 
   app.delete('/api/credentials/:id', (req, res) => {
     const { id } = req.params;
+    const target = serverCredentials.find((c) => c.id === id);
     serverCredentials = serverCredentials.filter((c) => c.id !== id);
+
+    try {
+      const supabaseServer = getSupabaseServerClient();
+      if (supabaseServer && target) {
+        supabaseServer.from('admin_users').delete().eq('username', target.username).then(() => {});
+      }
+    } catch (e) {}
+
     broadcastRealtimeEvent('credentials_updated', { credentials: serverCredentials });
     res.json({ success: true, message: 'Credencial eliminada' });
   });
@@ -1778,7 +1781,7 @@ async function startServer() {
   });
 
   // -------------------------------------------------------------
-  // API Routes: Admin Login seguro del lado del servidor (tabla 'configuracion' con Service Role / directa)
+  // API Routes: Admin Login seguro validando contra la tabla 'admin_users' en Supabase
   // -------------------------------------------------------------
   const handleAdminServerLogin = async (req: express.Request, res: express.Response) => {
     const { username, password } = req.body || {};
@@ -1788,27 +1791,31 @@ async function startServer() {
 
     const trimmedUser = String(username).trim();
     const trimmedPass = String(password).trim();
+    const hashedPass = hashPasswordServer(trimmedPass);
 
-    // 1. Busca en la tabla configuracion del lado del servidor (usando Service Role o cliente de servidor)
+    // 1. Busca en la tabla admin_users en Supabase con status = 'active'
     try {
       const supabaseServer = getSupabaseServerClient();
       if (supabaseServer) {
-        // Consultar la única fila en la tabla configuracion
         const { data, error } = await supabaseServer
-          .from('configuracion')
+          .from('admin_users')
           .select('*')
+          .ilike('username', trimmedUser)
+          .eq('status', 'active')
           .limit(1);
 
-        const configRow = Array.isArray(data) ? data[0] : data;
+        const adminRow = Array.isArray(data) ? data[0] : data;
 
-        if (!error && configRow && configRow.admin_user && configRow.admin_pass) {
-          if (trimmedUser === configRow.admin_user && trimmedPass === configRow.admin_pass) {
+        if (!error && adminRow && adminRow.username && adminRow.password) {
+          const isPasswordValid = adminRow.password === hashedPass || adminRow.password === trimmedPass;
+          if (isPasswordValid) {
+            const mappedRole = normalizeAdminRoleServer(adminRow.role);
             const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
             return res.json({
               success: true,
               message: '¡Entraste!',
-              role: 'Super Admin',
-              username: configRow.admin_user,
+              role: mappedRole,
+              username: adminRow.username,
               token,
             });
           } else {
@@ -1820,20 +1827,21 @@ async function startServer() {
         }
       }
     } catch (err) {
-      console.warn('[server] Error consultando tabla configuracion en servidor:', err);
+      console.warn('[server] Error consultando tabla admin_users en servidor:', err);
     }
 
     // 2. Fallback: verificar credenciales administrativas del servidor
     const foundCred = serverCredentials.find(
-      (c) => c.username.toLowerCase() === trimmedUser.toLowerCase() && c.password === trimmedPass && c.status === 'active'
+      (c) => c.username.toLowerCase() === trimmedUser.toLowerCase() && (c.password === hashedPass || c.password === trimmedPass) && c.status === 'active'
     );
 
     if (foundCred) {
+      const mappedRole = normalizeAdminRoleServer(foundCred.role);
       const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       return res.json({
         success: true,
         message: '¡Entraste!',
-        role: foundCred.role || 'Super Admin',
+        role: mappedRole,
         username: foundCred.username,
         token,
       });

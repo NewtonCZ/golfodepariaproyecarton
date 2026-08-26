@@ -57,46 +57,19 @@ export const supabase = {
         filters[column] = value;
         return queryBuilder;
       },
+      ilike: (column: string, value: any) => {
+        filters[column] = value;
+        return queryBuilder;
+      },
+      order: (_column: string, _opts?: any) => queryBuilder,
       limit: (_n: number) => queryBuilder,
       maybeSingle: async (): Promise<SupabaseQueryResult> => {
         return queryBuilder.single();
       },
       single: async (): Promise<SupabaseQueryResult> => {
-        if (tableName === 'configuracion' || tableName === 'config') {
-          const savedConfig = typeof localStorage !== 'undefined' ? localStorage.getItem('millionaire_lottery_v1_config') : null;
-          let adminUser = 'MiprimerCommit1';
-          let adminPass = 'PrimerCommit123$';
-
-          if (savedConfig) {
-            try {
-              const parsed = JSON.parse(savedConfig);
-              if (parsed.admin_user) adminUser = parsed.admin_user;
-              if (parsed.admin_pass) adminPass = parsed.admin_pass;
-            } catch (e) {}
-          }
-
-          // If filtering by admin_user / admin_pass
-          if (filters.admin_user && filters.admin_user.toLowerCase() !== adminUser.toLowerCase() && filters.admin_user.toLowerCase() !== 'admin') {
-            return { data: null, error: null };
-          }
-          if (filters.admin_pass && filters.admin_pass !== adminPass && filters.admin_pass !== 'admin123') {
-            return { data: null, error: null };
-          }
-
-          return {
-            data: {
-              id: filters.id || 1,
-              admin_user: adminUser,
-              admin_pass: adminPass,
-              created_at: new Date().toISOString(),
-            },
-            error: null,
-          };
-        }
-
         return {
           data: null,
-          error: { message: `No data found in fallback for table ${tableName}` },
+          error: { message: `Table ${tableName} not available in offline fallback mode` },
         };
       },
       then: async (resolve: any) => {
@@ -107,6 +80,12 @@ export const supabase = {
       update: async (values: any) => ({
         eq: (_col: string, _val: any) => ({
           data: values,
+          error: null,
+        }),
+      }),
+      delete: async () => ({
+        eq: (_col: string, _val: any) => ({
+          data: null,
           error: null,
         }),
       }),
