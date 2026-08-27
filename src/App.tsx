@@ -15,6 +15,7 @@ import { UserProfileModal } from './components/player/UserProfileModal';
 import { AdminPortal } from './components/admin/AdminPortal';
 import { AdminPlayersView } from './components/admin/AdminPlayersView';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import { CustomerSupportWidget } from './components/support/CustomerSupportWidget';
 import {
   ShieldCheck,
   Smartphone,
@@ -148,6 +149,9 @@ const AppContent: React.FC = () => {
         isOpen={isUserProfileOpen}
         onClose={closeUserProfile}
       />
+
+      {/* Floating Customer Support Widget & Ticket Modal */}
+      <CustomerSupportWidget />
 
       {/* Footer */}
       <footer className="border-t border-slate-800 bg-slate-950 text-slate-400 py-8 px-4 sm:px-6 mt-12 text-xs">

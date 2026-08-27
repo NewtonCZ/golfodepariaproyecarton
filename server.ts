@@ -2052,6 +2052,78 @@ async function startServer() {
   app.post('/api/admin/login', handleAdminServerLogin);
   app.post('/api/auth/admin-login', handleAdminServerLogin);
 
+  // In-memory support tickets collection
+  let serverSupportTickets: any[] = [];
+
+  // POST /api/support/tickets - Crear y sincronizar ticket de soporte/reclamo
+  app.post('/api/support/tickets', async (req, res) => {
+    try {
+      const { ticket } = req.body;
+      if (!ticket || !ticket.subject || !ticket.description) {
+        return res.status(400).json({ success: false, message: 'Datos incompletos para el ticket' });
+      }
+
+      const formattedTicket = {
+        id: ticket.id || `ticket-${Date.now()}`,
+        ticketNumber: ticket.ticketNumber || `TKT-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`,
+        userName: ticket.userName || 'Jugador',
+        userEmail: ticket.userEmail || '',
+        userPhone: ticket.userPhone || '',
+        category: ticket.category || 'General',
+        priority: ticket.priority || 'Normal',
+        subject: ticket.subject,
+        description: ticket.description,
+        imageUrl: ticket.imageUrl || null,
+        imageName: ticket.imageName || null,
+        status: ticket.status || 'Abierto',
+        createdAt: ticket.createdAt || new Date().toISOString(),
+      };
+
+      serverSupportTickets = [formattedTicket, ...serverSupportTickets].slice(0, 200);
+
+      // Sincronizar en Supabase si está disponible
+      try {
+        const supabaseServer = getSupabaseServerClient();
+        if (supabaseServer) {
+          const dbPayload = {
+            ticket_number: formattedTicket.ticketNumber,
+            user_name: formattedTicket.userName,
+            user_email: formattedTicket.userEmail,
+            user_phone: formattedTicket.userPhone,
+            category: formattedTicket.category,
+            priority: formattedTicket.priority,
+            subject: formattedTicket.subject,
+            description: formattedTicket.description,
+            image_url: formattedTicket.imageUrl,
+            image_name: formattedTicket.imageName,
+            status: 'open',
+            created_at: formattedTicket.createdAt,
+          };
+          await supabaseServer.from('support_tickets').insert([dbPayload]);
+        }
+      } catch (sbErr) {
+        console.warn('[server] Error insertando ticket en Supabase:', sbErr);
+      }
+
+      // Broadcast en tiempo real a administradores
+      broadcastRealtimeEvent('support_ticket_created', { ticket: formattedTicket });
+
+      return res.status(201).json({
+        success: true,
+        message: 'Ticket de atención al cliente registrado con éxito',
+        ticket: formattedTicket,
+      });
+    } catch (err: any) {
+      console.error('[server] Error creando ticket de soporte:', err);
+      return res.status(500).json({ success: false, message: 'Error interno al registrar ticket' });
+    }
+  });
+
+  // GET /api/support/tickets - Obtener tickets registrados
+  app.get('/api/support/tickets', (req, res) => {
+    res.json({ success: true, tickets: serverSupportTickets });
+  });
+
   // Endpoint para descargar el zip del build de producción
   app.get('/dist-production.zip', (req, res) => {
     const zipPath = path.join(process.cwd(), 'dist-production.zip');
