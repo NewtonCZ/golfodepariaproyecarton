@@ -105,14 +105,9 @@ const AppContent: React.FC = () => {
             )}
 
             {activeTab === 'admin' && (
-              <AdminPlayersView
-                onBackToGame={() => {
-                  if (typeof window !== 'undefined' && window.history?.pushState) {
-                    window.history.pushState({}, '', '/');
-                  }
-                  setActiveTab('home');
-                }}
-              />
+              <ProtectedRoute allowedRoles={['Super Admin', 'Operador Financiero', 'Auditor']}>
+                <AdminPortal />
+              </ProtectedRoute>
             )}
           </>
         )}

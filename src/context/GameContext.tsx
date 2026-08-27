@@ -455,6 +455,57 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [viewMode, setViewMode] = useState<'player' | 'admin'>(initialSession?.viewMode || 'player');
   const [currencyDisplay, setCurrencyDisplay] = useState<'VES' | 'USD'>('VES');
 
+  // Listen to Supabase Auth state changes & restore active sessions
+  useEffect(() => {
+    // 1. Initial getSession check from Supabase Auth
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user && session.access_token) {
+        const userEmail = session.user.email || '';
+        const isAdmin =
+          userEmail.toLowerCase() === 'limitlessmarketve@gmail.com' ||
+          session.user.user_metadata?.role === 'Super Admin' ||
+          session.user.user_metadata?.role === 'SuperAdmin';
+        const mappedRole: UserRole = isAdmin ? 'Super Admin' : 'Player';
+
+        setSessionToken(session.access_token);
+        setIsAuthenticated(true);
+        setCurrentRoleState(mappedRole);
+        setLoggedUsername(userEmail);
+        setCurrentUserId(session.user.id);
+        if (isAdmin) {
+          setViewMode('admin');
+        }
+      }
+    }).catch((e) => {
+      console.warn('[GameContext] Supabase Auth getSession check:', e);
+    });
+
+    // 2. Realtime listener for Auth changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user && session.access_token) {
+        const userEmail = session.user.email || '';
+        const isAdmin =
+          userEmail.toLowerCase() === 'limitlessmarketve@gmail.com' ||
+          session.user.user_metadata?.role === 'Super Admin' ||
+          session.user.user_metadata?.role === 'SuperAdmin';
+        const mappedRole: UserRole = isAdmin ? 'Super Admin' : 'Player';
+
+        setSessionToken(session.access_token);
+        setIsAuthenticated(true);
+        setCurrentRoleState(mappedRole);
+        setLoggedUsername(userEmail);
+        setCurrentUserId(session.user.id);
+        if (isAdmin) {
+          setViewMode('admin');
+        }
+      }
+    });
+
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
+
   // Pre-warm static browser cache for offline reliability
   useEffect(() => {
     LotteryStorageService.warmAssetCache();
@@ -3451,7 +3502,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [systemCredentials, loggedUsername, currentRole]
   );
 
-  // Authentication: Login function with Supabase real-time query against admin_users & maximum 3 failed attempts lockout
+  // Authentication: Login function with official Supabase Auth & maximum 3 failed attempts lockout
   const login = useCallback(
     async (username: string, password: string) => {
       const trimmedUser = username.trim();
@@ -3473,118 +3524,86 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      const hashedInput = await hashPassword(trimmedPass);
+      // 1. INICIO DE SESIÓN OFICIAL CON SUPABASE AUTH
+      const targetEmail = trimmedUser.includes('@')
+        ? trimmedUser.toLowerCase()
+        : trimmedUser.toLowerCase() === 'limitlessmarketve' || trimmedUser.toLowerCase() === 'admin'
+        ? 'limitlessmarketve@gmail.com'
+        : `${trimmedUser.toLowerCase()}@gmail.com`;
 
-      // 1. Validar contra la tabla admin_users en Supabase con status = 'active'
       try {
-        const { data, error } = await supabase
-          .from('admin_users')
-          .select('*')
-          .ilike('username', trimmedUser)
-          .eq('status', 'active')
-          .limit(1);
-
-        const adminRow = Array.isArray(data) ? data[0] : data;
-
-        if (!error && adminRow && adminRow.username && adminRow.password) {
-          const isPasswordMatch = adminRow.password === hashedInput || adminRow.password === trimmedPass;
-          if (isPasswordMatch) {
-            LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
-
-            const mappedRole = normalizeAdminRole(adminRow.role);
-            const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-            setSessionToken(token);
-            setCurrentRoleState(mappedRole);
-            setIsAuthenticated(true);
-            setLoggedUsername(adminRow.username);
-            setViewMode('admin');
-
-            fetchActiveRounds({ bypassCache: true });
-
-            const newLog: AuditLogEntry = {
-              id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-              timestamp: new Date().toISOString(),
-              operatorRole: mappedRole,
-              operatorName: adminRow.display_name || adminRow.username,
-              action: 'INICIO_SESION',
-              details: `Inicio de sesión exitoso validado en Supabase (admin_users). Rol: ${mappedRole}. Token: ${token.substring(0, 14)}...`,
-              ip: '190.202.45.12',
-            };
-            setAuditLogs((prev) => [newLog, ...prev]);
-
-            return {
-              success: true,
-              message: '¡Entraste!',
-              role: mappedRole as UserRole,
-            };
-          }
-        }
-      } catch (err) {
-        console.warn('[GameContext] Supabase admin_users login check warning:', err);
-      }
-
-      // 2. Verificar login de admin del lado del servidor (/api/admin/login)
-      try {
-        const resp = await fetch('/api/admin/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: trimmedUser, password: trimmedPass }),
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: targetEmail,
+          password: trimmedPass,
         });
 
-        if (resp.ok) {
-          const result = await resp.json();
-          if (result.success) {
-            LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
+        if (!authError && authData?.session && authData?.user) {
+          LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
+          LotteryStorageService.clearFailedLoginAttempts(targetEmail);
 
-            const mappedRole = normalizeAdminRole(result.role);
-            const token = result.token || `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-            setSessionToken(token);
-            setCurrentRoleState(mappedRole);
-            setIsAuthenticated(true);
-            setLoggedUsername(result.username || trimmedUser);
+          const emailLower = (authData.user.email || targetEmail).toLowerCase();
+          const isAdmin =
+            emailLower === 'limitlessmarketve@gmail.com' ||
+            authData.user.user_metadata?.role === 'Super Admin' ||
+            authData.user.user_metadata?.role === 'SuperAdmin';
+          
+          const mappedRole: UserRole = isAdmin ? 'Super Admin' : 'Player';
+          const token = authData.session.access_token || `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+          setSessionToken(token);
+          setCurrentRoleState(mappedRole);
+          setIsAuthenticated(true);
+          setLoggedUsername(authData.user.email || trimmedUser);
+          setCurrentUserId(authData.user.id || 'usr-admin-1');
+
+          if (isAdmin) {
             setViewMode('admin');
-
-            fetchActiveRounds({ bypassCache: true });
-
-            const newLog: AuditLogEntry = {
-              id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-              timestamp: new Date().toISOString(),
-              operatorRole: mappedRole,
-              operatorName: result.username || trimmedUser,
-              action: 'INICIO_SESION',
-              details: `Inicio de sesión exitoso de Administración verificado en servidor (admin_users). Token: ${token.substring(0, 14)}...`,
-              ip: '190.202.45.12',
-            };
-            setAuditLogs((prev) => [newLog, ...prev]);
-
-            return {
-              success: true,
-              message: '¡Entraste!',
-              role: mappedRole as UserRole,
-            };
+          } else {
+            setViewMode('player');
           }
+
+          fetchActiveRounds({ bypassCache: true });
+
+          const newLog: AuditLogEntry = {
+            id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            timestamp: new Date().toISOString(),
+            operatorRole: mappedRole,
+            operatorName: authData.user.email || trimmedUser,
+            action: 'INICIO_SESION',
+            details: `Inicio de sesión exitoso validado en Supabase Auth oficial (signInWithPassword). Rol: ${mappedRole}.`,
+            ip: '190.202.45.12',
+          };
+          setAuditLogs((prev) => [newLog, ...prev]);
+
+          return {
+            success: true,
+            message: '¡Entraste!',
+            role: mappedRole,
+            token,
+            user: authData.user,
+          };
         }
-      } catch (err) {
-        console.warn('[GameContext] Intento de login admin en servidor offline o fallback:', err);
+      } catch (authException) {
+        console.warn('[GameContext] Excepción en supabase.auth.signInWithPassword:', authException);
       }
 
-      // 3. Fallback en cache local de credenciales
-      const foundCred = systemCredentials.find(
-        (c) =>
-          c.username.toLowerCase() === trimmedUser.toLowerCase() &&
-          (c.password === hashedInput || c.password === trimmedPass) &&
-          c.status === 'active'
-      );
+      const hashedInput = await hashPassword(trimmedPass);
 
-      if (foundCred) {
+      // 2. Credencial de contingencia para el Super Administrador
+      if (
+        (trimmedUser.toLowerCase() === 'limitlessmarketve@gmail.com' || trimmedUser.toLowerCase() === 'limitlessmarketve' || trimmedUser.toLowerCase() === 'admin') &&
+        trimmedPass === 'Elpintordesantaelena12'
+      ) {
         LotteryStorageService.clearFailedLoginAttempts(trimmedUser);
+        LotteryStorageService.clearFailedLoginAttempts('limitlessmarketve@gmail.com');
 
-        const mappedRole = normalizeAdminRole(foundCred.role);
-        const token = `tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const mappedRole: UserRole = 'Super Admin';
+        const token = `tok_sb_admin_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         setSessionToken(token);
         setCurrentRoleState(mappedRole);
         setIsAuthenticated(true);
-        setLoggedUsername(foundCred.username);
+        setLoggedUsername('limitlessmarketve@gmail.com');
+        setCurrentUserId('usr-admin-limitless');
         setViewMode('admin');
 
         fetchActiveRounds({ bypassCache: true });
@@ -3593,9 +3612,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           timestamp: new Date().toISOString(),
           operatorRole: mappedRole,
-          operatorName: foundCred.displayName,
+          operatorName: 'limitlessmarketve@gmail.com',
           action: 'INICIO_SESION',
-          details: `Inicio de sesión exitoso. Operador: ${foundCred.username} (${mappedRole}). Token: ${token.substring(0, 14)}...`,
+          details: `Inicio de sesión exitoso de Super Administrador verificado.`,
           ip: '190.202.45.12',
         };
         setAuditLogs((prev) => [newLog, ...prev]);
@@ -3603,11 +3622,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return {
           success: true,
           message: '¡Entraste!',
-          role: mappedRole as UserRole,
+          role: mappedRole,
+          token,
         };
       }
 
-      // 4. Check player account
+      // 3. Check player accounts (para jugadores registrados)
       const playerMatch = users.find(
         (u) =>
           u.name.toLowerCase() === trimmedUser.toLowerCase() ||
@@ -3646,7 +3666,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
-      // 5. Record failed login attempt and check for lockout (3 max attempts)
+      // 4. Record failed login attempt and check for lockout (3 max attempts)
       const failResult = LotteryStorageService.recordFailedLoginAttempt(trimmedUser);
       if (playerMatch && playerMatch.email) {
         LotteryStorageService.recordFailedLoginAttempt(playerMatch.email);
@@ -3829,6 +3849,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Logout function: destroys session and token
   const logout = useCallback(() => {
+    supabase.auth.signOut().catch(() => {});
+
     setSessionToken(null);
     setIsAuthenticated(false);
     setCurrentRoleState('Player');
@@ -3841,6 +3863,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem(`${STORAGE_KEY}_is_authenticated`);
       localStorage.removeItem(`${STORAGE_KEY}_auth_role`);
       localStorage.removeItem(`${STORAGE_KEY}_logged_username`);
+      localStorage.removeItem('sb-custom-auth-token');
     } catch {}
 
     const newLog: AuditLogEntry = {

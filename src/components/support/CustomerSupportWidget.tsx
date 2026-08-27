@@ -361,7 +361,7 @@ export const CustomerSupportWidget: React.FC = () => {
               {/* Enlace WhatsApp */}
               <a
                 id="whatsapp-channel-button"
-                href={WHATSAPP_GROUP_URL}
+                href="https://chat.whatsapp.com/BVlYWF58gNu82nr4VDVVPf?s=cl&p=a&mlu=4"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group flex items-center justify-between p-2.5 sm:p-3 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-600/30 hover:border-emerald-500/60 transition-all text-left"
@@ -386,7 +386,7 @@ export const CustomerSupportWidget: React.FC = () => {
               {/* Enlace Telegram */}
               <a
                 id="telegram-channel-button"
-                href={TELEGRAM_GROUP_URL}
+                href="https://t.me/+qg2dckERI3k0YjM5"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group flex items-center justify-between p-2.5 sm:p-3 rounded-xl bg-sky-950/40 hover:bg-sky-900/50 border border-sky-600/30 hover:border-sky-500/60 transition-all text-left"
