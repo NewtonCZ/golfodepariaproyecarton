@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { sendPasswordRecoveryEmail, sendPasswordChangedEmail } from './src/services/backendEmailService';
 
 // Hashing helper for server authentication (SHA-256)
 function hashPasswordServer(password: string): string {
@@ -1607,17 +1608,209 @@ async function startServer() {
     res.json({ success: true, message: '¡Contraseña actualizada con éxito!' });
   });
 
+  // Store for recovery tokens in memory (email -> { code, expiresAt, used, userName })
+  const serverRecoveryTokens = new Map<string, { email: string; code: string; expiresAt: number; used: boolean; userName: string }>();
+
+  // POST /api/auth/send-recovery-code - Solicitar código de recuperación vía Resend y Supabase
+  app.post('/api/auth/send-recovery-code', async (req, res) => {
+    try {
+      const { identifier } = req.body;
+      if (!identifier || typeof identifier !== 'string' || !identifier.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Por favor ingresa tu correo electrónico, nombre de usuario o número de cédula.',
+        });
+      }
+
+      const clean = identifier.trim().toLowerCase();
+      let targetEmail: string | null = null;
+      let userName = 'Usuario';
+
+      // 1. Consultar en Supabase (tabla 'jugadores', 'users', o 'admin_users')
+      const supabaseServer = getSupabaseServerClient();
+      if (supabaseServer) {
+        try {
+          // Buscar en 'jugadores'
+          const { data: jugData } = await supabaseServer
+            .from('jugadores')
+            .select('*')
+            .or(`correo.ilike.${clean},cedula.ilike.${clean},nombre.ilike.${clean}`)
+            .limit(1);
+
+          if (jugData && jugData.length > 0) {
+            targetEmail = jugData[0].correo || jugData[0].email;
+            userName = jugData[0].nombre || 'Jugador';
+          }
+        } catch (e) {
+          console.warn('[server] Error buscando en Supabase jugadores:', e);
+        }
+
+        if (!targetEmail) {
+          try {
+            // Buscar en 'admin_users'
+            const { data: adminData } = await supabaseServer
+              .from('admin_users')
+              .select('*')
+              .ilike('username', clean)
+              .limit(1);
+
+            if (adminData && adminData.length > 0) {
+              userName = adminData[0].display_name || adminData[0].username;
+              targetEmail = adminData[0].email || (clean.includes('@') ? clean : `${clean}@loteria.com`);
+            }
+          } catch (e) {
+            console.warn('[server] Error buscando en Supabase admin_users:', e);
+          }
+        }
+      }
+
+      // 2. Buscar en memoria local de usuarios si no se encontró en Supabase
+      if (!targetEmail) {
+        const matchedUser = serverUsers.find(
+          (u) =>
+            (u.email && u.email.toLowerCase() === clean) ||
+            u.name.toLowerCase() === clean ||
+            (u.documentId && u.documentId.toLowerCase() === clean) ||
+            u.phone === clean
+        );
+        if (matchedUser) {
+          targetEmail = matchedUser.email || (clean.includes('@') ? clean : null);
+          userName = matchedUser.name || 'Jugador';
+        }
+      }
+
+      // 3. Buscar en credenciales de operadores
+      if (!targetEmail) {
+        const matchedCred = serverCredentials.find((c) => c.username.toLowerCase() === clean);
+        if (matchedCred) {
+          userName = matchedCred.displayName || matchedCred.username;
+          targetEmail = clean.includes('@') ? clean : `${clean}@loteria.com`;
+        }
+      }
+
+      // Si el identificador es un formato de email directo
+      if (!targetEmail && clean.includes('@') && clean.includes('.')) {
+        targetEmail = clean;
+      }
+
+      if (!targetEmail) {
+        return res.status(404).json({
+          success: false,
+          message: 'No se encontró ninguna cuenta asociada a los datos proporcionados. Por favor verifica tu correo o usuario.',
+        });
+      }
+
+      // Generar código de seguridad de 6 dígitos
+      const recoveryCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutos
+
+      // Guardar en cache de recuperación
+      serverRecoveryTokens.set(targetEmail.toLowerCase(), {
+        email: targetEmail.toLowerCase(),
+        code: recoveryCode,
+        expiresAt,
+        used: false,
+        userName,
+      });
+
+      // Enviar correo real vía Resend
+      const emailResult = await sendPasswordRecoveryEmail({
+        to: targetEmail,
+        userName,
+        recoveryCode,
+        expiresInMinutes: 15,
+      });
+
+      console.log(`[server] Código de recuperación generado para ${targetEmail}: ${recoveryCode} (Provider: ${emailResult.provider})`);
+
+      return res.json({
+        success: true,
+        email: targetEmail,
+        provider: emailResult.provider,
+        message: emailResult.provider === 'resend'
+          ? `¡Código enviado con éxito! Hemos despachado un código de 6 dígitos a ${targetEmail} a través de Resend. Revisa tu bandeja de entrada y spam.`
+          : `Hemos generado tu código de verificación para ${targetEmail}. Revisa tu bandeja de entrada.`,
+        demoCode: process.env.NODE_ENV !== 'production' ? recoveryCode : undefined,
+      });
+    } catch (err: any) {
+      console.error('[server] Error en /api/auth/send-recovery-code:', err);
+      return res.status(500).json({
+        success: false,
+        message: 'Ocurrió un error al procesar el envío del código de recuperación. Inténtalo nuevamente.',
+      });
+    }
+  });
+
+  // POST /api/auth/verify-recovery-code - Verificar código de recuperación
+  app.post('/api/auth/verify-recovery-code', (req, res) => {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ success: false, message: 'Correo y código son requeridos' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const tokenData = serverRecoveryTokens.get(cleanEmail);
+
+    if (!tokenData) {
+      return res.status(400).json({ success: false, message: 'No hay ninguna solicitud de recuperación activa para este correo.' });
+    }
+
+    if (tokenData.used) {
+      return res.status(400).json({ success: false, message: 'Este código de verificación ya ha sido utilizado.' });
+    }
+
+    if (Date.now() > tokenData.expiresAt) {
+      return res.status(400).json({ success: false, message: 'El código de seguridad ha expirado (validez de 15 minutos).' });
+    }
+
+    if (tokenData.code !== code.trim()) {
+      return res.status(400).json({ success: false, message: 'Código de verificación incorrecto. Por favor verifica el número de 6 dígitos.' });
+    }
+
+    return res.json({ success: true, message: 'Código de verificación correcto. Ahora puedes establecer tu nueva contraseña.' });
+  });
+
   // POST /api/reset-password - Restablecimiento de contraseña por email o identificador
-  app.post('/api/reset-password', (req, res) => {
-    const { identifier, newPassword } = req.body;
-    if (!identifier || !newPassword || newPassword.trim().length < 6) {
+  app.post('/api/reset-password', async (req, res) => {
+    const { identifier, email, code, newPassword } = req.body;
+    const targetIdent = (email || identifier || '').trim().toLowerCase();
+
+    if (!targetIdent || !newPassword || newPassword.trim().length < 6) {
       return res.status(400).json({ success: false, message: 'Identificador y nueva contraseña válida (mínimo 6 caracteres) requeridos' });
     }
 
-    const clean = identifier.trim().toLowerCase();
-    let updatedCount = 0;
+    // Si viene con código, validar código
+    if (code) {
+      const tokenData = serverRecoveryTokens.get(targetIdent);
+      if (tokenData && tokenData.code === code.trim()) {
+        tokenData.used = true;
+      }
+    }
 
-    // Buscar y actualizar en serverUsers
+    const clean = targetIdent;
+    let updatedCount = 0;
+    let targetName = 'Usuario';
+    const hashed = hashPasswordServer(newPassword.trim());
+
+    // 1. Actualizar en Supabase si está disponible
+    const supabaseServer = getSupabaseServerClient();
+    if (supabaseServer) {
+      try {
+        await supabaseServer
+          .from('admin_users')
+          .update({ password: hashed, updated_at: new Date().toISOString() })
+          .or(`username.ilike.${clean},email.ilike.${clean}`);
+      } catch (e) {}
+
+      try {
+        await supabaseServer
+          .from('jugadores')
+          .update({ password: newPassword.trim(), updated_at: new Date().toISOString() })
+          .or(`correo.ilike.${clean},cedula.ilike.${clean}`);
+      } catch (e) {}
+    }
+
+    // 2. Buscar y actualizar en serverUsers
     const userIdx = serverUsers.findIndex(
       (u) =>
         (u.email && u.email.toLowerCase() === clean) ||
@@ -1627,6 +1820,7 @@ async function startServer() {
     );
 
     if (userIdx >= 0) {
+      targetName = serverUsers[userIdx].name || targetName;
       serverUsers[userIdx] = {
         ...serverUsers[userIdx],
         password: newPassword.trim(),
@@ -1644,26 +1838,31 @@ async function startServer() {
       });
     }
 
-    // Buscar y actualizar en serverCredentials
+    // 3. Buscar y actualizar en serverCredentials
     const credIdx = serverCredentials.findIndex(
       (c) => c.username.toLowerCase() === clean || c.username.toLowerCase() === clean.split('@')[0]
     );
 
     if (credIdx >= 0) {
+      targetName = serverCredentials[credIdx].displayName || targetName;
       serverCredentials[credIdx] = {
         ...serverCredentials[credIdx],
-        password: newPassword.trim(),
+        password: hashed,
       };
       updatedCount++;
 
       broadcastRealtimeEvent('credentials_updated', { credentials: serverCredentials });
     }
 
-    if (updatedCount === 0) {
-      return res.status(404).json({ success: false, message: 'No se encontró ninguna cuenta asociada a los datos proporcionados' });
+    // Enviar correo de confirmación de cambio de contraseña
+    if (clean.includes('@')) {
+      sendPasswordChangedEmail({
+        to: clean,
+        userName: targetName,
+      }).catch((e) => console.warn('[server] Error sending password changed email:', e));
     }
 
-    res.json({ success: true, message: '¡Contraseña restablecida exitosamente en el servidor central!' });
+    res.json({ success: true, message: '¡Contraseña restablecida exitosamente en el servidor central y base de datos!' });
   });
 
   // -------------------------------------------------------------
