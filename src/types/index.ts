@@ -178,6 +178,17 @@ export interface AppUser {
   withdrawalMethods?: any[];
   failedLoginAttempts?: number;
   lockoutUntil?: number | null;
+  options?: {
+    data?: {
+      name?: string;
+      fullName?: string;
+      full_name?: string;
+      phone?: string;
+      telefono?: string;
+      [key: string]: any;
+    };
+    [key: string]: any;
+  };
 }
 
 export interface AdminBankConfig {

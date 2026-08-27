@@ -3966,6 +3966,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const fullName = `${data.firstName.trim()} ${data.lastName.trim()}`;
       const newUserId = `usr-${Date.now()}`;
+      const cleanPhone = data.phone.trim() || '0412-0000000';
 
       const newUser: AppUser = {
         id: newUserId,
@@ -3974,7 +3975,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         lastName: data.lastName.trim(),
         email: cleanEmail,
         password: data.password?.trim() || '123456',
-        phone: data.phone.trim(),
+        phone: cleanPhone,
         documentId: cleanDoc,
         birthDate: data.birthDate,
         country: 'Venezuela',
@@ -3990,6 +3991,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         kycVerifiedAt: new Date().toISOString(),
         kycFrontUrl: data.kycFrontUrl,
         kycBackUrl: data.kycBackUrl,
+        options: {
+          data: {
+            name: fullName,
+            fullName: fullName,
+            full_name: fullName,
+            firstName: data.firstName.trim(),
+            lastName: data.lastName.trim(),
+            phone: cleanPhone,
+            telefono: cleanPhone,
+            documentId: cleanDoc,
+            cedula: cleanDoc,
+            birthDate: data.birthDate,
+          },
+        },
       };
 
       // Direct update of users state (triggers localStorage persistence)
