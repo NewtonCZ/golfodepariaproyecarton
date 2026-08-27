@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import http from 'http';
 import path from 'path';
@@ -23,10 +24,11 @@ function normalizeAdminRoleServer(roleStr?: string): 'Super Admin' | 'Operador F
   }
   return 'Super Admin';
 }
-// Supabase client para VITE - Corregido
+
+// Supabase client para backend y VITE
 function getSupabaseServerClient(): SupabaseClient | null {
-  const url = import.meta.env.VITE_SUPABASE_URL as string
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+  const url = process.env.VITE_SUPABASE_URL || ((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_URL) as string) || '';
+  const key = process.env.VITE_SUPABASE_ANON_KEY || ((typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY) as string) || '';
   if (url && key && url.startsWith('http')) {
     try {
       return createClient(url, key, {
