@@ -978,7 +978,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLastSyncTimestamp(event.timestamp || Date.now());
 
       switch (event.type) {
-        case 'ROUND_CREATED': {
+        case 'ROUND_CREATED':
+        case 'ROUND_UPDATED': {
           const { round } = event.payload || {};
           if (round) {
             setRounds((prev) => {
@@ -1000,12 +1001,32 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           break;
         }
 
+        case 'ROUND_DELETED': {
+          const { roundId } = event.payload || {};
+          if (roundId) {
+            setRounds((prev) => {
+              const updated = prev.filter((r) => r.id !== roundId);
+              try {
+                localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(updated));
+              } catch (e) {}
+              return updated;
+            });
+            fetchActiveRounds({ bypassCache: true });
+          }
+          break;
+        }
+
         case 'ROUND_STATUS_CHANGED': {
           const { roundId, status } = event.payload || {};
           if (roundId && status) {
-            setRounds((prev) =>
-              prev.map((r) => (r.id === roundId ? { ...r, status } : r))
-            );
+            setRounds((prev) => {
+              const updated = prev.map((r) => (r.id === roundId ? { ...r, status } : r));
+              try {
+                localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(updated));
+              } catch (e) {}
+              return updated;
+            });
+            fetchActiveRounds({ bypassCache: true });
           }
           break;
         }
@@ -2786,6 +2807,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         `Actualizó configuración de Sorteo #${target.roundNumber} (${target.title}). Precio: ${updatedPrice} Bs, % Premio: ${updatedPrizePct}%`
       );
 
+      // Instant Real-Time Cross-Tab Broadcast & Server Persistence
+      syncEngine.broadcastRoundUpdated(updatedRound);
+      fetch(`/api/rounds/${roundId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedRound),
+      }).catch((e) => console.warn('[GameContext] Server PUT /api/rounds note:', e));
+
       return {
         success: true,
         message: `Sorteo #${target.roundNumber} actualizado con éxito.`,
@@ -2806,6 +2835,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       addAuditLog('CAMBIO_ESTADO_RONDA', `Modificó estado de la ronda ID ${roundId} a "${status}"`);
       syncEngine.broadcastRoundStatus(roundId, status);
+
+      // Instant server PUT notification
+      fetch(`/api/rounds/${roundId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      }).catch((e) => console.warn('[GameContext] Server PUT /api/rounds status note:', e));
     },
     [addAuditLog]
   );

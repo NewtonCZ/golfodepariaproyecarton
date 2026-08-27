@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext';
 import { AdminRole, ROLE_PERMISSIONS } from '../../config/permissions';
 import {
@@ -40,12 +40,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AdminRole>('Super Admin');
-
-  const handleSelectDemoRole = (role: AdminRole) => {
-    setActiveTab(role);
-    setLoginError(null);
-  };
 
   // Check if current user meets strict authorization requirements for admin panel
   const isAuthorizedAdmin =
@@ -53,6 +47,19 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     Boolean(sessionToken) &&
     currentRole !== 'Player' &&
     allowedRoles.includes(operatorRole as AdminRole);
+
+  // If not authorized and viewing /admin, sync browser URL to /login
+  useEffect(() => {
+    if (!isAuthorizedAdmin && typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      if (path.includes('/admin') || hash.includes('admin')) {
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({}, '', '/login');
+        }
+      }
+    }
+  }, [isAuthorizedAdmin]);
 
   if (isAuthorizedAdmin) {
     return <>{children}</>;
@@ -62,18 +69,26 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     e.preventDefault();
     setLoginError(null);
 
-    if (!usernameInput.trim() || !passwordInput.trim()) {
-      setLoginError('Por favor ingresa usuario y contraseña.');
+    const cleanUser = usernameInput.trim();
+    const cleanPass = passwordInput.trim();
+
+    if (!cleanUser || !cleanPass) {
+      setLoginError('Por favor ingresa tu correo electrónico y contraseña.');
       return;
     }
 
-    const res = await login(usernameInput.trim(), passwordInput.trim());
+    const res = await login(cleanUser, cleanPass);
     if (res.success) {
       if (res.role === 'Player') {
         setLoginError('Acceso Denegado: Esta cuenta es de Jugador. Se requieren credenciales de personal administrativo para acceder al Backoffice.');
+      } else {
+        if (typeof window !== 'undefined' && window.history?.pushState) {
+          window.history.pushState({}, '', '/admin');
+        }
+        setViewMode('admin');
       }
     } else {
-      setLoginError(res.message || 'Clave mala');
+      setLoginError(res.message || 'Error de autenticación. Verifica tu correo y contraseña.');
     }
   };
 
@@ -99,7 +114,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
               Autenticación de Personal de Administración
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              El Panel Central de Control requiere credenciales validadas para Superadministrador, Operador Financiero o Auditor.
+              El Panel Central de Control requiere credenciales validadas en Supabase Auth con rol administrativo.
             </p>
           </div>
         </div>
@@ -121,11 +136,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
           <div className="flex items-center justify-between pb-2 border-b border-slate-800">
             <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
               <KeyRound className="w-4 h-4 text-purple-400" />
-              <span>Ingreso de Personal Autorizado</span>
+              <span>Ingreso de Personal con Supabase Auth</span>
             </span>
             <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Supabase Auth Segura
+              Supabase Auth Oficial
             </span>
           </div>
 
@@ -139,13 +154,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-300 mb-1">
-                Usuario / Correo *
+                Correo Electrónico (Supabase Auth) *
               </label>
               <input
                 type="text"
                 value={usernameInput}
                 onChange={(e) => setUsernameInput(e.target.value)}
-                placeholder="Usuario de administración"
+                placeholder="ej. limitlessmarketve@gmail.com"
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-purple-400 font-medium"
                 required
               />
@@ -200,7 +215,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
           </button>
 
           <span className="text-[11px] text-slate-500">
-            Protección RBA v2.0 • Registro de Auditoría de IPs
+            Protección RBA v2.0 • Supabase Auth
           </span>
         </div>
       </div>

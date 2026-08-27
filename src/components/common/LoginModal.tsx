@@ -138,15 +138,28 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const res = await login(username, password);
+    const cleanInput = username.trim();
+    const cleanPass = password.trim();
+
+    if (!cleanInput || !cleanPass) {
+      setErrorMsg('Por favor ingresa tu correo electrónico y contraseña.');
+      return;
+    }
+
+    const res = await login(cleanInput, cleanPass);
     if (res.success) {
-      setSuccessMsg(res.message);
+      setSuccessMsg(res.message || '¡Sesión iniciada con éxito!');
       setTimeout(() => {
         onClose();
         setSuccessMsg(null);
+        if (res.role === 'Super Admin' || res.role === 'Operador Financiero' || res.role === 'Auditor') {
+          if (typeof window !== 'undefined' && window.history?.pushState) {
+            window.history.pushState({}, '', '/admin');
+          }
+        }
       }, 1000);
     } else {
-      setErrorMsg(res.message || 'Clave mala');
+      setErrorMsg(res.message || 'Error de autenticación. Verifica tu correo y contraseña.');
     }
   };
 
@@ -719,7 +732,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Usuario / Correo / Cédula</label>
+                <label className="block text-xs font-bold text-slate-300 mb-1">Correo Electrónico (Email) / Usuario</label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                   <input
@@ -727,7 +740,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Ingresa tu usuario o correo..."
+                    placeholder="ej. limitlessmarketve@gmail.com"
                     className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white pl-9 pr-3 py-2.5 rounded-xl text-xs font-medium focus:outline-none"
                   />
                 </div>

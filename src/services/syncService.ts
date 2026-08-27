@@ -15,7 +15,9 @@ import { realtimeService } from './realtimeService';
 
 export type SyncEventType =
   | 'ROUND_CREATED'
+  | 'ROUND_UPDATED'
   | 'ROUND_STATUS_CHANGED'
+  | 'ROUND_DELETED'
   | 'LIVE_DRAW_STARTED'
   | 'LIVE_DRAW_TICK'
   | 'LIVE_DRAW_FINISHED'
@@ -158,7 +160,7 @@ class LotterySyncEngine {
       if (round && round.id) {
         this.handleIncomingEvent({
           id: `ws-upd-${Date.now()}-${round.id}`,
-          type: 'ROUND_CREATED',
+          type: 'ROUND_UPDATED',
           payload: { round },
           sourceTabId: 'websocket-server',
           timestamp: Date.now(),
@@ -171,6 +173,18 @@ class LotterySyncEngine {
         this.handleIncomingEvent({
           id: `ws-st-${Date.now()}-${data.roundId}`,
           type: 'ROUND_STATUS_CHANGED',
+          payload: data,
+          sourceTabId: 'websocket-server',
+          timestamp: Date.now(),
+        });
+      }
+    });
+
+    realtimeService.on('draw_result_published', (data) => {
+      if (data && data.roundId) {
+        this.handleIncomingEvent({
+          id: `ws-res-${Date.now()}-${data.roundId}`,
+          type: 'LIVE_DRAW_FINISHED',
           payload: data,
           sourceTabId: 'websocket-server',
           timestamp: Date.now(),
@@ -287,6 +301,17 @@ class LotterySyncEngine {
     try {
       realtimeService.broadcastNewRoundCreated(round);
     } catch (e) {}
+  }
+
+  public broadcastRoundUpdated(round: GameRound): void {
+    this.broadcast('ROUND_UPDATED', { round });
+    try {
+      realtimeService.broadcastRoundUpdated(round);
+    } catch (e) {}
+  }
+
+  public broadcastRoundDeleted(roundId: string): void {
+    this.broadcast('ROUND_DELETED', { roundId });
   }
 
   public broadcastRoundStatus(roundId: string, status: GameRound['status'], roundTitle?: string, roundNumber?: number): void {

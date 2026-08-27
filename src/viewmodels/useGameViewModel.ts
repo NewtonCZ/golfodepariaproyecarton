@@ -66,6 +66,57 @@ export function useGameViewModel() {
     initial.voiceAnnouncementEnabled ?? true
   );
 
+  // Route Guard Effect: Redirect /admin to /login if there is no authenticated admin session
+  useEffect(() => {
+    const handleUrlRouteSync = () => {
+      if (typeof window === 'undefined') return;
+
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      const isAdminRoute = path.includes('/admin') || hash.includes('admin');
+      const isLoginRoute = path.includes('/login') || hash.includes('login');
+
+      const isAuthorizedAdmin =
+        Boolean(gameContext.isAuthenticated) &&
+        Boolean(gameContext.sessionToken) &&
+        gameContext.currentRole !== 'Player' &&
+        (gameContext.operatorRole === 'Super Admin' ||
+          gameContext.operatorRole === 'Operador Financiero' ||
+          gameContext.operatorRole === 'Auditor');
+
+      if (isAdminRoute) {
+        if (!isAuthorizedAdmin) {
+          // Redirigir la ruta /admin a /login si no hay sesión autorizada
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState({}, '', '/login');
+          }
+          setActiveTabState('home');
+          setIsLoginModalOpen(true);
+          setLoginModalTab('login');
+        } else {
+          setActiveTabState('admin');
+          if (gameContext.viewMode !== 'admin') {
+            gameContext.setViewMode('admin');
+          }
+        }
+      } else if (isLoginRoute) {
+        setIsLoginModalOpen(true);
+        setLoginModalTab('login');
+      }
+    };
+
+    // Run on mount and whenever auth state changes
+    handleUrlRouteSync();
+
+    window.addEventListener('popstate', handleUrlRouteSync);
+    window.addEventListener('hashchange', handleUrlRouteSync);
+
+    return () => {
+      window.removeEventListener('popstate', handleUrlRouteSync);
+      window.removeEventListener('hashchange', handleUrlRouteSync);
+    };
+  }, [gameContext.isAuthenticated, gameContext.sessionToken, gameContext.currentRole, gameContext.operatorRole]);
+
   // Synchronize and persist state upon changes or window backgrounding (visibilitychange)
   const persistCurrentUiState = useCallback(() => {
     try {
@@ -117,9 +168,35 @@ export function useGameViewModel() {
   }, [persistCurrentUiState]);
 
   // Handlers for Navigation & Modal Actions
-  const setActiveTab = useCallback((tab: MainTabType) => {
-    setActiveTabState(tab);
-  }, []);
+  const setActiveTab = useCallback(
+    (tab: MainTabType) => {
+      if (tab === 'admin') {
+        const isAuthorizedAdmin =
+          Boolean(gameContext.isAuthenticated) &&
+          Boolean(gameContext.sessionToken) &&
+          gameContext.currentRole !== 'Player' &&
+          (gameContext.operatorRole === 'Super Admin' ||
+            gameContext.operatorRole === 'Operador Financiero' ||
+            gameContext.operatorRole === 'Auditor');
+
+        if (!isAuthorizedAdmin) {
+          if (typeof window !== 'undefined' && window.history?.pushState) {
+            window.history.pushState({}, '', '/login');
+          }
+          setIsLoginModalOpen(true);
+          setLoginModalTab('login');
+          return;
+        } else {
+          if (typeof window !== 'undefined' && window.history?.pushState) {
+            window.history.pushState({}, '', '/admin');
+          }
+          gameContext.setViewMode('admin');
+        }
+      }
+      setActiveTabState(tab);
+    },
+    [gameContext.isAuthenticated, gameContext.sessionToken, gameContext.currentRole, gameContext.operatorRole, gameContext.setViewMode]
+  );
 
   const openBuyCards = useCallback((roundId?: string) => {
     if (roundId) setSelectedRoundId(roundId);
