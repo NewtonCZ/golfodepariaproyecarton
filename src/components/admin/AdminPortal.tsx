@@ -278,7 +278,7 @@ export const AdminPortal: React.FC = () => {
 
     setIsSigningResult(true);
     try {
-      const response = await fetch('https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/rapid-function', {
+      const response = await fetch('https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/verify-otp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

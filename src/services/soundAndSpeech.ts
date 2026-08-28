@@ -205,6 +205,27 @@ class SoundAndSpeechService {
       // Ignore audio failure
     }
   }
+
+  // Aliases for compatibility
+  public playPurchase() {
+    this.playCoin();
+  }
+
+  public playWinner() {
+    this.playFanfare();
+  }
+
+  public playBallDrop() {
+    this.playPop();
+  }
+
+  public speakFicha(ficha: any) {
+    if (typeof ficha === 'string') {
+      this.cantarFicha(ficha);
+    } else if (ficha && ficha.name) {
+      this.cantarFicha(`Número ${ficha.id}, ${ficha.name}`);
+    }
+  }
 }
 
 export const soundService = new SoundAndSpeechService();

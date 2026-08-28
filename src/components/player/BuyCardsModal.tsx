@@ -13,7 +13,7 @@ interface BuyCardsModalProps {
 }
 
 const SEND_OTP_URL = 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/send-otp';
-const VERIFY_OTP_URL = 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/rapid-function';
+const VERIFY_OTP_URL = 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/verify-otp';
 
 export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
   isOpen,

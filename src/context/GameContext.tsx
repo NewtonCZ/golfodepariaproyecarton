@@ -334,7 +334,842 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return options?.showBoth ? `${ves} (~${usd} USD)` : (currencyDisplay === 'VES' ? ves : usd);
   }, [commercialConfig?.exchangeRateVesUsd, currencyDisplay]);
 
-  //... COPIA AQUÍ TODAS LAS FUNCIONES purchaseCards, archiveCard, submitRecharge, approveRecharge, rejectRecharge, submitWithdrawal, completeWithdrawal, rejectWithdrawal, createRound, updateRoundConfig, setRoundStatus, submitRoundResult, startLiveDrawSimulation, stopLiveDrawSimulation, quickAddBalance, updateCommercialConfig, resetToInitialData, createSystemCredential, updateSystemCredential, deleteSystemCredential que ya me enviaste (están perfectas)
+  // --- OPERACIONES COMPLETAS DEL CONTEXTO ---
+
+  const [drawIntervalRef, setDrawIntervalRef] = useState<any>(null);
+
+  const purchaseCards = useCallback(
+    (packCount: 2 | 4 | 6, roundId: string): { success: boolean; message: string; cards?: MatrixCard[] } => {
+      const round = rounds.find((r) => r.id === roundId);
+      if (!round) return { success: false, message: 'Sorteo no encontrado.' };
+
+      const user = currentUser;
+      const effectivePrice =
+        packCount === 2
+          ? commercialConfig.cardPrices?.pack2 || 50
+          : packCount === 4
+          ? commercialConfig.cardPrices?.pack4 || 100
+          : commercialConfig.cardPrices?.pack6 || 150;
+
+      if (user.availableBalance < effectivePrice) {
+        return { success: false, message: `Saldo insuficiente. Necesitas ${formatMoney(effectivePrice)}.` };
+      }
+
+      const existingForRound = cards.filter((c) => c.userId === user.id && c.roundId === roundId);
+      if (existingForRound.length + packCount > 6) {
+        return { success: false, message: 'Has alcanzado el límite máximo de 6 cartones por sorteo.' };
+      }
+
+      const singleCardPrice = effectivePrice / packCount;
+      const newCards: MatrixCard[] = [];
+
+      for (let i = 0; i < packCount; i++) {
+        const matrix = generateRandomMatrix();
+        const code = generateCardCode();
+        newCards.push({
+          id: `crd-${Date.now()}-${i}-${Math.floor(Math.random() * 10000)}`,
+          code,
+          roundId: round.id,
+          roundNumber: round.roundNumber,
+          userId: user.id,
+          userName: user.name,
+          matrix,
+          purchaseTime: new Date().toISOString(),
+          priceVes: singleCardPrice,
+          status: 'active',
+          matchedCount: 0,
+          winningPatterns: [],
+          totalPrizeVes: 0,
+        });
+      }
+
+      const balBefore = user.availableBalance;
+      const balAfter = balBefore - effectivePrice;
+
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === user.id
+            ? {
+                ...u,
+                availableBalance: balAfter,
+                totalSpentVes: (u.totalSpentVes || 0) + effectivePrice,
+              }
+            : u
+        )
+      );
+
+      const newLedger: WalletLedgerEntry = {
+        id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        userId: user.id,
+        userName: user.name,
+        type: 'card_purchase',
+        amountVes: -effectivePrice,
+        balanceBefore: balBefore,
+        balanceAfter: balAfter,
+        description: `Compra de ${packCount} cartones para Sorteo #${round.roundNumber}`,
+        referenceId: round.id,
+        createdAt: new Date().toISOString(),
+      };
+      setLedger((prev) => [newLedger, ...prev]);
+
+      const allUpdatedCards = [...newCards, ...cards];
+      setCards(allUpdatedCards);
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_cards`, JSON.stringify(allUpdatedCards));
+      } catch {}
+
+      setRounds((prev) =>
+        prev.map((r) =>
+          r.id === roundId ? { ...r, totalCardsSold: (r.totalCardsSold || 0) + packCount } : r
+        )
+      );
+
+      addAuditLog(
+        'COMPRA_CARTONES',
+        `Usuario ${user.name} compró ${packCount} cartones en Sorteo #${round.roundNumber}`
+      );
+      try {
+        soundService.playPurchase();
+      } catch {}
+
+      try {
+        syncEngine.broadcastCardsPurchased({
+          cards: newCards,
+          userId: user.id,
+          roundId: round.id,
+          newAvailableBalance: balAfter,
+          ledgerEntry: newLedger,
+          totalCostVes: effectivePrice,
+        });
+      } catch {}
+
+      return {
+        success: true,
+        message: `¡${packCount} cartones adquiridos con éxito!`,
+        cards: newCards,
+      };
+    },
+    [rounds, currentUser, cards, commercialConfig, formatMoney, addAuditLog]
+  );
+
+  const submitRecharge = useCallback(
+    (data: any): { success: boolean; message: string } => {
+      const newRecharge: RechargeTransaction = {
+        id: `rch-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userPhone: currentUser.phone,
+        amountVes: Number(data.amountVes) || 0,
+        payerPhone: data.payerPhone || '',
+        payerName: data.payerName || '',
+        payerDocumentId: data.payerDocumentId || '',
+        bankOrigin: data.bankOrigin || 'Banco de Venezuela',
+        referenceNumber: data.referenceNumber || '',
+        voucherImageUrl: data.voucherImageUrl || '',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+
+      setRecharges((prev) => [newRecharge, ...prev]);
+      try {
+        supabase.from('recharges').insert([newRecharge]).then(({ error }) => {
+          if (error) console.warn('[GameContext] Supabase insert recharge error:', error);
+        });
+      } catch {}
+
+      addAuditLog('SOLICITUD_RECARGA', `Recarga de ${formatMoney(newRecharge.amountVes)} solicitada por ${currentUser.name}`);
+      return { success: true, message: 'Reporte de pago enviado exitosamente. En breve será verificado.' };
+    },
+    [currentUser, formatMoney, addAuditLog]
+  );
+
+  const approveRecharge = useCallback(
+    (transactionId: string): { success: boolean; message: string } => {
+      const target = recharges.find((r) => r.id === transactionId);
+      if (!target) return { success: false, message: 'Transacción no encontrada.' };
+      if (target.status !== 'pending') return { success: false, message: 'La transacción ya ha sido procesada.' };
+
+      const processedAt = new Date().toISOString();
+      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
+
+      setRecharges((prev) =>
+        prev.map((r) => (r.id === transactionId ? { ...r, status: 'approved', processedAt, processedBy } : r))
+      );
+
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (u.id === target.userId) {
+            const balBefore = u.availableBalance;
+            const balAfter = balBefore + target.amountVes;
+
+            setLedger((l) => [
+              {
+                id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                userId: u.id,
+                userName: u.name,
+                type: 'recharge',
+                amountVes: target.amountVes,
+                balanceBefore: balBefore,
+                balanceAfter: balAfter,
+                description: `Recarga aprobada (Ref: ${target.referenceNumber})`,
+                referenceId: target.id,
+                createdAt: processedAt,
+              },
+              ...l,
+            ]);
+
+            return { ...u, availableBalance: balAfter };
+          }
+          return u;
+        })
+      );
+
+      try {
+        supabase
+          .from('recharges')
+          .update({ status: 'approved', processed_at: processedAt, processed_by: processedBy })
+          .eq('id', transactionId)
+          .then(({ error }) => {
+            if (error) console.warn('[GameContext] Error updating recharge in Supabase:', error);
+          });
+      } catch {}
+
+      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(target.amountVes)} aprobada para ${target.userName}`);
+      try {
+        soundService.playCoin();
+      } catch {}
+
+      return { success: true, message: 'Recarga aprobada y saldo acreditado con éxito.' };
+    },
+    [recharges, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
+  );
+
+  const rejectRecharge = useCallback(
+    (transactionId: string, reason: string): { success: boolean; message: string } => {
+      const target = recharges.find((r) => r.id === transactionId);
+      if (!target) return { success: false, message: 'Transacción no encontrada.' };
+
+      const processedAt = new Date().toISOString();
+      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
+
+      setRecharges((prev) =>
+        prev.map((r) => (r.id === transactionId ? { ...r, status: 'rejected', rejectionReason: reason, processedAt, processedBy } : r))
+      );
+
+      try {
+        supabase
+          .from('recharges')
+          .update({ status: 'rejected', rejection_reason: reason, processed_at: processedAt, processed_by: processedBy })
+          .eq('id', transactionId)
+          .then(({ error }) => {
+            if (error) console.warn('[GameContext] Error rejecting recharge in Supabase:', error);
+          });
+      } catch {}
+
+      addAuditLog('RECHAZAR_RECARGA', `Recarga ${transactionId} rechazada. Motivo: ${reason}`);
+      return { success: true, message: 'Recarga rechazada.' };
+    },
+    [recharges, loggedUsername, activeCredential, operatorRole, addAuditLog]
+  );
+
+  const submitWithdrawal = useCallback(
+    (data: any): { success: boolean; message: string } => {
+      const amount = Number(data.amountVes) || 0;
+      if (amount <= 0) return { success: false, message: 'Monto inválido.' };
+      if (currentUser.availableBalance < amount) {
+        return { success: false, message: 'Saldo insuficiente para solicitar este retiro.' };
+      }
+
+      const newWithdrawal: WithdrawalTransaction = {
+        id: `wth-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userPhone: currentUser.phone,
+        amountVes: amount,
+        channel: data.channel || 'pago_movil',
+        bankDest: data.bankDest || 'Banco de Venezuela',
+        phoneOrAccount: data.phoneOrAccount || currentUser.phone,
+        documentId: data.documentId || currentUser.documentId,
+        titularName: data.titularName || currentUser.name,
+        accountType: data.accountType,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+
+      const balBefore = currentUser.availableBalance;
+      const balAfter = balBefore - amount;
+
+      setUsers((prev) =>
+        prev.map((u) => (u.id === currentUser.id ? { ...u, availableBalance: balAfter, pendingBalance: (u.pendingBalance || 0) + amount } : u))
+      );
+
+      setWithdrawals((prev) => [newWithdrawal, ...prev]);
+
+      setLedger((l) => [
+        {
+          id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+          userId: currentUser.id,
+          userName: currentUser.name,
+          type: 'withdrawal_lock',
+          amountVes: -amount,
+          balanceBefore: balBefore,
+          balanceAfter: balAfter,
+          description: `Solicitud de retiro (${newWithdrawal.channel === 'pago_movil' ? 'Pago Móvil' : 'Transferencia'})`,
+          referenceId: newWithdrawal.id,
+          createdAt: new Date().toISOString(),
+        },
+        ...l,
+      ]);
+
+      try {
+        supabase.from('withdrawals').insert([newWithdrawal]).then(({ error }) => {
+          if (error) console.warn('[GameContext] Supabase insert withdrawal error:', error);
+        });
+      } catch {}
+
+      addAuditLog('SOLICITUD_RETIRO', `Retiro de ${formatMoney(amount)} solicitado por ${currentUser.name}`);
+      return { success: true, message: 'Solicitud de retiro registrada. Será procesada en los horarios estipulados.' };
+    },
+    [currentUser, formatMoney, addAuditLog]
+  );
+
+  const completeWithdrawal = useCallback(
+    (transactionId: string): { success: boolean; message: string } => {
+      const target = withdrawals.find((w) => w.id === transactionId);
+      if (!target) return { success: false, message: 'Retiro no encontrado.' };
+
+      const processedAt = new Date().toISOString();
+      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
+
+      setWithdrawals((prev) =>
+        prev.map((w) => (w.id === transactionId ? { ...w, status: 'completed', processedAt, processedBy } : w))
+      );
+
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === target.userId
+            ? { ...u, pendingBalance: Math.max(0, (u.pendingBalance || 0) - target.amountVes) }
+            : u
+        )
+      );
+
+      try {
+        supabase
+          .from('withdrawals')
+          .update({ status: 'completed', processed_at: processedAt, processed_by: processedBy })
+          .eq('id', transactionId)
+          .then(({ error }) => {
+            if (error) console.warn('[GameContext] Supabase update withdrawal error:', error);
+          });
+      } catch {}
+
+      addAuditLog('COMPLETAR_RETIRO', `Retiro ${transactionId} de ${formatMoney(target.amountVes)} completado para ${target.userName}`);
+      return { success: true, message: 'Retiro marcado como completado y transferido.' };
+    },
+    [withdrawals, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
+  );
+
+  const rejectWithdrawal = useCallback(
+    (transactionId: string, reason: string): { success: boolean; message: string } => {
+      const target = withdrawals.find((w) => w.id === transactionId);
+      if (!target) return { success: false, message: 'Retiro no encontrado.' };
+
+      const processedAt = new Date().toISOString();
+      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
+
+      setWithdrawals((prev) =>
+        prev.map((w) => (w.id === transactionId ? { ...w, status: 'rejected', rejectionReason: reason, processedAt, processedBy } : w))
+      );
+
+      // Devolver saldo al usuario
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (u.id === target.userId) {
+            const balBefore = u.availableBalance;
+            const balAfter = balBefore + target.amountVes;
+
+            setLedger((l) => [
+              {
+                id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                userId: u.id,
+                userName: u.name,
+                type: 'withdrawal_refund',
+                amountVes: target.amountVes,
+                balanceBefore: balBefore,
+                balanceAfter: balAfter,
+                description: `Reembolso por retiro rechazado (${reason})`,
+                referenceId: target.id,
+                createdAt: processedAt,
+              },
+              ...l,
+            ]);
+
+            return {
+              ...u,
+              availableBalance: balAfter,
+              pendingBalance: Math.max(0, (u.pendingBalance || 0) - target.amountVes),
+            };
+          }
+          return u;
+        })
+      );
+
+      try {
+        supabase
+          .from('withdrawals')
+          .update({ status: 'rejected', rejection_reason: reason, processed_at: processedAt, processed_by: processedBy })
+          .eq('id', transactionId)
+          .then(({ error }) => {
+            if (error) console.warn('[GameContext] Supabase reject withdrawal error:', error);
+          });
+      } catch {}
+
+      addAuditLog('RECHAZAR_RETIRO', `Retiro ${transactionId} rechazado. Motivo: ${reason}`);
+      return { success: true, message: 'Retiro rechazado y saldo reintegrado al usuario.' };
+    },
+    [withdrawals, loggedUsername, activeCredential, operatorRole, addAuditLog]
+  );
+
+  const createRound = useCallback(
+    (title: string, drawAt: string, cardPriceVes?: number, prizePercentage?: number, order?: number, manualJackpotVes?: number) => {
+      const maxNum = rounds.reduce((max, r) => Math.max(max, r.roundNumber || 0), 100);
+      const newRoundNumber = maxNum + 1;
+      const drawDate = new Date(drawAt);
+      const openDate = new Date(drawDate.getTime() - 60 * 60 * 1000);
+      const closeDate = new Date(drawDate.getTime() - 3 * 60 * 1000);
+
+      const price = cardPriceVes || commercialConfig.singleCardPriceVes || 25;
+      const prizePct = prizePercentage || 70;
+
+      const newRound: GameRound = {
+        id: `round-${newRoundNumber}`,
+        roundNumber: newRoundNumber,
+        order: order || rounds.length + 1,
+        title: title || `Sorteo #${newRoundNumber}`,
+        openBetAt: openDate.toISOString(),
+        closeBetAt: closeDate.toISOString(),
+        drawAt: drawDate.toISOString(),
+        starts_at: openDate.toISOString(),
+        ends_at: closeDate.toISOString(),
+        status: 'scheduled',
+        drawnFichas: [],
+        totalCardsSold: 0,
+        cardPriceVes: price,
+        card_price: price,
+        prize_percentage: prizePct,
+        jackpotVes: manualJackpotVes || 15000,
+        winningCardsCount: 0,
+        totalPrizesPaidVes: 0,
+        resultLocked: false,
+      };
+
+      setRounds((prev) => [newRound, ...prev]);
+      try {
+        supabase.from('rounds').insert([newRound]).then(({ error }) => {
+          if (error) console.warn('[GameContext] Supabase insert round error:', error);
+        });
+      } catch {}
+
+      addAuditLog('CREAR_SORTEO', `Nuevo sorteo programado: ${newRound.title} (#${newRound.roundNumber}) para ${drawAt}`);
+      try {
+        syncEngine.broadcastRoundCreated(newRound);
+      } catch {}
+    },
+    [rounds, commercialConfig, addAuditLog]
+  );
+
+  const updateRoundConfig = useCallback(
+    (roundId: string, data: any): { success: boolean; message: string } => {
+      setRounds((prev) =>
+        prev.map((r) => (r.id === roundId ? { ...r, ...data } : r))
+      );
+      try {
+        supabase.from('rounds').update(data).eq('id', roundId).then(({ error }) => {
+          if (error) console.warn('[GameContext] Supabase update round error:', error);
+        });
+      } catch {}
+      addAuditLog('MODIFICAR_SORTEO', `Configuración del sorteo ${roundId} actualizada`);
+      return { success: true, message: 'Configuración de sorteo actualizada exitosamente.' };
+    },
+    [addAuditLog]
+  );
+
+  const setRoundStatus = useCallback(
+    (roundId: string, status: GameRound['status']) => {
+      setRounds((prev) =>
+        prev.map((r) => (r.id === roundId ? { ...r, status } : r))
+      );
+      try {
+        supabase.from('rounds').update({ status }).eq('id', roundId).then(({ error }) => {
+          if (error) console.warn('[GameContext] Supabase update status error:', error);
+        });
+      } catch {}
+      const target = rounds.find((r) => r.id === roundId);
+      addAuditLog('ESTADO_SORTEO', `Sorteo ${target?.title || roundId} cambió a estado: ${status}`);
+      try {
+        syncEngine.broadcastRoundStatus(roundId, status, target?.title, target?.roundNumber);
+      } catch {}
+    },
+    [rounds, addAuditLog]
+  );
+
+  const submitRoundResult = useCallback(
+    (roundId: string, drawnFichas: number[], otpCode: string): {
+      success: boolean;
+      message: string;
+      winnersCount?: number;
+      totalPaidVes?: number;
+    } => {
+      const targetRound = rounds.find((r) => r.id === roundId);
+      if (!targetRound) {
+        return { success: false, message: 'Sorteo no encontrado.' };
+      }
+
+      if (!drawnFichas || drawnFichas.length === 0) {
+        return { success: false, message: 'Debes seleccionar al menos una ficha para certificar el sorteo.' };
+      }
+
+      const effectiveCardPrice = targetRound.cardPriceVes || targetRound.card_price || commercialConfig.singleCardPriceVes || 25;
+
+      // 1. Evaluar todos los cartones
+      let totalWinnersCount = 0;
+      let totalPrizesPaidVes = 0;
+      const userPrizeMap = new Map<string, number>();
+
+      const updatedCards = cards.map((card) => {
+        if (card.roundId !== roundId) return card;
+
+        const evaluation = evaluateCardMatrix(
+          card.matrix,
+          drawnFichas,
+          card.priceVes || effectiveCardPrice,
+          commercialConfig,
+          true
+        );
+
+        if (evaluation.isWinner && evaluation.totalPrizeVes > 0) {
+          totalWinnersCount++;
+          totalPrizesPaidVes += evaluation.totalPrizeVes;
+          const currentPrize = userPrizeMap.get(card.userId) || 0;
+          userPrizeMap.set(card.userId, currentPrize + evaluation.totalPrizeVes);
+        }
+
+        return {
+          ...card,
+          matchedCount: evaluation.matchedCount,
+          winningPatterns: evaluation.winningPatterns,
+          totalPrizeVes: evaluation.totalPrizeVes,
+          status: evaluation.status,
+          isWinner: evaluation.isWinner,
+          roundStatus: 'finished' as const,
+        };
+      });
+
+      setCards(updatedCards);
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_cards`, JSON.stringify(updatedCards));
+      } catch {}
+
+      // 2. Liquidar premios y generar movimientos en ledger
+      const newLedgerEntries: WalletLedgerEntry[] = [];
+      setUsers((prevUsers) =>
+        prevUsers.map((u) => {
+          const wonAmount = userPrizeMap.get(u.id);
+          if (wonAmount && wonAmount > 0) {
+            const balBefore = u.availableBalance;
+            const balAfter = balBefore + wonAmount;
+
+            newLedgerEntries.push({
+              id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+              userId: u.id,
+              userName: u.name,
+              type: 'prize_payout',
+              amountVes: wonAmount,
+              balanceBefore: balBefore,
+              balanceAfter: balAfter,
+              description: `Premio ganado en Sorteo #${targetRound.roundNumber} (${targetRound.title})`,
+              referenceId: targetRound.id,
+              createdAt: new Date().toISOString(),
+            });
+
+            return {
+              ...u,
+              availableBalance: balAfter,
+              totalWonVes: (u.totalWonVes || 0) + wonAmount,
+            };
+          }
+          return u;
+        })
+      );
+
+      if (newLedgerEntries.length > 0) {
+        setLedger((prev) => [...newLedgerEntries, ...prev]);
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_ledger`, JSON.stringify([...newLedgerEntries, ...ledger]));
+        } catch {}
+      }
+
+      // 3. Marcar la ronda como finalizada con resultados firmados
+      const signedBy = loggedUsername || activeCredential?.displayName || operatorRole || 'Administrador';
+      const updatedRound: GameRound = {
+        ...targetRound,
+        status: 'finished',
+        drawnFichas,
+        winningCardsCount: totalWinnersCount,
+        totalPrizesPaidVes: totalPrizesPaidVes,
+        resultLocked: true,
+        resultSubmittedBy: signedBy,
+        resultSubmittedAt: new Date().toISOString(),
+      };
+
+      const updatedRounds = rounds.map((r) => (r.id === roundId ? updatedRound : r));
+      setRounds(updatedRounds);
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(updatedRounds));
+      } catch {}
+
+      // 4. Actualizar en Supabase si está disponible
+      try {
+        supabase
+          .from('rounds')
+          .update({
+            status: 'finished',
+            drawn_fichas: drawnFichas,
+            winning_cards_count: totalWinnersCount,
+            total_prizes_paid_ves: totalPrizesPaidVes,
+            result_locked: true,
+            result_submitted_at: new Date().toISOString(),
+          })
+          .eq('id', roundId)
+          .then(({ error }) => {
+            if (error) console.warn('[GameContext] Error updating round in Supabase:', error);
+          });
+      } catch (err) {
+        console.warn('[GameContext] Supabase update error:', err);
+      }
+
+      // 5. Registrar en auditoría
+      addAuditLog(
+        'FIRMA_RESULTADO',
+        `Sorteo #${targetRound.roundNumber} cerrado y firmado. Fichas: ${drawnFichas.length}. Ganadores: ${totalWinnersCount}. Total pagado: ${formatMoney(totalPrizesPaidVes)}`
+      );
+
+      // 6. Efecto de sonido y sincronización
+      try {
+        soundService.playWinner();
+      } catch {}
+
+      try {
+        syncEngine.broadcastLiveDrawFinished({
+          roundId,
+          drawnFichas,
+          winnersCount: totalWinnersCount,
+          totalPaidVes: totalPrizesPaidVes,
+          updatedRound,
+        });
+        syncEngine.broadcastRoundStatus(roundId, 'finished', targetRound.title, targetRound.roundNumber);
+      } catch {}
+
+      return {
+        success: true,
+        message: `¡Sorteo #${targetRound.roundNumber} firmado con éxito! Ganadores: ${totalWinnersCount}, Premios liquidados: ${formatMoney(totalPrizesPaidVes)}.`,
+        winnersCount: totalWinnersCount,
+        totalPaidVes: totalPrizesPaidVes,
+      };
+    },
+    [rounds, cards, commercialConfig, loggedUsername, activeCredential, operatorRole, ledger, addAuditLog, formatMoney]
+  );
+
+  const startLiveDrawSimulation = useCallback(
+    (roundId: string) => {
+      const round = rounds.find((r) => r.id === roundId);
+      if (!round) return;
+
+      setIsLiveDrawing(true);
+      setLiveDrawingRound(round);
+      setLiveDrawnFichas([]);
+
+      const pool = [...FICHAS_POOL];
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+
+      const totalToDraw = 20;
+      let step = 0;
+      const drawnList: Ficha[] = [];
+
+      const interval = setInterval(() => {
+        if (step >= totalToDraw || step >= pool.length) {
+          clearInterval(interval);
+          setIsLiveDrawing(false);
+          return;
+        }
+
+        const nextFicha = pool[step];
+        drawnList.push(nextFicha);
+        step++;
+        setLiveDrawnFichas([...drawnList]);
+
+        try {
+          soundService.playBallDrop();
+          soundService.speakFicha(nextFicha);
+        } catch {}
+
+        try {
+          syncEngine.broadcastLiveDrawTick({
+            roundId,
+            ficha: nextFicha,
+            step,
+            totalSteps: totalToDraw,
+            drawnFichaIds: drawnList.map((f) => f.id),
+            isFinished: step >= totalToDraw,
+          });
+        } catch {}
+      }, 3500);
+
+      setDrawIntervalRef(interval);
+    },
+    [rounds]
+  );
+
+  const stopLiveDrawSimulation = useCallback(() => {
+    if (drawIntervalRef) {
+      clearInterval(drawIntervalRef);
+      setDrawIntervalRef(null);
+    }
+    setIsLiveDrawing(false);
+    setLiveDrawingRound(null);
+  }, [drawIntervalRef]);
+
+  const updateCommercialConfig = useCallback(
+    async (newConfig: Partial<CommercialConfig>): Promise<{ success: boolean; message: string; data?: CommercialConfig }> => {
+      const merged: CommercialConfig = {
+        ...commercialConfig,
+        ...newConfig,
+        adminBank: { ...commercialConfig.adminBank, ...(newConfig.adminBank || {}) },
+        cardPrices: { ...commercialConfig.cardPrices, ...(newConfig.cardPrices || {}) },
+        prizeMultipliers: { ...commercialConfig.prizeMultipliers, ...(newConfig.prizeMultipliers || {}) },
+      };
+
+      setCommercialConfig(merged);
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_config`, JSON.stringify(merged));
+      } catch {}
+
+      try {
+        const { error } = await supabase.from('comercial').upsert({ id: 1, config: merged });
+        if (error) console.warn('[GameContext] Error saving commercial config in Supabase:', error);
+      } catch (err) {
+        console.warn('[GameContext] Supabase commercial config save failed:', err);
+      }
+
+      addAuditLog('CONFIG_COMERCIAL', 'Parámetros comerciales de lotería actualizados.');
+      try {
+        syncEngine.broadcastCommercialConfig(merged);
+      } catch {}
+
+      return { success: true, message: 'Configuración comercial guardada exitosamente.', data: merged };
+    },
+    [commercialConfig, addAuditLog]
+  );
+
+  const resetToInitialData = useCallback(() => {
+    setUsers(INITIAL_USERS);
+    setRounds(INITIAL_ROUNDS);
+    setCards([]);
+    setRecharges([]);
+    setWithdrawals([]);
+    setLedger([]);
+    setAuditLogs([]);
+    setCommercialConfig(DEFAULT_CONFIG);
+    try {
+      localStorage.removeItem(`${STORAGE_KEY}_users`);
+      localStorage.removeItem(`${STORAGE_KEY}_rounds`);
+      localStorage.removeItem(`${STORAGE_KEY}_cards`);
+      localStorage.removeItem(`${STORAGE_KEY}_recharges`);
+      localStorage.removeItem(`${STORAGE_KEY}_withdrawals`);
+      localStorage.removeItem(`${STORAGE_KEY}_ledger`);
+      localStorage.removeItem(`${STORAGE_KEY}_audit`);
+      localStorage.removeItem(`${STORAGE_KEY}_config`);
+    } catch {}
+    addAuditLog('REINICIO_SISTEMA', 'Se reiniciaron los datos a valores predeterminados.');
+  }, [addAuditLog]);
+
+  const createSystemCredential = useCallback(
+    async (data: any): Promise<{ success: boolean; message: string }> => {
+      try {
+        const newCred: SystemCredential = {
+          id: `cred-${Date.now()}`,
+          username: data.username.trim(),
+          displayName: data.displayName || data.username,
+          role: normalizeAdminRole(data.role),
+          status: 'active',
+          createdAt: new Date().toISOString(),
+        };
+
+        const { error } = await supabase.from('admin_users').insert([
+          {
+            id: newCred.id,
+            username: newCred.username,
+            display_name: newCred.displayName,
+            role: toDbRole(newCred.role),
+            status: 'active',
+            password_hash: data.password ? await hashPassword(data.password) : undefined,
+          },
+        ]);
+
+        if (error) {
+          console.warn('[GameContext] Supabase insert admin error, falling back locally:', error);
+        }
+
+        setSystemCredentials((prev) => [...prev, newCred]);
+        addAuditLog('CREAR_OPERADOR', `Operador ${newCred.displayName} (${newCred.role}) creado.`);
+        return { success: true, message: 'Credencial creada exitosamente.' };
+      } catch (err: any) {
+        return { success: false, message: err.message || 'Error al crear credencial.' };
+      }
+    },
+    [addAuditLog]
+  );
+
+  const updateSystemCredential = useCallback(
+    async (id: string, data: any): Promise<{ success: boolean; message: string }> => {
+      try {
+        const payload: any = {};
+        if (data.displayName) payload.display_name = data.displayName;
+        if (data.role) payload.role = toDbRole(data.role);
+        if (data.status) payload.status = data.status;
+        if (data.password) payload.password_hash = await hashPassword(data.password);
+
+        await supabase.from('admin_users').update(payload).eq('id', id);
+
+        setSystemCredentials((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, ...data, role: data.role ? normalizeAdminRole(data.role) : c.role } : c))
+        );
+
+        addAuditLog('MODIFICAR_OPERADOR', `Operador ${id} actualizado.`);
+        return { success: true, message: 'Operador actualizado correctamente.' };
+      } catch (err: any) {
+        return { success: false, message: err.message || 'Error al actualizar.' };
+      }
+    },
+    [addAuditLog]
+  );
+
+  const deleteSystemCredential = useCallback(
+    async (id: string): Promise<{ success: boolean; message: string }> => {
+      try {
+        await supabase.from('admin_users').delete().eq('id', id);
+        setSystemCredentials((prev) => prev.filter((c) => c.id !== id));
+        addAuditLog('ELIMINAR_OPERADOR', `Operador ${id} eliminado del sistema.`);
+        return { success: true, message: 'Operador eliminado.' };
+      } catch (err: any) {
+        return { success: false, message: err.message || 'Error al eliminar.' };
+      }
+    },
+    [addAuditLog]
+  );
 
   // Implementaciones faltantes para que no marque rojo:
   const login = useCallback(async (username: string, password: string): Promise<{
@@ -406,13 +1241,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value: GameContextType = {
     currentUser, currentRole, setCurrentRole, operatorRole, setOperatorRole, isAuthenticated, sessionToken, loggedUsername, permissions, activeCredential,
     login, logout, requestPasswordRecovery, verifyRecoveryCode, resetPasswordWithCode, registerUser, updateUserKyc, verifyCurrentAccount,
-    systemCredentials, fetchSystemCredentials, createSystemCredential: async () => ({ success: false, message: 'Use implementación completa' }) as any, updateSystemCredential: async () => ({ success: false, message: '' }) as any, deleteSystemCredential: async () => ({ success: false, message: '' }) as any,
+    systemCredentials, fetchSystemCredentials, createSystemCredential, updateSystemCredential, deleteSystemCredential,
     users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards, recharges, withdrawals, ledger, auditLogs, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
-    purchaseCards: (() => ({ success: false, message: '' })) as any, submitRecharge: (() => ({ success: false, message: '' })) as any, approveRecharge: (() => ({ success: false, message: '' })) as any, rejectRecharge: (() => ({ success: false, message: '' })) as any,
-    submitWithdrawal: (() => ({ success: false, message: '' })) as any, completeWithdrawal: (() => ({ success: false, message: '' })) as any, rejectWithdrawal: (() => ({ success: false, message: '' })) as any,
-    createRound: (() => {}) as any, updateRoundConfig: (() => ({ success: false, message: '' })) as any, setRoundStatus: (() => {}) as any, submitRoundResult: (() => ({ success: false, message: '' })) as any,
-    updateCommercialConfig: (async (c) => { setCommercialConfig(prev => ({...prev,...c } as any)); return { success: true, message: 'ok' }; }) as any, fetchCommercialConfig, resetToInitialData: (() => {}) as any,
-    liveDrawingRound, isLiveDrawing, liveDrawnFichas, startLiveDrawSimulation: (() => {}) as any, stopLiveDrawSimulation: (() => {}) as any,
+    purchaseCards, submitRecharge, approveRecharge, rejectRecharge,
+    submitWithdrawal, completeWithdrawal, rejectWithdrawal,
+    createRound, updateRoundConfig, setRoundStatus, submitRoundResult,
+    updateCommercialConfig, fetchCommercialConfig, resetToInitialData,
+    liveDrawingRound, isLiveDrawing, liveDrawnFichas, startLiveDrawSimulation, stopLiveDrawSimulation,
     quickAddBalance, adjustUserBalance, updateUserStatus, isRealtimeSyncConnected, lastSyncTimestamp, fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals,
     archiveCard, unarchiveCard, archiveCardsBatch,
   };
