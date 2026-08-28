@@ -331,9 +331,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   //... COPIA AQUÍ TODAS LAS FUNCIONES purchaseCards, archiveCard, submitRecharge, approveRecharge, rejectRecharge, submitWithdrawal, completeWithdrawal, rejectWithdrawal, createRound, updateRoundConfig, setRoundStatus, submitRoundResult, startLiveDrawSimulation, stopLiveDrawSimulation, quickAddBalance, updateCommercialConfig, resetToInitialData, createSystemCredential, updateSystemCredential, deleteSystemCredential que ya me enviaste (están perfectas)
 
   // Implementaciones faltantes para que no marque rojo:
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string): Promise<{
+    success: boolean;
+    message: string;
+    role?: UserRole;
+    user?: AppUser;
+  }> => {
     const trimmedUser = username.trim(); const trimmedPass = password.trim();
-    if (!trimmedUser ||!trimmedPass) return { success: false, message: 'Ingresa usuario y contraseña.' };
+    if (!trimmedUser || !trimmedPass) return { success: false, message: 'Ingresa usuario y contraseña.' };
     try {
       // Intento Supabase Auth si es email
       if (trimmedUser.includes('@')) {
@@ -341,15 +346,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!error && data.session) {
           setSessionToken(data.session.access_token); setIsAuthenticated(true); setLoggedUsername(trimmedUser); setCurrentUserId(data.session.user.id);
           const isAdmin = trimmedUser.toLowerCase() === 'limitlessmarketve@gmail.com' || data.session.user.user_metadata?.role === 'Super Admin';
-          setCurrentRoleState(isAdmin? 'Super Admin' : 'Player'); setViewMode(isAdmin? 'admin' : 'player');
-          return { success: true, message: 'Login exitoso', role: isAdmin? 'Super Admin' : 'Player', user: users.find(u => u.id === data.session.user.id) };
+          const assignedRole: UserRole = isAdmin ? 'Super Admin' : 'Player';
+          setCurrentRoleState(assignedRole); setViewMode(isAdmin ? 'admin' : 'player');
+          return { success: true, message: 'Login exitoso', role: assignedRole, user: users.find(u => u.id === data.session.user.id) };
         }
       }
       // Fallback local para jugadores de prueba
       const localUser = users.find(u => u.email?.toLowerCase() === trimmedUser.toLowerCase() || u.documentId?.toLowerCase() === trimmedUser.toLowerCase());
       if (localUser) {
         setSessionToken(`local-${Date.now()}`); setIsAuthenticated(true); setLoggedUsername(trimmedUser); setCurrentUserId(localUser.id); setCurrentRoleState('Player'); setViewMode('player');
-        return { success: true, message: 'Login local exitoso', role: 'Player', user: localUser };
+        return { success: true, message: 'Login local exitoso', role: 'Player' as UserRole, user: localUser };
       }
       const cred = systemCredentials.find(c => c.username.toLowerCase() === trimmedUser.toLowerCase() && c.status === 'active');
       if (cred) {
@@ -358,7 +364,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return { success: false, message: 'Credenciales inválidas.' };
     } catch (e: any) { return { success: false, message: e.message || 'Error de login' }; }
-  }, [users, systemCredentials]);
+  }, [systemCredentials, users]);
 
   const logout = useCallback(() => { supabase.auth.signOut().catch(()=>{}); setSessionToken(null); setIsAuthenticated(false); setCurrentRoleState('Player'); setLoggedUsername(''); setViewMode('player'); LotteryStorageService.clearSession(); }, []);
   const requestPasswordRecovery = useCallback(() => ({ success: false, message: 'Función no implementada en demo' }), []);

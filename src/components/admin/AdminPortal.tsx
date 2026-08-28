@@ -1177,12 +1177,15 @@ export const AdminPortal: React.FC = () => {
                         </td>
 
                         <td className="py-3 text-slate-500">
-                          {new Date(round.starts_at || round.openBetAt || round.drawAt).toLocaleString('es-VE', {
-                            month: 'numeric',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          {(() => {
+                            const d = new Date(round.starts_at || round.openBetAt || round.drawAt || round.created_at || new Date());
+                            return isNaN(d.getTime()) ? 'Próximamente' : d.toLocaleString('es-VE', {
+                              month: 'numeric',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            });
+                          })()}
                         </td>
 
                         {/* Editable or Locked Card Price */}

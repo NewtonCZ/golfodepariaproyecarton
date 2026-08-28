@@ -166,10 +166,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               );
               const userCardsInThisRound = userCards.filter((c) => c.roundId === round.id);
 
-              const roundDate = new Date(round.starts_at || round.openBetAt || round.drawAt);
-              const formattedTime = !isNaN(roundDate.getTime())
-                ? roundDate.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })
-                : 'Próximamente';
+             const roundDate = new Date(round.starts_at || round.openBetAt || round.drawAt || round.created_at || new Date());
+             const formattedTime = isNaN(roundDate.getTime())
+               ? 'Próximamente'
+               : roundDate.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
 
               return (
                 <div
