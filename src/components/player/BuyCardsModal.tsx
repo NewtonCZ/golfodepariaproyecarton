@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { MatrixCardView } from '../cards/MatrixCardView';
-import { X, Sparkles, AlertCircle, ShoppingCart, Check, ShieldCheck } from 'lucide-react';
+import { X, Sparkles, AlertCircle, ShoppingCart, Check, ShieldCheck, KeyRound, ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
 import { MatrixCard } from '../../types';
 
 interface BuyCardsModalProps {
@@ -11,6 +11,9 @@ interface BuyCardsModalProps {
   onSuccessBuy?: () => void;
   onOpenRecharge?: () => void;
 }
+
+const SEND_OTP_URL = 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/send-otp';
+const VERIFY_OTP_URL = 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/rapid-function';
 
 export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
   isOpen,
@@ -32,7 +35,10 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
   const selectedRound = (targetRoundId ? rounds.find((r) => r.id === targetRoundId) : null) || activeRound;
 
   const [selectedPack, setSelectedPack] = useState<2 | 4 | 6>(2);
-  const [purchasing, setPurchasing] = useState(false);
+  const [step, setStep] = useState<'select' | 'otp'>('select');
+  const [otpCode, setOtpCode] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [boughtCardsPreview, setBoughtCardsPreview] = useState<MatrixCard[] | null>(null);
 
@@ -50,29 +56,87 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
   const totalPrice = getPackPrice(selectedPack);
   const hasEnoughBalance = currentUser.availableBalance >= totalPrice;
 
-  const handlePurchase = () => {
+  // Paso 1: Enviar OTP al backend
+  const handleInitiatePurchase = async () => {
     setErrorMessage(null);
-    setPurchasing(true);
+    setIsSendingOtp(true);
 
     try {
-      const result = purchaseCards(selectedPack, selectedRound.id);
-      setPurchasing(false);
+      const response = await fetch(SEND_OTP_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: 'niutoncaraballo3@gmail.com',
+          pack: selectedPack,
+          roundId: selectedRound.id,
+          amountVes: totalPrice,
+          user: currentUser.name || currentUser.email || 'Player',
+        }),
+      });
 
-      if (result.success && result.cards) {
-        setBoughtCardsPreview(result.cards);
-        if (onSuccessBuy) onSuccessBuy();
+      if (!response.ok) {
+        throw new Error('No se pudo enviar el código de verificación.');
+      }
+
+      setStep('otp');
+      setOtpCode('');
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Error al enviar el código de seguridad.');
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  // Paso 2: Verificar OTP y generar cartones
+  const handleVerifyOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (otpCode.trim().length !== 6) {
+      setErrorMessage('Por favor ingresa el código de 6 dígitos.');
+      return;
+    }
+
+    setErrorMessage(null);
+    setIsVerifyingOtp(true);
+
+    try {
+      const response = await fetch(VERIFY_OTP_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          code: otpCode.trim(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (data && data.valid === true) {
+        // Código válido -> Proseguir con la generación normal del cartón
+        const result = purchaseCards(selectedPack, selectedRound.id);
+        if (result.success && result.cards) {
+          setBoughtCardsPreview(result.cards);
+          if (onSuccessBuy) onSuccessBuy();
+        } else {
+          setErrorMessage(result.message);
+        }
       } else {
-        setErrorMessage(result.message);
+        setErrorMessage('Código incorrecto o expirado');
       }
     } catch (err: any) {
-      setPurchasing(false);
-      setErrorMessage(err?.message || 'Error al procesar la compra.');
+      setErrorMessage('Error al conectar con el servidor de verificación.');
+    } finally {
+      setIsVerifyingOtp(false);
     }
   };
 
   const handleReset = () => {
     setBoughtCardsPreview(null);
     setErrorMessage(null);
+    setStep('select');
+    setOtpCode('');
     onClose();
   };
 
@@ -99,7 +163,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
           </div>
           <button
             onClick={handleReset}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-all"
+            className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-all cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -126,11 +190,97 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
 
             <button
               onClick={handleReset}
-              className="w-full py-3.5 bg-indigo-950 hover:bg-indigo-900 text-amber-300 font-black rounded-2xl shadow-lg transition-all"
+              className="w-full py-3.5 bg-indigo-950 hover:bg-indigo-900 text-amber-300 font-black rounded-2xl shadow-lg transition-all cursor-pointer"
             >
               Entendido, Ir a Mis Cartones
             </button>
           </div>
+        ) : step === 'otp' ? (
+          /* OTP Verification Step */
+          <form onSubmit={handleVerifyOtp} className="pt-5 space-y-4">
+            <div className="p-4 bg-indigo-950 rounded-2xl border border-indigo-900 text-white space-y-2">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-amber-400" />
+                <h3 className="text-sm font-black text-amber-300">
+                  Verificación de Seguridad Requerida
+                </h3>
+              </div>
+              <p className="text-xs text-indigo-200">
+                Se ha enviado un código de 6 dígitos al correo del administrador para autorizar la compra de <strong>{selectedPack} cartones</strong> ({formatMoney(totalPrice)}).
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1.5">
+                Ingresa el Código de 6 Dígitos *
+              </label>
+              <input
+                type="text"
+                required
+                maxLength={6}
+                autoFocus
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="123456"
+                className="w-full bg-slate-50 border-2 border-slate-300 focus:border-amber-500 text-indigo-950 tracking-widest text-center py-3 rounded-2xl text-xl font-black focus:outline-none transition-colors"
+              />
+            </div>
+
+            {/* Error banner */}
+            {errorMessage && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold p-3 rounded-xl flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('select');
+                  setErrorMessage(null);
+                }}
+                className="w-1/3 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-all text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Atrás</span>
+              </button>
+              <button
+                type="submit"
+                disabled={isVerifyingOtp || otpCode.length !== 6}
+                className={`w-2/3 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  otpCode.length !== 6 || isVerifyingOtp
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/25 active:scale-98'
+                }`}
+              >
+                {isVerifyingOtp ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verificando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>Verificar</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="text-center pt-1">
+              <button
+                type="button"
+                onClick={handleInitiatePurchase}
+                disabled={isSendingOtp}
+                className="text-xs text-amber-700 hover:text-amber-800 font-bold inline-flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className={`w-3 h-3 ${isSendingOtp ? 'animate-spin' : ''}`} />
+                <span>{isSendingOtp ? 'Enviando código al admin...' : 'Reenviar código de verificación'}</span>
+              </button>
+            </div>
+          </form>
         ) : (
           /* Purchase Selection View */
           <div className="pt-5">
@@ -153,7 +303,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
                       setSelectedPack(pack);
                       setErrorMessage(null);
                     }}
-                    className={`relative p-3.5 sm:p-4 rounded-2xl text-center border-2 transition-all flex flex-col items-center justify-between ${
+                    className={`relative p-3.5 sm:p-4 rounded-2xl text-center border-2 transition-all flex flex-col items-center justify-between cursor-pointer ${
                       isOverLimit
                         ? 'opacity-40 bg-slate-100 border-slate-200 cursor-not-allowed'
                         : isSelected
@@ -234,7 +384,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
                   <button
                     type="button"
                     onClick={onOpenRecharge}
-                    className="shrink-0 bg-amber-500 hover:bg-amber-600 text-indigo-950 font-black px-2.5 py-1 rounded-lg text-[11px] shadow-sm transition-all"
+                    className="shrink-0 bg-amber-500 hover:bg-amber-600 text-indigo-950 font-black px-2.5 py-1 rounded-lg text-[11px] shadow-sm transition-all cursor-pointer"
                   >
                     Recargar Ahora
                   </button>
@@ -247,26 +397,29 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="w-1/3 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-all text-xs sm:text-sm"
+                className="w-1/3 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-all text-xs sm:text-sm cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                disabled={!hasEnoughBalance || purchasing || maxAllowedToBuy === 0}
-                onClick={handlePurchase}
-                className={`w-2/3 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center justify-center gap-2 transition-all ${
-                  !hasEnoughBalance || maxAllowedToBuy === 0
+                disabled={!hasEnoughBalance || isSendingOtp || maxAllowedToBuy === 0}
+                onClick={handleInitiatePurchase}
+                className={`w-2/3 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  !hasEnoughBalance || maxAllowedToBuy === 0 || isSendingOtp
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/25 active:scale-98'
                 }`}
               >
-                {purchasing ? (
-                  <span>Generando Cartones 4×4...</span>
+                {isSendingOtp ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Enviando código al admin...</span>
+                  </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>Confirmar Compra ({formatMoney(totalPrice)})</span>
+                    <span>Generar / Pagar ({formatMoney(totalPrice)})</span>
                   </>
                 )}
               </button>

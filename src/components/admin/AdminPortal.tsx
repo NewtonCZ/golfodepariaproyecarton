@@ -140,7 +140,9 @@ export const AdminPortal: React.FC = () => {
     rounds.find((r) => r.status === 'open' || r.status === 'closed')?.id || rounds[0]?.id || ''
   );
   const [selectedResultFichas, setSelectedResultFichas] = useState<number[]>([]);
-  const [otpInput, setOtpInput] = useState('123456');
+  const [otpInput, setOtpInput] = useState('');
+  const [otpRequestStatus, setOtpRequestStatus] = useState('📧 Solicitar Código');
+  const [isSigningResult, setIsSigningResult] = useState(false);
   const [showResultConfirmModal, setShowResultConfirmModal] = useState(false);
   const [resultSubmitMessage, setResultSubmitMessage] = useState<{ success: boolean; text: string } | null>(null);
 
@@ -234,7 +236,30 @@ export const AdminPortal: React.FC = () => {
     setSelectedResultFichas(pool.slice(0, 20));
   };
 
-  const handleExecuteResultSubmission = () => {
+  const handleRequestOtp = async () => {
+    try {
+      setOtpRequestStatus('Enviando...');
+      const response = await fetch('https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/send-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      if (response.ok) {
+        setOtpRequestStatus('Enviado ✓');
+        alert('Código enviado a niutoncaraballo3@gmail.com');
+      } else {
+        setOtpRequestStatus('📧 Solicitar Código');
+        alert('Error al enviar el código de verificación.');
+      }
+    } catch (err) {
+      setOtpRequestStatus('📧 Solicitar Código');
+      alert('Error de conexión al enviar el código.');
+    }
+  };
+
+  const handleExecuteResultSubmission = async () => {
     setResultSubmitMessage(null);
     if (!canManageResults) {
       setResultSubmitMessage({
@@ -244,13 +269,40 @@ export const AdminPortal: React.FC = () => {
       setShowResultConfirmModal(false);
       return;
     }
-    const result = submitRoundResult(selectedRoundForResult, selectedResultFichas, otpInput);
-    if (result.success) {
-      setResultSubmitMessage({ success: true, text: result.message });
-      setShowResultConfirmModal(false);
-      setSelectedResultFichas([]);
-    } else {
-      setResultSubmitMessage({ success: false, text: result.message });
+
+    const trimmedOtp = otpInput.trim();
+    if (!trimmedOtp) {
+      alert('Por favor ingresa el código de verificación.');
+      return;
+    }
+
+    setIsSigningResult(true);
+    try {
+      const response = await fetch('https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/rapid-function', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code: trimmedOtp }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (data && data.valid === true) {
+        const result = submitRoundResult(selectedRoundForResult, selectedResultFichas, trimmedOtp);
+        if (result.success) {
+          setResultSubmitMessage({ success: true, text: result.message });
+          setShowResultConfirmModal(false);
+          setSelectedResultFichas([]);
+        } else {
+          setResultSubmitMessage({ success: false, text: result.message });
+        }
+      } else {
+        alert('Código incorrecto o vencido');
+      }
+    } catch (err) {
+      alert('Código incorrecto o vencido');
+    } finally {
+      setIsSigningResult(false);
     }
   };
 
@@ -2130,31 +2182,43 @@ export const AdminPortal: React.FC = () => {
                 Autenticación de 2 Factores (Código 2FA OTP) *
               </label>
               <input
+                id="input-otp"
                 type="text"
                 value={otpInput}
                 onChange={(e) => setOtpInput(e.target.value)}
-                placeholder="Ingresa código (Demo: 123456)"
+                placeholder="Ingresa código"
                 className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-center font-mono font-black text-base text-indigo-950 tracking-widest"
               />
-              <span className="text-[10px] text-slate-400 text-center block mt-1">
-                Código demo predeterminado: 123456
-              </span>
             </div>
 
-            <div className="flex gap-3">
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', marginTop: '20px' }}>
               <button
+                id="btn-revisar"
                 type="button"
                 onClick={() => setShowResultConfirmModal(false)}
-                className="w-1/2 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs"
+                style={{ flex: 1, padding: '10px', fontSize: '14px' }}
+                className="rounded-xl border border-slate-200 text-slate-700 font-bold hover:bg-slate-100 transition-colors"
               >
                 Revisar Figuras
               </button>
               <button
+                id="btn-solicitar-otg"
                 type="button"
-                onClick={handleExecuteResultSubmission}
-                className="w-1/2 py-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 font-black rounded-2xl text-xs shadow-lg"
+                onClick={handleRequestOtp}
+                style={{ flex: 1, padding: '10px', fontSize: '14px', background: '#e0e0e0' }}
+                className="rounded-xl font-bold text-slate-800 hover:bg-slate-300 transition-colors"
               >
-                Firmar y Distribuir Premios
+                {otpRequestStatus}
+              </button>
+              <button
+                id="btn-firmar"
+                type="button"
+                disabled={isSigningResult}
+                onClick={handleExecuteResultSubmission}
+                style={{ flex: 1.2, padding: '10px', fontSize: '14px', background: '#facc15', fontWeight: 'bold' }}
+                className="rounded-xl text-indigo-950 shadow-md hover:brightness-105 transition-all disabled:opacity-50"
+              >
+                {isSigningResult ? 'Firmando...' : 'Firmar'}
               </button>
             </div>
           </div>
