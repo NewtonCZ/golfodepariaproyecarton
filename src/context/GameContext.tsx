@@ -793,7 +793,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Fetch recharges / payment proofs from Supabase backend
   const fetchPendingRecharges = useCallback(async () => {
     try {
-      // 1. Instant check from localStorage
       const saved = localStorage.getItem(`${STORAGE_KEY}_recharges`);
       if (saved) {
         try {
@@ -804,76 +803,44 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (e) {}
       }
 
-      // 2. Fetch directly from backend /api/recharges with cache-busting
-      const res = await fetch(`/api/recharges?_nocache=${Date.now()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-        },
-      });
+      // Fetch from Supabase recharges table
+      const { data, error } = await supabase
+        .from('recharges')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-      if (res.ok) {
-        const result = await res.json();
-        if (result && result.success && Array.isArray(result.data) && result.data.length > 0) {
-          const incoming = result.data as RechargeTransaction[];
-          setRecharges((prev) => {
-            const map = new Map<string, RechargeTransaction>(prev.map((r) => [r.id, r]));
-            incoming.forEach((r) => map.set(r.id, r));
-            const merged = Array.from(map.values()).sort(
-              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            );
-            try {
-              localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(merged));
-            } catch (e) {}
-            return merged;
-          });
-        }
+      if (!error && data && Array.isArray(data) && data.length > 0) {
+        setRecharges(data as any);
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(data));
+        } catch (e) {}
       }
     } catch (err) {
       console.warn('[GameContext] fetchPendingRecharges note:', err);
     }
   }, []);
 
-  // Fetch withdrawals from backend API
   const fetchWithdrawals = useCallback(async () => {
     try {
-      // 1. Instant check from localStorage
       const saved = localStorage.getItem(`${STORAGE_KEY}_withdrawals`);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setWithdrawals(parsed);
-          }
+          if (Array.isArray(parsed) && parsed.length > 0) setWithdrawals(parsed);
         } catch (e) {}
       }
 
-      // 2. Fetch directly from backend /api/withdrawals with cache-busting
-      const res = await fetch(`/api/withdrawals?_nocache=${Date.now()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-        },
-      });
+      // Fetch from Supabase withdrawals / retiros table
+      const { data, error } = await supabase
+        .from('withdrawals')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-      if (res.ok) {
-        const result = await res.json();
-        if (result && result.success && Array.isArray(result.data) && result.data.length > 0) {
-          const incoming = result.data as WithdrawalTransaction[];
-          setWithdrawals((prev) => {
-            const map = new Map<string, WithdrawalTransaction>(prev.map((w) => [w.id, w]));
-            incoming.forEach((w) => map.set(w.id, w));
-            const merged = Array.from(map.values()).sort(
-              (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-            );
-            try {
-              localStorage.setItem(`${STORAGE_KEY}_withdrawals`, JSON.stringify(merged));
-            } catch (e) {}
-            return merged;
-          });
-        }
+      if (!error && data && Array.isArray(data) && data.length > 0) {
+        setWithdrawals(data as any);
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_withdrawals`, JSON.stringify(data));
+        } catch (e) {}
       }
     } catch (err) {
       console.warn('[GameContext] fetchWithdrawals note:', err);
@@ -883,7 +850,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Fetch commercial config (admin bank details, rates, prices) from centralized server
   const fetchCommercialConfig = useCallback(async () => {
     try {
-      // 1. Instant check from localStorage
       const saved = localStorage.getItem(`${STORAGE_KEY}_config`);
       if (saved) {
         try {
@@ -900,39 +866,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (e) {}
       }
 
-      // 2. Fetch directly from backend /api/config/comercial with cache-busting
-      const res = await fetch(`/api/config/comercial?_nocache=${Date.now()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-        },
-      });
-
-      if (res.ok) {
-        const result = await res.json();
-        if (result && result.success && result.data) {
-          const cfg = result.data as CommercialConfig;
-          setCommercialConfig((prev) => ({
-            ...prev,
-            ...cfg,
-            adminBank: {
-              ...prev.adminBank,
-              ...(cfg.adminBank || {}),
-            },
-            cardPrices: {
-              ...prev.cardPrices,
-              ...(cfg.cardPrices || {}),
-            },
-            prizeMultipliers: {
-              ...prev.prizeMultipliers,
-              ...(cfg.prizeMultipliers || {}),
-            },
-          }));
-          try {
-            localStorage.setItem(`${STORAGE_KEY}_config`, JSON.stringify(cfg));
-          } catch (e) {}
-        }
+      const { data } = await supabase.from('comercial').select('*').limit(1).maybeSingle();
+      if (data && (data as any).config) {
+        const cfg = (data as any).config;
+        setCommercialConfig((prev) => ({
+          ...prev,
+          ...cfg,
+          adminBank: { ...prev.adminBank, ...(cfg.adminBank || {}) },
+          cardPrices: { ...prev.cardPrices, ...(cfg.cardPrices || {}) },
+          prizeMultipliers: { ...prev.prizeMultipliers, ...(cfg.prizeMultipliers || {}) },
+        }));
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_config`, JSON.stringify(cfg));
+        } catch (e) {}
       }
     } catch (err) {
       console.warn('[GameContext] fetchCommercialConfig note:', err);
