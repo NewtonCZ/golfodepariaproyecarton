@@ -732,25 +732,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchActiveRounds = useCallback(
     async (options?: { bypassCache?: boolean; limit?: number }) => {
       try {
-        const limit = options?.limit || 3;
-        const nocacheParam = options?.bypassCache ? `&_nocache=${Date.now()}` : '';
-        const res = await fetch(
-          `/api/rounds?status=open,scheduled&limit=${limit}${nocacheParam}`,
-          {
-            cache: 'no-store',
-            headers: {
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              Pragma: 'no-cache',
-            },
-          }
-        );
+      const limit = options?.limit || 3;
+      const { data: fetchedRounds, error } = await supabase
+        .from('rounds')
+        .select('*')
+        .in('status', ['open','scheduled'])
+        .order('starts_at', { ascending: true })
+        .limit(limit);
 
-        if (!res.ok) return;
+      if (error) throw error;
+      if (!fetchedRounds || fetchedRounds.length === 0) return;
 
-        const result = await res.json();
-        if (result && result.success && Array.isArray(result.data)) {
-          const fetchedRounds: GameRound[] = result.data;
-          if (fetchedRounds.length > 0) {
+      if (fetchedRounds.length > 0) {
             setRounds((prev) => {
               const fetchedMap = new Map(fetchedRounds.map((r) => [r.id, r]));
               // Update existing rounds with server data
