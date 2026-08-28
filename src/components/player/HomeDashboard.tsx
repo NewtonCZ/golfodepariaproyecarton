@@ -73,10 +73,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         return st === 'open' || st === 'scheduled';
       })
       .sort((a, b) => {
-        const timeA = new Date(a.starts_at || a.openBetAt || a.drawAt).getTime();
-        const timeB = new Date(b.starts_at || b.openBetAt || b.drawAt).getTime();
+        const rawDateA = a?.starts_at || a?.openBetAt || a?.drawAt || a?.created_at;
+        const rawDateB = b?.starts_at || b?.openBetAt || b?.drawAt || b?.created_at;
+        const timeA = rawDateA ? new Date(rawDateA).getTime() : 0;
+        const timeB = rawDateB ? new Date(rawDateB).getTime() : 0;
         if (timeA !== timeB) return timeA - timeB;
-        return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+        return ((a?.order || a?.roundNumber || 0) - (b?.order || b?.roundNumber || 0));
       })
       .slice(0, 3);
   }, [upcomingRounds, rounds]);
@@ -166,10 +168,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               );
               const userCardsInThisRound = userCards.filter((c) => c.roundId === round.id);
 
-             const roundDate = new Date(round.starts_at || round.openBetAt || round.drawAt || round.created_at || new Date());
-             const formattedTime = isNaN(roundDate.getTime())
-               ? 'Próximamente'
-               : roundDate.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+              const rawRoundDate = round?.starts_at || round?.openBetAt || round?.drawAt || round?.created_at;
+              const roundDate = rawRoundDate ? new Date(rawRoundDate) : null;
+              const formattedTime = roundDate && !isNaN(roundDate.getTime())
+                ? roundDate.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })
+                : 'Próximamente';
 
               return (
                 <div

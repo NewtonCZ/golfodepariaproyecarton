@@ -269,7 +269,7 @@ export const WalletLedgerView: React.FC<WalletLedgerViewProps> = ({
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3 text-slate-500 text-[11px] whitespace-nowrap">
-                          {new Date(item.createdAt).toLocaleString('es-VE')}
+                          {item?.createdAt ? new Date(item.createdAt).toLocaleString('es-VE') : ''}
                         </td>
                         <td className="py-3">
                           <span
@@ -358,7 +358,7 @@ export const WalletLedgerView: React.FC<WalletLedgerViewProps> = ({
                       </span>
                     </div>
                     <span className="text-xs text-slate-500 block">
-                      {rec.bankOrigin} • {new Date(rec.createdAt).toLocaleString('es-VE')}
+                      {rec.bankOrigin} • {rec?.createdAt ? new Date(rec.createdAt).toLocaleString('es-VE') : ''}
                     </span>
                   </div>
                 </div>
@@ -431,7 +431,7 @@ export const WalletLedgerView: React.FC<WalletLedgerViewProps> = ({
                     Destino: {wth.bankDest} ({wth.phoneOrAccount}) • {wth.titularName}
                   </span>
                   <span className="text-[10px] text-slate-400 block">
-                    Solicitado el {new Date(wth.createdAt).toLocaleString('es-VE')}
+                    Solicitado el {wth?.createdAt ? new Date(wth.createdAt).toLocaleString('es-VE') : ''}
                   </span>
                 </div>
 

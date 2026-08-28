@@ -856,7 +856,7 @@ export const CustomerSupportWidget: React.FC = () => {
 
                         <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-900">
                           <span>{t.category}</span>
-                          <span>{new Date(t.createdAt).toLocaleDateString()}</span>
+                          <span>{t?.createdAt ? new Date(t.createdAt).toLocaleDateString('es-VE') : ''}</span>
                         </div>
                       </div>
                     ))

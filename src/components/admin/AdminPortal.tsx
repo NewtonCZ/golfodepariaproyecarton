@@ -759,9 +759,9 @@ export const AdminPortal: React.FC = () => {
                         {formatMoney(rec.amountVes)}
                       </td>
                       <td className="py-3 text-slate-500 text-[11px]">
-                        <div>{new Date(rec.createdAt).toLocaleDateString('es-VE')}</div>
+                        <div>{rec?.createdAt ? new Date(rec.createdAt).toLocaleDateString('es-VE') : ''}</div>
                         <div className="text-[10px] text-slate-400 font-mono">
-                          {new Date(rec.createdAt).toLocaleTimeString('es-VE')}
+                          {rec?.createdAt ? new Date(rec.createdAt).toLocaleTimeString('es-VE') : ''}
                         </div>
                       </td>
                       <td className="py-3">
@@ -814,7 +814,7 @@ export const AdminPortal: React.FC = () => {
                             <span className="text-[10px] text-slate-500 font-medium block">
                               {rec.processedBy || 'Operador'}
                             </span>
-                            {rec.processedAt && (
+                            {rec?.processedAt && (
                               <span className="text-[9px] text-slate-400 font-mono">
                                 {new Date(rec.processedAt).toLocaleString('es-VE')}
                               </span>
@@ -905,7 +905,7 @@ export const AdminPortal: React.FC = () => {
                       {formatMoney(wth.amountVes)}
                     </td>
                     <td className="py-3 text-slate-500 text-[11px]">
-                      {new Date(wth.createdAt).toLocaleString('es-VE')}
+                      {wth?.createdAt ? new Date(wth.createdAt).toLocaleString('es-VE') : ''}
                     </td>
                     <td className="py-3">
                       <span
@@ -949,7 +949,7 @@ export const AdminPortal: React.FC = () => {
                         )
                       ) : (
                         <span className="text-[10px] text-slate-400">
-                          {wth.processedBy} ({new Date(wth.processedAt || '').toLocaleTimeString('es-VE')})
+                          {wth?.processedBy || 'Operador'} {wth?.processedAt ? `(${new Date(wth.processedAt).toLocaleTimeString('es-VE')})` : ''}
                         </span>
                       )}
                     </td>
@@ -1178,8 +1178,9 @@ export const AdminPortal: React.FC = () => {
 
                         <td className="py-3 text-slate-500">
                           {(() => {
-                            const d = new Date(round.starts_at || round.openBetAt || round.drawAt || round.created_at || new Date());
-                            return isNaN(d.getTime()) ? 'Próximamente' : d.toLocaleString('es-VE', {
+                            const raw = round?.starts_at || round?.openBetAt || round?.drawAt || round?.created_at;
+                            const d = raw ? new Date(raw) : null;
+                            return !d || isNaN(d.getTime()) ? 'Próximamente' : d.toLocaleString('es-VE', {
                               month: 'numeric',
                               day: 'numeric',
                               hour: '2-digit',
@@ -1672,7 +1673,7 @@ export const AdminPortal: React.FC = () => {
                   {auditLogs.map((log) => (
                     <tr key={log.id} className="hover:bg-slate-50">
                       <td className="py-2.5 text-slate-500 text-[11px] whitespace-nowrap">
-                        {new Date(log.timestamp).toLocaleString('es-VE')}
+                        {log?.timestamp ? new Date(log.timestamp).toLocaleString('es-VE') : ''}
                       </td>
                       <td className="py-2.5">
                         <span className="font-bold text-slate-900">{log.operatorName}</span>
@@ -1881,10 +1882,10 @@ export const AdminPortal: React.FC = () => {
                 </div>
 
                 <div className="pt-2 border-t border-slate-200 text-[10px] text-slate-500">
-                  <div>Registrado: {new Date(selectedRechargeForReview.createdAt).toLocaleString('es-VE')}</div>
-                  {selectedRechargeForReview.updatedAt && (
+                  <div>Registrado: {selectedRechargeForReview?.createdAt ? new Date(selectedRechargeForReview.createdAt).toLocaleString('es-VE') : ''}</div>
+                  {selectedRechargeForReview?.updatedAt && (
                     <div className="text-amber-800 font-semibold">
-                      Última modificación: {new Date(selectedRechargeForReview.updatedAt).toLocaleString('es-VE')}
+                      Última modificación: {selectedRechargeForReview.updatedAt ? new Date(selectedRechargeForReview.updatedAt).toLocaleString('es-VE') : ''}
                     </div>
                   )}
                 </div>

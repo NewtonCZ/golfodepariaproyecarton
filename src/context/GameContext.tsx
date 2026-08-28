@@ -322,11 +322,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuditLogs(prev => [newLog,...prev]);
   }, [operatorRole]);
 
-  const formatMoney = useCallback((amountVes: number, options?: { showBoth?: boolean }): string => {
-    const ves = `${amountVes.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs.`;
-    const usd = `$${(amountVes / commercialConfig.exchangeRateVesUsd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    return options?.showBoth? `${ves} (~${usd} USD)` : (currencyDisplay === 'VES'? ves : usd);
-  }, [commercialConfig.exchangeRateVesUsd, currencyDisplay]);
+  const formatMoney = useCallback((amountVes?: number | null, options?: { showBoth?: boolean }): string => {
+    const validAmount = typeof amountVes === 'number' && !isNaN(amountVes) ? amountVes : 0;
+    const rate = commercialConfig?.exchangeRateVesUsd && commercialConfig.exchangeRateVesUsd > 0 ? commercialConfig.exchangeRateVesUsd : 60;
+    const ves = `${(validAmount ?? 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs.`;
+    const usd = `$${((validAmount ?? 0) / rate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return options?.showBoth ? `${ves} (~${usd} USD)` : (currencyDisplay === 'VES' ? ves : usd);
+  }, [commercialConfig?.exchangeRateVesUsd, currencyDisplay]);
 
   //... COPIA AQUÍ TODAS LAS FUNCIONES purchaseCards, archiveCard, submitRecharge, approveRecharge, rejectRecharge, submitWithdrawal, completeWithdrawal, rejectWithdrawal, createRound, updateRoundConfig, setRoundStatus, submitRoundResult, startLiveDrawSimulation, stopLiveDrawSimulation, quickAddBalance, updateCommercialConfig, resetToInitialData, createSystemCredential, updateSystemCredential, deleteSystemCredential que ya me enviaste (están perfectas)
 

@@ -65,7 +65,7 @@ export const ResultsHistoryView: React.FC = () => {
                       </div>
                       <span className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
                         <Calendar className="w-3.5 h-3.5" />
-                        <span>{new Date(round.drawAt).toLocaleString('es-VE')}</span>
+                        <span>{round?.drawAt ? new Date(round.drawAt).toLocaleString('es-VE') : 'Fecha no disponible'}</span>
                       </span>
                     </div>
                   </div>
@@ -123,7 +123,7 @@ export const ResultsHistoryView: React.FC = () => {
 
                     {round.resultSubmittedBy && (
                       <div className="mt-3 text-right text-[11px] text-slate-400 font-medium">
-                        Sorteo certificado por: {round.resultSubmittedBy} ({new Date(round.resultSubmittedAt || '').toLocaleTimeString('es-VE')})
+                        Sorteo certificado por: {round.resultSubmittedBy} {round.resultSubmittedAt ? `(${new Date(round.resultSubmittedAt).toLocaleTimeString('es-VE')})` : ''}
                       </div>
                     )}
                   </div>
