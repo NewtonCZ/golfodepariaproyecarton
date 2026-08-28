@@ -137,11 +137,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // --- RESTO DE TU LÓGICA IGUAL, CON FIX EN fetchActiveRounds ---
   const fetchSystemCredentials = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('admin_users').select('id, username, role, status, created_at, display_name');
+      const { data, error } = await supabase.from('admin_users').select('*');
       if (!error && Array.isArray(data) && data.length > 0) {
         const mapped: SystemCredential[] = data.map((row: any) => ({
-          id: String(row.id), username: row.username, displayName: row.display_name || row.username,
-          role: normalizeAdminRole(row.role), status: row.status === 'inactive'? 'inactive' : 'active', createdAt: row.created_at || new Date().toISOString(),
+          id: String(row.id || row.user_id || ''),
+          username: row.username || row.email || '',
+          displayName: row.display_name || row.displayName || row.name || row.username || row.email || 'Admin',
+          role: normalizeAdminRole(row.role),
+          status: row.status === 'inactive' ? 'inactive' : 'active',
+          createdAt: row.created_at || row.createdAt || new Date().toISOString(),
         }));
         setSystemCredentials(mapped);
       }
