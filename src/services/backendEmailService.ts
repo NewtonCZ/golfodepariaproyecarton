@@ -38,30 +38,12 @@ export interface PasswordChangedEmailParams {
  * Reads email configuration from environment variables
  */
 export function getEmailConfig() {
-  const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env || {} : {};
-  const provider = (
-    process.env.EMAIL_PROVIDER ||
-    metaEnv.VITE_EMAIL_PROVIDER ||
-    'auto'
-  ).toLowerCase();
-
-  const resendApiKey =
-    process.env.RESEND_API_KEY ||
-    process.env.VITE_RESEND_API_KEY ||
-    metaEnv.VITE_RESEND_API_KEY ||
-    metaEnv.RESEND_API_KEY ||
-    '';
-
-  const sendgridApiKey =
-    process.env.SENDGRID_API_KEY ||
-    process.env.VITE_SENDGRID_API_KEY ||
-    metaEnv.VITE_SENDGRID_API_KEY ||
-    '';
-
+  const provider = (process.env.EMAIL_PROVIDER || 'auto').toLowerCase();
+  const resendApiKey = process.env.RESEND_API_KEY || '';
+  const sendgridApiKey = process.env.SENDGRID_API_KEY || '';
   const emailFrom =
     process.env.EMAIL_FROM ||
     process.env.RESEND_FROM ||
-    metaEnv.VITE_EMAIL_FROM ||
     process.env.SENDGRID_FROM ||
     'TÚ SUPERCARTÓN <onboarding@resend.dev>';
 

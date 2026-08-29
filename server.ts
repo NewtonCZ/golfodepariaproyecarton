@@ -71,7 +71,7 @@ setInterval(() => {
 
 // Helper para enviar correo con Resend
 async function sendResendOtpEmail(toEmail: string, otpCode: string, contextTitle: string = 'Código de Verificación'): Promise<{ success: boolean; id?: string; error?: string }> {
-  const apiKey = (process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY || '').trim();
+  const apiKey = (process.env.RESEND_API_KEY || "").trim();
   const fromEmail = (process.env.EMAIL_FROM || 'TÚ SUPERCARTÓN <onboarding@resend.dev>').trim();
 
   console.log(`[Resend Engine] Intentando enviar OTP (${otpCode}) a: ${toEmail}`);
