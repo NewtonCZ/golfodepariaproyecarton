@@ -1,0 +1,29 @@
+/**
+ * Unified API Configuration for Tu Súper Cartón / Golfo de Paria
+ * Dynamically resolves backend base URL with priority:
+ * 1. import.meta.env.VITE_API_URL (Render URL on Vercel / Production)
+ * 2. Fallback to https://golfodepariaproyecarton.onrender.com
+ */
+
+export const getApiBaseUrl = (): string => {
+  const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env || {} : {};
+  const envUrl = metaEnv.VITE_API_URL || (typeof process !== 'undefined' && process.env?.VITE_API_URL);
+
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.trim().replace(/\/$/, '');
+  }
+
+  // Default production backend on Render
+  return 'https://golfodepariaproyecarton.onrender.com';
+};
+
+export const API_ENDPOINTS = {
+  SEND_OTP: `${getApiBaseUrl()}/send-otp`,
+  VERIFY_OTP: `${getApiBaseUrl()}/verify-otp`,
+  HEALTH: `${getApiBaseUrl()}/health`,
+  AUTH_SEND_RECOVERY: `${getApiBaseUrl()}/api/auth/send-recovery-code`,
+  AUTH_VERIFY_RECOVERY: `${getApiBaseUrl()}/api/auth/verify-recovery-code`,
+  // Fallback Supabase Edge Functions if Render backend is sleeping/starting up
+  SUPABASE_SEND_OTP: 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/send-otp',
+  SUPABASE_VERIFY_OTP: 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/verify-otp',
+};

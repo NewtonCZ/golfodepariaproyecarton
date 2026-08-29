@@ -36,6 +36,7 @@ import {
   X,
 } from 'lucide-react';
 import { Ficha, RechargeTransaction } from '../../types';
+import { API_ENDPOINTS } from '../../services/apiConfig';
 
 export const AdminPortal: React.FC = () => {
   const {
@@ -239,13 +240,24 @@ export const AdminPortal: React.FC = () => {
   const handleRequestOtp = async () => {
     try {
       setOtpRequestStatus('Enviando...');
-      const response = await fetch('https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/send-otp', {
+      let response = await fetch(API_ENDPOINTS.SEND_OTP, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({}),
-      });
+        body: JSON.stringify({ email: 'niutoncaraballo3@gmail.com' }),
+      }).catch(() => null);
+
+      if (!response || !response.ok) {
+        response = await fetch(API_ENDPOINTS.SUPABASE_SEND_OTP, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email: 'niutoncaraballo3@gmail.com' }),
+        });
+      }
+
       if (response.ok) {
         setOtpRequestStatus('Enviado ✓');
         alert('Código enviado a niutoncaraballo3@gmail.com');
@@ -278,13 +290,23 @@ export const AdminPortal: React.FC = () => {
 
     setIsSigningResult(true);
     try {
-      const response = await fetch('https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/verify-otp', {
+      let response = await fetch(API_ENDPOINTS.VERIFY_OTP, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ code: trimmedOtp }),
-      });
+      }).catch(() => null);
+
+      if (!response || !response.ok) {
+        response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ code: trimmedOtp }),
+        });
+      }
 
       const data = await response.json().catch(() => ({}));
       if (data && data.valid === true) {

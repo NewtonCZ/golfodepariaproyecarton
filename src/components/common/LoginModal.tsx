@@ -33,6 +33,7 @@ import {
 } from '../../services/playerStorage';
 import { supabase } from '../../services/supabaseClient';
 import { SuperSparkleBadge } from './SuperSparkleBadge';
+import { API_ENDPOINTS } from '../../services/apiConfig';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -308,10 +309,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         }
       }
 
-      // 2. Intentar despacho de código real a través del backend (/api/auth/send-recovery-code con Resend)
+      // 2. Intentar despacho de código real a través del backend con Resend
       let sentViaApi = false;
       try {
-        const resp = await fetch('/api/auth/send-recovery-code', {
+        const resp = await fetch(API_ENDPOINTS.AUTH_SEND_RECOVERY, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -374,7 +375,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
 
     try {
-      const resp = await fetch('/api/auth/verify-recovery-code', {
+      const resp = await fetch(API_ENDPOINTS.AUTH_VERIFY_RECOVERY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: recoverEmail, code: cleanCode }),

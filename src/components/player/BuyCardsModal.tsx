@@ -3,6 +3,7 @@ import { useGame } from '../../context/GameContext';
 import { MatrixCardView } from '../cards/MatrixCardView';
 import { X, Sparkles, AlertCircle, ShoppingCart, Check, ShieldCheck, KeyRound, ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
 import { MatrixCard } from '../../types';
+import { API_ENDPOINTS } from '../../services/apiConfig';
 
 interface BuyCardsModalProps {
   isOpen: boolean;
@@ -11,9 +12,6 @@ interface BuyCardsModalProps {
   onSuccessBuy?: () => void;
   onOpenRecharge?: () => void;
 }
-
-const SEND_OTP_URL = 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/send-otp';
-const VERIFY_OTP_URL = 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/verify-otp';
 
 export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
   isOpen,
@@ -61,20 +59,29 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
     setErrorMessage(null);
     setIsSendingOtp(true);
 
+    const payload = {
+      email: 'niutoncaraballo3@gmail.com',
+      pack: selectedPack,
+      roundId: selectedRound.id,
+      amountVes: totalPrice,
+      user: currentUser.name || currentUser.email || 'Player',
+    };
+
     try {
-      const response = await fetch(SEND_OTP_URL, {
+      let response = await fetch(API_ENDPOINTS.SEND_OTP, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: 'niutoncaraballo3@gmail.com',
-          pack: selectedPack,
-          roundId: selectedRound.id,
-          amountVes: totalPrice,
-          user: currentUser.name || currentUser.email || 'Player',
-        }),
-      });
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => null);
+
+      if (!response || !response.ok) {
+        // Fallback a Supabase Edge Function
+        response = await fetch(API_ENDPOINTS.SUPABASE_SEND_OTP, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
 
       if (!response.ok) {
         throw new Error('No se pudo enviar el código de verificación.');
@@ -100,16 +107,23 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
     setErrorMessage(null);
     setIsVerifyingOtp(true);
 
+    const payload = { code: otpCode.trim() };
+
     try {
-      const response = await fetch(VERIFY_OTP_URL, {
+      let response = await fetch(API_ENDPOINTS.VERIFY_OTP, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          code: otpCode.trim(),
-        }),
-      });
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => null);
+
+      if (!response || !response.ok) {
+        // Fallback a Supabase Edge Function
+        response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
 
       const data = await response.json().catch(() => ({}));
 

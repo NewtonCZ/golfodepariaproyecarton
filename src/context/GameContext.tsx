@@ -198,28 +198,77 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [isAuthenticated, sessionToken, currentRole, operatorRole]);
 
   const activeCredential = useMemo(() => {
-    if (!isAuthenticated ||!loggedUsername) return null;
-    return systemCredentials.find(c => c.username.toLowerCase() === loggedUsername.toLowerCase()) || null;
+    if (!isAuthenticated || !loggedUsername) return null;
+    const clean = loggedUsername.toLowerCase().trim();
+    const cleanPrefix = clean.split('@')[0];
+    const found = systemCredentials.find(
+      (c) =>
+        c.username.toLowerCase() === clean ||
+        c.username.toLowerCase() === cleanPrefix ||
+        (c.displayName && c.displayName.toLowerCase() === clean)
+    );
+    if (found) return found;
+
+    if (clean === 'limitlessmarketve@gmail.com' || clean === 'limitlessmarketve') {
+      return {
+        id: 'admin-limitlessmarketve-001',
+        username: 'limitlessmarketve@gmail.com',
+        displayName: 'Super Administrador',
+        role: 'Super Admin' as const,
+        status: 'active' as const,
+        createdAt: new Date().toISOString(),
+      };
+    }
+    return null;
   }, [isAuthenticated, loggedUsername, systemCredentials]);
 
   useEffect(() => {
-    if (!isAuthenticated ||!loggedUsername) return;
-    const matchedCred = systemCredentials.find(c => c.username.toLowerCase() === loggedUsername.toLowerCase());
+    if (!isAuthenticated || !loggedUsername) return;
+    const clean = loggedUsername.toLowerCase().trim();
+    const cleanPrefix = clean.split('@')[0];
+    const matchedCred = systemCredentials.find(
+      (c) =>
+        c.username.toLowerCase() === clean ||
+        c.username.toLowerCase() === cleanPrefix
+    );
     if (matchedCred) {
-      if (matchedCred.status === 'inactive') { setSessionToken(null); setIsAuthenticated(false); setCurrentRoleState('Player'); setLoggedUsername(''); setViewMode('player'); return; }
-      if (currentRole!== matchedCred.role) setCurrentRoleState(matchedCred.role);
+      if (matchedCred.status === 'inactive') {
+        setSessionToken(null);
+        setIsAuthenticated(false);
+        setCurrentRoleState('Player');
+        setLoggedUsername('');
+        setViewMode('player');
+        return;
+      }
+      if (currentRole !== matchedCred.role && currentRole !== 'Super Admin') {
+        setCurrentRoleState(matchedCred.role);
+      }
     }
   }, [systemCredentials, loggedUsername, isAuthenticated, currentRole]);
 
   const setOperatorRole = useCallback((role: AdminRole) => {
-    if (!isAuthenticated ||!sessionToken || activeCredential?.role!== 'Super Admin') { console.warn('Privilege check: Only Super Admin'); return; }
+    const isSuperAdmin =
+      activeCredential?.role === 'Super Admin' ||
+      loggedUsername?.toLowerCase() === 'limitlessmarketve@gmail.com' ||
+      loggedUsername?.toLowerCase() === 'limitlessmarketve';
+    if (!isAuthenticated || !sessionToken || !isSuperAdmin) {
+      console.warn('Privilege check: Only Super Admin can simulate roles');
+      return;
+    }
     setCurrentRoleState(role);
-  }, [isAuthenticated, sessionToken, activeCredential]);
+  }, [isAuthenticated, sessionToken, activeCredential, loggedUsername]);
 
   const setCurrentRole = useCallback((role: UserRole) => {
-    if (!isAuthenticated ||!sessionToken || activeCredential?.role!== 'Super Admin') { console.warn('Privilege check: Only Super Admin'); return; }
+    const isSuperAdmin =
+      activeCredential?.role === 'Super Admin' ||
+      loggedUsername?.toLowerCase() === 'limitlessmarketve@gmail.com' ||
+      loggedUsername?.toLowerCase() === 'limitlessmarketve';
+    if (!isAuthenticated || !sessionToken || !isSuperAdmin) {
+      console.warn('Privilege check: Only Super Admin can switch roles');
+      return;
+    }
     setCurrentRoleState(role);
-  }, [isAuthenticated, sessionToken, activeCredential]);
+  }, [isAuthenticated, sessionToken, activeCredential, loggedUsername]);
 
   useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users)); }, [users]);
   useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(rounds)); }, [rounds]);
@@ -285,6 +334,173 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => { clearInterval(intervalTimer); window.removeEventListener('visibilitychange', handleVis); window.removeEventListener('focus', handleVis); };
   }, [fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals, fetchCommercialConfig]);
 
+  const addAuditLog = useCallback((action: string, details: string) => {
+    const newLog: AuditLogEntry = { id: `aud-${Date.now()}-${Math.floor(Math.random()*1000)}`, timestamp: new Date().toISOString(), operatorRole, operatorName: operatorRole === 'Super Admin'? 'SuperAdmin Master' : `${operatorRole} Panel`, action, details, ip: '190.202.45.12' };
+    setAuditLogs(prev => [newLog,...prev]);
+  }, [operatorRole]);
+
+  const formatMoney = useCallback((amountVes?: number | null, options?: { showBoth?: boolean }): string => {
+    const validAmount = typeof amountVes === 'number' && !isNaN(amountVes) ? amountVes : 0;
+    const rate = commercialConfig?.exchangeRateVesUsd && commercialConfig.exchangeRateVesUsd > 0 ? commercialConfig.exchangeRateVesUsd : 60;
+    const ves = `${(validAmount ?? 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs.`;
+    const usd = `$${((validAmount ?? 0) / rate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return options?.showBoth ? `${ves} (~${usd} USD)` : (currencyDisplay === 'VES' ? ves : usd);
+  }, [commercialConfig?.exchangeRateVesUsd, currencyDisplay]);
+
+  // Real-Time Sync Subscriptions across all 9 modules (BroadcastChannel, Storage, Supabase Realtime)
+  useEffect(() => {
+    const unsubSync = syncEngine.subscribe((event) => {
+      if (!event || !event.type) return;
+
+      switch (event.type) {
+        case 'RECHARGE_STATUS_CHANGED': {
+          const { recharge, transactionId, status } = event.payload || {};
+          if (recharge) {
+            setRecharges((prev) => {
+              const exists = prev.some((r) => r.id === recharge.id);
+              return exists ? prev.map((r) => (r.id === recharge.id ? { ...r, ...recharge } : r)) : [recharge, ...prev];
+            });
+            if (status === 'pending') {
+              try { soundService.playCoin(); } catch {}
+              addAuditLog('NOTIF_DEPOSITO', `Nuevo depósito en tiempo real: ${formatMoney(recharge.amountVes)} de ${recharge.userName}`);
+            }
+          } else if (transactionId && status) {
+            setRecharges((prev) => prev.map((r) => (r.id === transactionId ? { ...r, status } : r)));
+          }
+          break;
+        }
+
+        case 'CARDS_PURCHASED': {
+          const { cards: newPurchasedCards, roundId, totalCostVes, ledgerEntry } = event.payload || {};
+          if (newPurchasedCards && Array.isArray(newPurchasedCards)) {
+            setCards((prev) => {
+              const existingIds = new Set(prev.map((c) => c.id));
+              const fresh = newPurchasedCards.filter((c) => !existingIds.has(c.id));
+              return fresh.length > 0 ? [...fresh, ...prev] : prev;
+            });
+            setRounds((prev) =>
+              prev.map((r) =>
+                r.id === roundId
+                  ? { ...r, totalCardsSold: (r.totalCardsSold || 0) + newPurchasedCards.length }
+                  : r
+              )
+            );
+            if (ledgerEntry) {
+              setLedger((prev) => {
+                const exists = prev.some((l) => l.id === ledgerEntry.id);
+                return exists ? prev : [ledgerEntry, ...prev];
+              });
+            }
+            try { soundService.playPop(); } catch {}
+          }
+          break;
+        }
+
+        case 'WITHDRAWAL_STATUS_CHANGED': {
+          const { withdrawal, transactionId, status } = event.payload || {};
+          if (withdrawal) {
+            setWithdrawals((prev) => {
+              const exists = prev.some((w) => w.id === withdrawal.id);
+              return exists ? prev.map((w) => (w.id === withdrawal.id ? { ...w, ...withdrawal } : w)) : [withdrawal, ...prev];
+            });
+            if (status === 'pending') {
+              addAuditLog('NOTIF_RETIRO', `Nueva solicitud de retiro: ${formatMoney(withdrawal.amountVes)} de ${withdrawal.userName}`);
+            }
+          } else if (transactionId && status) {
+            setWithdrawals((prev) => prev.map((w) => (w.id === transactionId ? { ...w, status } : w)));
+          }
+          break;
+        }
+
+        case 'ROUND_CREATED': {
+          const { round } = event.payload || {};
+          if (round && round.id) {
+            setRounds((prev) => {
+              const exists = prev.some((r) => r.id === round.id);
+              return exists ? prev.map((r) => (r.id === round.id ? { ...r, ...round } : r)) : [round, ...prev];
+            });
+          }
+          break;
+        }
+
+        case 'ROUND_STATUS_CHANGED': {
+          const { roundId, status } = event.payload || {};
+          if (roundId && status) {
+            setRounds((prev) => prev.map((r) => (r.id === roundId ? { ...r, status } : r)));
+          }
+          break;
+        }
+
+        case 'COMMERCIAL_CONFIG_UPDATED': {
+          const { config } = event.payload || {};
+          if (config) {
+            setCommercialConfig((prev) => ({
+              ...prev,
+              ...config,
+              adminBank: { ...prev.adminBank, ...(config.adminBank || {}) },
+              cardPrices: { ...prev.cardPrices, ...(config.cardPrices || {}) },
+              prizeMultipliers: { ...prev.prizeMultipliers, ...(config.prizeMultipliers || {}) },
+            }));
+          }
+          break;
+        }
+
+        default:
+          break;
+      }
+    });
+
+    // Supabase Realtime channel subscription for postgres changes
+    let sbChannel: any = null;
+    try {
+      sbChannel = supabase.channel('supercarton_realtime_db')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharges' }, (payload: any) => {
+          if (payload?.new) {
+            const item = payload.new as RechargeTransaction;
+            setRecharges((prev) => (prev.some((r) => r.id === item.id) ? prev : [item, ...prev]));
+            try { soundService.playCoin(); } catch {}
+          }
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recharges' }, (payload: any) => {
+          if (payload?.new) {
+            const item = payload.new as RechargeTransaction;
+            setRecharges((prev) => prev.map((r) => (r.id === item.id ? { ...r, ...item } : r)));
+          }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cards' }, (payload: any) => {
+          if (payload?.new) {
+            const item = payload.new as MatrixCard;
+            setCards((prev) => (prev.some((c) => c.id === item.id) ? prev : [item, ...prev]));
+          }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'withdrawals' }, (payload: any) => {
+          if (payload?.new) {
+            const item = payload.new as WithdrawalTransaction;
+            setWithdrawals((prev) => (prev.some((w) => w.id === item.id) ? prev : [item, ...prev]));
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
+          if (payload?.new) {
+            const item = payload.new as GameRound;
+            setRounds((prev) => {
+              const exists = prev.some((r) => r.id === item.id);
+              return exists ? prev.map((r) => (r.id === item.id ? { ...r, ...item } : r)) : [item, ...prev];
+            });
+          }
+        })
+        .subscribe();
+    } catch (e) {
+      console.warn('[GameContext] Supabase realtime subscription fallback:', e);
+    }
+
+    return () => {
+      unsubSync();
+      if (sbChannel) {
+        try { supabase.removeChannel(sbChannel); } catch {}
+      }
+    };
+  }, [formatMoney, addAuditLog]);
+
   //... (todo tu syncEngine, realtimeService, lifecycle, etc lo mantengo igual que me enviaste, sin cambios)...
   // Para no hacer el mensaje gigante, te dejo el resto de funciones tal cual las enviaste, pero con los fixes de activeRounds/activeRound:
 
@@ -318,21 +534,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const anyOpen = rounds.find(r => String(r.status).toLowerCase() === 'open'); if (anyOpen) return anyOpen;
     return rounds.find(r => String(r.status).toLowerCase()!== 'finished') || rounds[0] || null;
   }, [upcomingRounds, rounds]);
-
-  // Helpers y resto de acciones (purchase, recharges, withdrawals, createRound, etc) -> USA TU MISMO CODIGO DE LAS PARTES 5 Y 6 QUE YA PEGUE ARRIBA, ESTA 100% COMPATIBLE
-
-  const addAuditLog = useCallback((action: string, details: string) => {
-    const newLog: AuditLogEntry = { id: `aud-${Date.now()}-${Math.floor(Math.random()*1000)}`, timestamp: new Date().toISOString(), operatorRole, operatorName: operatorRole === 'Super Admin'? 'SuperAdmin Master' : `${operatorRole} Panel`, action, details, ip: '190.202.45.12' };
-    setAuditLogs(prev => [newLog,...prev]);
-  }, [operatorRole]);
-
-  const formatMoney = useCallback((amountVes?: number | null, options?: { showBoth?: boolean }): string => {
-    const validAmount = typeof amountVes === 'number' && !isNaN(amountVes) ? amountVes : 0;
-    const rate = commercialConfig?.exchangeRateVesUsd && commercialConfig.exchangeRateVesUsd > 0 ? commercialConfig.exchangeRateVesUsd : 60;
-    const ves = `${(validAmount ?? 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs.`;
-    const usd = `$${((validAmount ?? 0) / rate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    return options?.showBoth ? `${ves} (~${usd} USD)` : (currencyDisplay === 'VES' ? ves : usd);
-  }, [commercialConfig?.exchangeRateVesUsd, currencyDisplay]);
 
   // --- OPERACIONES COMPLETAS DEL CONTEXTO ---
 
@@ -432,6 +633,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         soundService.playPurchase();
       } catch {}
 
+      // Persist cards, ledger and update round cards sold in Supabase
+      try {
+        supabase.from('cards').insert(newCards).then(({ error }) => {
+          if (error) console.warn('[GameContext] Supabase insert cards error:', error);
+        });
+        supabase.from('ledger').insert([newLedger]).then(({ error }) => {
+          if (error) console.warn('[GameContext] Supabase insert ledger error:', error);
+        });
+        supabase.from('rounds').update({ totalCardsSold: (round.totalCardsSold || 0) + packCount }).eq('id', roundId).then(({ error }) => {
+          if (error) console.warn('[GameContext] Supabase update round error:', error);
+        });
+      } catch (err) {}
+
       try {
         syncEngine.broadcastCardsPurchased({
           cards: newCards,
@@ -474,6 +688,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         supabase.from('recharges').insert([newRecharge]).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert recharge error:', error);
+        });
+      } catch {}
+
+      try {
+        syncEngine.broadcastRechargeStatus({
+          transactionId: newRecharge.id,
+          status: 'pending',
+          userId: currentUser.id,
+          recharge: newRecharge,
         });
       } catch {}
 
@@ -624,6 +847,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         supabase.from('withdrawals').insert([newWithdrawal]).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert withdrawal error:', error);
+        });
+      } catch {}
+
+      try {
+        syncEngine.broadcastWithdrawalStatus({
+          transactionId: newWithdrawal.id,
+          status: 'pending',
+          userId: currentUser.id,
+          withdrawal: newWithdrawal,
         });
       } catch {}
 

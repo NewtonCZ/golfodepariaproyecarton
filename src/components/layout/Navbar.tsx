@@ -341,7 +341,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           ) : (
             /* Admin Mode Status */
             <div className="flex items-center gap-2 min-h-[44px]">
-              {activeCredential?.role === 'Super Admin' ? (
+              {activeCredential?.role === 'Super Admin' || operatorRole === 'Super Admin' || currentRole === 'Super Admin' ? (
                 <div className="relative">
                   <button
                     id="operator-role-btn"
@@ -358,7 +358,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <div className="px-2 py-1 text-[10px] text-indigo-400 font-black uppercase">
                         Simular Vista de Operador
                       </div>
-                      {(['Super Admin', 'Auditor'] as const).map((r) => (
+                      {(['Super Admin', 'Operador Financiero', 'Auditor'] as const).map((r) => (
                         <button
                           key={r}
                           onClick={() => {
@@ -380,7 +380,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <div className="flex items-center gap-2 bg-cyan-950/80 border border-cyan-700/60 px-3 py-2 min-h-[44px] rounded-xl text-xs font-black text-cyan-200 select-none">
                   <Shield className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Rol: Auditor (Solo Lectura)</span>
+                  <span>Rol: {operatorRole || 'Auditor (Solo Lectura)'}</span>
                 </div>
               )}
             </div>
