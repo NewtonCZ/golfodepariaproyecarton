@@ -15,7 +15,6 @@ const allowedOrigins = [
   'https://www.golfodepariaproyecarton.com',
   'http://golfodepariaproyecarton.com',
   'https://golfodepariaproyecarton.com',
-  'https://golfodepariaproyecarton.onrender.com',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:4173',
@@ -29,7 +28,6 @@ const corsOptions: cors.CorsOptions = {
       allowedOrigins.includes(origin) ||
       origin.includes('golfodepariaproyecarton') ||
       origin.includes('vercel.app') ||
-      origin.includes('onrender.com') ||
       origin.includes('localhost') ||
       origin.includes('127.0.0.1')
     ) {
