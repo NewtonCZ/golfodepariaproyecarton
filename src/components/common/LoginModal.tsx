@@ -33,6 +33,7 @@ import {
 } from '../../services/playerStorage';
 import { supabase } from '../../services/supabaseClient';
 import { SuperSparkleBadge } from './SuperSparkleBadge';
+import { API_ENDPOINTS } from '../../services/apiConfig';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -308,32 +309,37 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         }
       }
 
-      // 2. Intentar despacho de código real a través del backend relativo (/send-otp)
+      // 2. Intentar despacho de código real a través del backend con Resend
       let sentViaApi = false;
       try {
-        const resp = await fetch('/send-otp', {
+        const resp = await fetch(API_ENDPOINTS.AUTH_SEND_RECOVERY, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            identifier: targetIdentifier,
             email: targetEmail,
-            user: targetName || targetIdentifier,
+            userName: targetName,
           }),
         });
 
         if (resp.ok) {
-          const apiData = await resp.json().catch(() => ({}));
+          const apiData = await resp.json();
           if (apiData.success) {
             sentViaApi = true;
             setRecoverEmail(apiData.email || targetEmail || targetIdentifier);
-            setDemoRecoveryCode(apiData.debugCode || null);
+            setDemoRecoveryCode(apiData.demoCode || null);
             setRecoverStep(2);
             setSuccessMsg(apiData.message || `Código de seguridad de 6 dígitos enviado a ${apiData.email || targetEmail}.`);
+            setIsSendingCode(false);
+            return;
+          } else {
+            setErrorMsg(apiData.message || 'No se encontró la cuenta especificada.');
             setIsSendingCode(false);
             return;
           }
         }
       } catch (fetchErr) {
-        console.warn('[LoginModal] send-otp fetch error:', fetchErr);
+        console.warn('[LoginModal] /api/auth/send-recovery-code fetch error:', fetchErr);
       }
 
       // 3. Fallback de cliente con GameContext
@@ -369,21 +375,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
 
     try {
-      const resp = await fetch('/verify-otp', {
+      const resp = await fetch(API_ENDPOINTS.AUTH_VERIFY_RECOVERY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: recoverEmail, code: cleanCode }),
       });
 
-      const verifyData = await resp.json().catch(() => ({}));
-
-      if (resp.ok && verifyData && (verifyData.valid === true || verifyData.success === true)) {
-        setSuccessMsg(verifyData.message || 'Código verificado con éxito.');
-        setRecoverStep(3);
-        return;
-      } else if (verifyData && verifyData.valid === false) {
-        setErrorMsg(verifyData.message || 'Código incorrecto o expirado.');
-        return;
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.success) {
+          setSuccessMsg(data.message || 'Código verificado con éxito.');
+          setRecoverStep(3);
+          return;
+        } else {
+          setErrorMsg(data.message || 'Código incorrecto o expirado.');
+          return;
+        }
       }
     } catch (fetchErr) {}
 

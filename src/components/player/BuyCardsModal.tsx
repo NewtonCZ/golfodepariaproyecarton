@@ -3,7 +3,7 @@ import { useGame } from '../../context/GameContext';
 import { MatrixCardView } from '../cards/MatrixCardView';
 import { X, Sparkles, AlertCircle, ShoppingCart, Check, ShieldCheck, KeyRound, ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
 import { MatrixCard } from '../../types';
-import { supabase } from '../../services/supabaseClient';
+import { API_ENDPOINTS } from '../../services/apiConfig';
 
 interface BuyCardsModalProps {
   isOpen: boolean;
@@ -54,32 +54,37 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
   const totalPrice = getPackPrice(selectedPack);
   const hasEnoughBalance = currentUser.availableBalance >= totalPrice;
 
-  // Paso 1: Enviar OTP al backend relativo
+  // Paso 1: Enviar OTP al backend
   const handleInitiatePurchase = async () => {
     setErrorMessage(null);
     setIsSendingOtp(true);
 
-    const email = 'niutoncaraballo3@gmail.com';
+    const payload = {
+      email: 'niutoncaraballo3@gmail.com',
+      pack: selectedPack,
+      roundId: selectedRound.id,
+      amountVes: totalPrice,
+      user: currentUser.name || currentUser.email || 'Player',
+    };
 
     try {
-      const response = await fetch('/send-otp', {
+      let response = await fetch(API_ENDPOINTS.SEND_OTP, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          pack: selectedPack,
-          roundId: selectedRound.id,
-          amountVes: totalPrice,
-          user: currentUser.name || currentUser.email || 'Player',
-        }),
-      });
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => null);
 
-      const data = await response.json().catch(() => ({}));
+      if (!response || !response.ok) {
+        // Fallback a Supabase Edge Function
+        response = await fetch(API_ENDPOINTS.SUPABASE_SEND_OTP, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || data.message || 'No se pudo enviar el código de verificación.');
+        throw new Error('No se pudo enviar el código de verificación.');
       }
 
       setStep('otp');
@@ -91,7 +96,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
     }
   };
 
-  // Paso 2: Verificar OTP con backend relativo
+  // Paso 2: Verificar OTP y generar cartones
   const handleVerifyOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (otpCode.trim().length !== 6) {
@@ -102,21 +107,27 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
     setErrorMessage(null);
     setIsVerifyingOtp(true);
 
-    const email = 'niutoncaraballo3@gmail.com';
-    const code = otpCode.trim();
+    const payload = { code: otpCode.trim() };
 
     try {
-      const response = await fetch('/verify-otp', {
+      let response = await fetch(API_ENDPOINTS.VERIFY_OTP, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, code }),
-      });
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => null);
 
-      const verifyData = await response.json().catch(() => ({}));
+      if (!response || !response.ok) {
+        // Fallback a Supabase Edge Function
+        response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
 
-      if (response.ok && verifyData && (verifyData.valid === true || verifyData.success === true)) {
+      const data = await response.json().catch(() => ({}));
+
+      if (data && data.valid === true) {
         // Código válido -> Proseguir con la generación normal del cartón
         const result = purchaseCards(selectedPack, selectedRound.id);
         if (result.success && result.cards) {
@@ -126,7 +137,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
           setErrorMessage(result.message);
         }
       } else {
-        setErrorMessage(verifyData?.message || 'Código incorrecto o expirado');
+        setErrorMessage('Código incorrecto o expirado');
       }
     } catch (err: any) {
       setErrorMessage('Error al conectar con el servidor de verificación.');

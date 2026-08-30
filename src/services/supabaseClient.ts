@@ -280,44 +280,6 @@ export const supabase = {
       channel.unsubscribe();
     }
   },
-
-  /**
-   * Supabase Edge Functions invoker
-   */
-  functions: {
-    async invoke<T = any>(
-      functionName: string,
-      options?: { body?: any; headers?: Record<string, string> }
-    ): Promise<{ data: T | null; error: any }> {
-      if (realSupabaseClient) {
-        return realSupabaseClient.functions.invoke(functionName, options);
-      }
-
-      const defaultUrl = 'https://mccjcdsombzmlxzxccto.supabase.co';
-      const baseUrl = (SUPABASE_URL && SUPABASE_URL.startsWith('http') ? SUPABASE_URL : defaultUrl).replace(/\/$/, '');
-      const targetUrl = `${baseUrl}/functions/v1/${functionName}`;
-
-      try {
-        const response = await fetch(targetUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(SUPABASE_ANON_KEY ? { Authorization: `Bearer ${SUPABASE_ANON_KEY}` } : {}),
-            ...(options?.headers || {}),
-          },
-          body: options?.body ? JSON.stringify(options.body) : undefined,
-        });
-
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-          return { data: null, error: data || new Error(`Functions invoke failed (${response.status})`) };
-        }
-        return { data, error: null };
-      } catch (err: any) {
-        return { data: null, error: err };
-      }
-    },
-  },
 };
 
 export default supabase;

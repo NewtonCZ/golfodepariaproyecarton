@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext';
+import { supabase } from '../../services/realtimeService';
 import { saveCommercialConfigToDb } from '../../services/configService';
 import { FICHAS_POOL, getFichaById } from '../../data/fichasPool';
 import { FichaBadge } from '../common/FichaBadge';
@@ -35,7 +36,7 @@ import {
   X,
 } from 'lucide-react';
 import { Ficha, RechargeTransaction } from '../../types';
-import { supabase } from '../../services/supabaseClient';
+import { API_ENDPOINTS } from '../../services/apiConfig';
 
 export const AdminPortal: React.FC = () => {
   const {
@@ -239,22 +240,30 @@ export const AdminPortal: React.FC = () => {
   const handleRequestOtp = async () => {
     try {
       setOtpRequestStatus('Enviando...');
-      const email = 'niutoncaraballo3@gmail.com';
-      const response = await fetch('/send-otp', {
+      let response = await fetch(API_ENDPOINTS.SEND_OTP, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email }),
-      });
+        body: JSON.stringify({ email: 'niutoncaraballo3@gmail.com' }),
+      }).catch(() => null);
+
+      if (!response || !response.ok) {
+        response = await fetch(API_ENDPOINTS.SUPABASE_SEND_OTP, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email: 'niutoncaraballo3@gmail.com' }),
+        });
+      }
 
       if (response.ok) {
         setOtpRequestStatus('Enviado ✓');
         alert('Código enviado a niutoncaraballo3@gmail.com');
       } else {
-        const errData = await response.json().catch(() => ({}));
         setOtpRequestStatus('📧 Solicitar Código');
-        alert(errData.message || 'Error al enviar el código de verificación.');
+        alert('Error al enviar el código de verificación.');
       }
     } catch (err) {
       setOtpRequestStatus('📧 Solicitar Código');
@@ -281,18 +290,26 @@ export const AdminPortal: React.FC = () => {
 
     setIsSigningResult(true);
     try {
-      const email = 'niutoncaraballo3@gmail.com';
-      const response = await fetch('/verify-otp', {
+      let response = await fetch(API_ENDPOINTS.VERIFY_OTP, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, code: trimmedOtp }),
-      });
+        body: JSON.stringify({ code: trimmedOtp }),
+      }).catch(() => null);
 
-      const verifyData = await response.json().catch(() => ({}));
+      if (!response || !response.ok) {
+        response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ code: trimmedOtp }),
+        });
+      }
 
-      if (response.ok && verifyData && (verifyData.valid === true || verifyData.success === true)) {
+      const data = await response.json().catch(() => ({}));
+      if (data && data.valid === true) {
         const result = submitRoundResult(selectedRoundForResult, selectedResultFichas, trimmedOtp);
         if (result.success) {
           setResultSubmitMessage({ success: true, text: result.message });
@@ -302,7 +319,7 @@ export const AdminPortal: React.FC = () => {
           setResultSubmitMessage({ success: false, text: result.message });
         }
       } else {
-        alert(verifyData?.message || 'Código incorrecto o vencido');
+        alert('Código incorrecto o vencido');
       }
     } catch (err) {
       alert('Código incorrecto o vencido');
