@@ -54,7 +54,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
   const totalPrice = getPackPrice(selectedPack);
   const hasEnoughBalance = currentUser.availableBalance >= totalPrice;
 
-  // Paso 1: Enviar OTP con Supabase Functions
+  // Paso 1: Enviar OTP al backend relativo
   const handleInitiatePurchase = async () => {
     setErrorMessage(null);
     setIsSendingOtp(true);
@@ -62,19 +62,24 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
     const email = 'niutoncaraballo3@gmail.com';
 
     try {
-      const { data, error } = await supabase.functions.invoke('send-otp', {
-        body: {
+      const response = await fetch('/send-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           email,
           pack: selectedPack,
           roundId: selectedRound.id,
           amountVes: totalPrice,
           user: currentUser.name || currentUser.email || 'Player',
-        },
+        }),
       });
 
-      if (error) {
-        console.error('[BuyCardsModal] send-otp error:', error);
-        throw new Error(error.message || 'No se pudo enviar el código de verificación.');
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'No se pudo enviar el código de verificación.');
       }
 
       setStep('otp');
@@ -86,7 +91,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
     }
   };
 
-  // Paso 2: Verificar OTP con Supabase Functions
+  // Paso 2: Verificar OTP con backend relativo
   const handleVerifyOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (otpCode.trim().length !== 6) {
@@ -101,15 +106,17 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
     const code = otpCode.trim();
 
     try {
-      const { data: verifyData, error: verifyError } = await supabase.functions.invoke('verify-otp', {
-        body: { email, code },
+      const response = await fetch('/verify-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, code }),
       });
 
-      if (verifyError) {
-        console.error('[BuyCardsModal] verify-otp error:', verifyError);
-      }
+      const verifyData = await response.json().catch(() => ({}));
 
-      if (verifyData && (verifyData.valid === true || verifyData.success === true)) {
+      if (response.ok && verifyData && (verifyData.valid === true || verifyData.success === true)) {
         // Código válido -> Proseguir con la generación normal del cartón
         const result = purchaseCards(selectedPack, selectedRound.id);
         if (result.success && result.cards) {

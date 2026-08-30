@@ -308,27 +308,32 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         }
       }
 
-      // 2. Intentar despacho de código real a través de Supabase Functions (send-otp)
+      // 2. Intentar despacho de código real a través del backend relativo (/send-otp)
       let sentViaApi = false;
       try {
-        const { data: apiData, error: apiError } = await supabase.functions.invoke('send-otp', {
-          body: {
+        const resp = await fetch('/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             email: targetEmail,
             user: targetName || targetIdentifier,
-          },
+          }),
         });
 
-        if (!apiError && apiData) {
-          sentViaApi = true;
-          setRecoverEmail(apiData.email || targetEmail || targetIdentifier);
-          setDemoRecoveryCode(apiData.debugCode || null);
-          setRecoverStep(2);
-          setSuccessMsg(apiData.message || `Código de seguridad de 6 dígitos enviado a ${apiData.email || targetEmail}.`);
-          setIsSendingCode(false);
-          return;
+        if (resp.ok) {
+          const apiData = await resp.json().catch(() => ({}));
+          if (apiData.success) {
+            sentViaApi = true;
+            setRecoverEmail(apiData.email || targetEmail || targetIdentifier);
+            setDemoRecoveryCode(apiData.debugCode || null);
+            setRecoverStep(2);
+            setSuccessMsg(apiData.message || `Código de seguridad de 6 dígitos enviado a ${apiData.email || targetEmail}.`);
+            setIsSendingCode(false);
+            return;
+          }
         }
       } catch (fetchErr) {
-        console.warn('[LoginModal] send-otp invoke error:', fetchErr);
+        console.warn('[LoginModal] send-otp fetch error:', fetchErr);
       }
 
       // 3. Fallback de cliente con GameContext
@@ -364,11 +369,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
 
     try {
-      const { data: verifyData, error: verifyError } = await supabase.functions.invoke('verify-otp', {
-        body: { email: recoverEmail, code: cleanCode },
+      const resp = await fetch('/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: recoverEmail, code: cleanCode }),
       });
 
-      if (!verifyError && verifyData && (verifyData.valid === true || verifyData.success === true)) {
+      const verifyData = await resp.json().catch(() => ({}));
+
+      if (resp.ok && verifyData && (verifyData.valid === true || verifyData.success === true)) {
         setSuccessMsg(verifyData.message || 'Código verificado con éxito.');
         setRecoverStep(3);
         return;

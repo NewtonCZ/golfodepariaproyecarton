@@ -240,19 +240,22 @@ export const AdminPortal: React.FC = () => {
     try {
       setOtpRequestStatus('Enviando...');
       const email = 'niutoncaraballo3@gmail.com';
-      const { data, error } = await supabase.functions.invoke('send-otp', {
-        body: { email },
+      const response = await fetch('/send-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
       });
 
-      if (error) {
-        console.error('[AdminPortal] send-otp error:', error);
+      if (response.ok) {
+        setOtpRequestStatus('Enviado ✓');
+        alert('Código enviado a niutoncaraballo3@gmail.com');
+      } else {
+        const errData = await response.json().catch(() => ({}));
         setOtpRequestStatus('📧 Solicitar Código');
-        alert('Error al enviar el código de verificación.');
-        return;
+        alert(errData.message || 'Error al enviar el código de verificación.');
       }
-
-      setOtpRequestStatus('Enviado ✓');
-      alert('Código enviado a niutoncaraballo3@gmail.com');
     } catch (err) {
       setOtpRequestStatus('📧 Solicitar Código');
       alert('Error de conexión al enviar el código.');
@@ -279,15 +282,17 @@ export const AdminPortal: React.FC = () => {
     setIsSigningResult(true);
     try {
       const email = 'niutoncaraballo3@gmail.com';
-      const { data: verifyData, error: verifyError } = await supabase.functions.invoke('verify-otp', {
-        body: { email, code: trimmedOtp },
+      const response = await fetch('/verify-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, code: trimmedOtp }),
       });
 
-      if (verifyError) {
-        console.error('[AdminPortal] verify-otp error:', verifyError);
-      }
+      const verifyData = await response.json().catch(() => ({}));
 
-      if (verifyData && (verifyData.valid === true || verifyData.success === true)) {
+      if (response.ok && verifyData && (verifyData.valid === true || verifyData.success === true)) {
         const result = submitRoundResult(selectedRoundForResult, selectedResultFichas, trimmedOtp);
         if (result.success) {
           setResultSubmitMessage({ success: true, text: result.message });

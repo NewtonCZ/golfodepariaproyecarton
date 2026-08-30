@@ -9,41 +9,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuración de CORS Totalmente Permisivo para producción y desarrollo
-const allowedOrigins = [
-  'http://www.golfodepariaproyecarton.com',
-  'https://www.golfodepariaproyecarton.com',
-  'http://golfodepariaproyecarton.com',
-  'https://golfodepariaproyecarton.com',
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://localhost:4173',
-];
-
-const corsOptions: cors.CorsOptions = {
-  origin: (origin, callback) => {
-    // Permitir llamadas sin origin (curl, server-to-server, scripts, apps móviles)
-    if (!origin) return callback(null, true);
-    if (
-      allowedOrigins.includes(origin) ||
-      origin.includes('golfodepariaproyecarton') ||
-      origin.includes('vercel.app') ||
-      origin.includes('localhost') ||
-      origin.includes('127.0.0.1')
-    ) {
-      return callback(null, true);
-    }
-    // Permisivo por defecto para evitar bloqueos CORS
-    return callback(null, true);
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-};
-
-app.use(cors(corsOptions));
-// REGLA CRÍTICA: Preflight handler explícito para TODAS las rutas
-app.options('*', cors(corsOptions));
+// Habilitar CORS simple sin restricción de origen
+app.use(cors());
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -250,6 +217,14 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], (
 // Servir frontend en producción si se compila conjuntamente
 const distPath = path.join(process.cwd(), 'dist');
 app.use(express.static(distPath));
+
+// Fallback SPA para rutas del cliente
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path === '/send-otp' || req.path === '/verify-otp' || req.path === '/health') {
+    return next();
+  }
+  res.sendFile(path.join(distPath, 'index.html'));
+});
 
 // Iniciar servidor Express
 app.listen(Number(PORT), '0.0.0.0', () => {
