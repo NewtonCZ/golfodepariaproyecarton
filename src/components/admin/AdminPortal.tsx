@@ -143,6 +143,7 @@ export const AdminPortal: React.FC = () => {
   const [selectedResultFichas, setSelectedResultFichas] = useState<number[]>([]);
   const [otpInput, setOtpInput] = useState('');
   const [otpRequestStatus, setOtpRequestStatus] = useState('📧 Solicitar Código');
+  const [otpModalFeedback, setOtpModalFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSigningResult, setIsSigningResult] = useState(false);
   const [showResultConfirmModal, setShowResultConfirmModal] = useState(false);
   const [resultSubmitMessage, setResultSubmitMessage] = useState<{ success: boolean; text: string } | null>(null);
@@ -239,6 +240,7 @@ export const AdminPortal: React.FC = () => {
 
   const handleRequestOtp = async () => {
     try {
+      setOtpModalFeedback(null);
       setOtpRequestStatus('Enviando...');
       let response = await fetch(API_ENDPOINTS.SEND_OTP, {
         method: 'POST',
@@ -258,21 +260,36 @@ export const AdminPortal: React.FC = () => {
         });
       }
 
-      if (response.ok) {
+      if (response && response.ok) {
         setOtpRequestStatus('Enviado ✓');
-        alert('Código enviado a niutoncaraballo3@gmail.com');
+        setOtpModalFeedback({
+          type: 'success',
+          text: 'Código de seguridad enviado a niutoncaraballo3@gmail.com (válido por 30 minutos)',
+        });
+        setTimeout(() => {
+          setOtpRequestStatus('📧 Reenviar Código');
+        }, 10000);
       } else {
+        const errData = await response?.json().catch(() => ({}));
         setOtpRequestStatus('📧 Solicitar Código');
-        alert('Error al enviar el código de verificación.');
+        setOtpModalFeedback({
+          type: 'error',
+          text: errData?.message || 'Error al enviar el código de verificación.',
+        });
       }
     } catch (err) {
       setOtpRequestStatus('📧 Solicitar Código');
-      alert('Error de conexión al enviar el código.');
+      setOtpModalFeedback({
+        type: 'error',
+        text: 'Error de conexión al enviar el código de seguridad.',
+      });
     }
   };
 
   const handleExecuteResultSubmission = async () => {
     setResultSubmitMessage(null);
+    setOtpModalFeedback(null);
+
     if (!canManageResults) {
       setResultSubmitMessage({
         success: false,
@@ -284,7 +301,10 @@ export const AdminPortal: React.FC = () => {
 
     const trimmedOtp = otpInput.trim();
     if (!trimmedOtp) {
-      alert('Por favor ingresa el código de verificación.');
+      setOtpModalFeedback({
+        type: 'error',
+        text: 'Por favor ingresa el código de verificación de 6 dígitos.',
+      });
       return;
     }
 
@@ -295,7 +315,7 @@ export const AdminPortal: React.FC = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ code: trimmedOtp }),
+        body: JSON.stringify({ code: trimmedOtp, email: 'niutoncaraballo3@gmail.com' }),
       }).catch(() => null);
 
       if (!response || !response.ok) {
@@ -304,25 +324,33 @@ export const AdminPortal: React.FC = () => {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ code: trimmedOtp }),
+          body: JSON.stringify({ code: trimmedOtp, email: 'niutoncaraballo3@gmail.com' }),
         });
       }
 
-      const data = await response.json().catch(() => ({}));
+      const data = await response?.json().catch(() => ({}));
       if (data && data.valid === true) {
         const result = submitRoundResult(selectedRoundForResult, selectedResultFichas, trimmedOtp);
         if (result.success) {
           setResultSubmitMessage({ success: true, text: result.message });
           setShowResultConfirmModal(false);
           setSelectedResultFichas([]);
+          setOtpInput('');
+          setOtpModalFeedback(null);
         } else {
           setResultSubmitMessage({ success: false, text: result.message });
         }
       } else {
-        alert('Código incorrecto o vencido');
+        setOtpModalFeedback({
+          type: 'error',
+          text: data?.message || 'Código incorrecto o vencido.',
+        });
       }
-    } catch (err) {
-      alert('Código incorrecto o vencido');
+    } catch (err: any) {
+      setOtpModalFeedback({
+        type: 'error',
+        text: 'Error al verificar el código de seguridad.',
+      });
     } finally {
       setIsSigningResult(false);
     }
@@ -2207,10 +2235,31 @@ export const AdminPortal: React.FC = () => {
                 id="input-otp"
                 type="text"
                 value={otpInput}
-                onChange={(e) => setOtpInput(e.target.value)}
-                placeholder="Ingresa código"
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-center font-mono font-black text-base text-indigo-950 tracking-widest"
+                onChange={(e) => {
+                  setOtpInput(e.target.value);
+                  if (otpModalFeedback) setOtpModalFeedback(null);
+                }}
+                placeholder="Ingresa código de 6 dígitos"
+                maxLength={6}
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-center font-mono font-black text-base text-indigo-950 tracking-widest outline-none focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-200"
               />
+              {otpModalFeedback && (
+                <div
+                  id="otp-feedback-msg"
+                  className={`mt-2 p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-1 ${
+                    otpModalFeedback.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  {otpModalFeedback.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{otpModalFeedback.text}</span>
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', marginTop: '20px' }}>

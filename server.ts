@@ -184,30 +184,31 @@ app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (
     // Generar código numérico de 6 dígitos (100000 a 999999)
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const now = new Date();
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutos
+    const expiresAtIso = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    const expiresAtMs = new Date(expiresAtIso).getTime();
 
     // Guardar en almacén en memoria
     otpStore.set(code, {
       code,
       email: targetEmail,
       createdAt: now.getTime(),
-      expiresAt: expiresAt.getTime(),
+      expiresAt: expiresAtMs,
     });
     otpStore.set(`email:${targetEmail}`, {
       code,
       email: targetEmail,
       createdAt: now.getTime(),
-      expiresAt: expiresAt.getTime(),
+      expiresAt: expiresAtMs,
     });
 
-    // Guardar en Supabase si está disponible
+    // Guardar en Supabase si está disponible (en UTC ISO)
     if (supabaseServerClient) {
       try {
         await supabaseServerClient.from('otp_codes').insert({
           email: targetEmail,
           code,
           created_at: now.toISOString(),
-          expires_at: expiresAt.toISOString(),
+          expires_at: expiresAtIso,
           used: false,
         });
       } catch (dbErr) {
@@ -215,7 +216,7 @@ app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (
       }
     }
 
-    console.log(`[OTP Generated] Código ${code} para ${targetEmail} (válido por 30 minutos: ${expiresAt.toISOString()})`);
+    console.log(`[OTP Generated] Código ${code} para ${targetEmail} | Server time: ${now.toISOString()} | expires_at: ${expiresAtIso}`);
 
     const emailRes = await sendResendOtpEmail(
       targetEmail,
@@ -259,14 +260,13 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], a
       return res.status(400).json({ valid: false, message: 'El código debe tener 6 dígitos' });
     }
 
-    // 1. Intentar verificación en Supabase con gt('expires_at', new Date().toISOString()) ordenado por created_at desc limit 1
+    // 1. Intentar verificación en Supabase (trae el código y evalúa expiración en JS para evitar problemas de timezone en DB)
     if (supabaseServerClient) {
       try {
         let query = supabaseServerClient
           .from('otp_codes')
           .select('*')
           .eq('code', cleanCode)
-          .gt('expires_at', new Date().toISOString())
           .order('created_at', { ascending: false })
           .limit(1);
 
@@ -276,22 +276,43 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], a
 
         const { data: dbRecords, error: dbErr } = await query;
         if (!dbErr && dbRecords && dbRecords.length > 0) {
-          const dbRecord = dbRecords[0];
+          const row = dbRecords[0];
+          console.log('Server time', new Date().toISOString(), 'expires_at DB', row.expires_at);
+
+          // Verificar si ya fue utilizado
+          if (row.used === true) {
+            console.log(`[OTP Used DB] Código ya fue utilizado anteriormente: ${cleanCode}`);
+            return res.status(200).json({
+              valid: false,
+              message: 'Código de seguridad ya fue utilizado previamente',
+            });
+          }
+
+          // Comparación de expiración en JS
+          const dbExpiresAt = new Date(row.expires_at);
+          if (isNaN(dbExpiresAt.getTime()) || dbExpiresAt < new Date()) {
+            console.log(`[OTP Expired DB] Código vencido en DB: ${cleanCode}, expires_at DB: ${row.expires_at}`);
+            return res.status(200).json({
+              valid: false,
+              message: 'Código vencido (expiró hace más de 30 minutos)',
+            });
+          }
+
           // Marcar como usado
-          await supabaseServerClient.from('otp_codes').update({ used: true }).eq('id', dbRecord.id);
+          await supabaseServerClient.from('otp_codes').update({ used: true }).eq('id', row.id);
 
           // Limpiar también en memoria
           otpStore.delete(cleanCode);
-          if (dbRecord.email) {
-            otpStore.delete(`email:${dbRecord.email.toLowerCase().trim()}`);
+          if (row.email) {
+            otpStore.delete(`email:${row.email.toLowerCase().trim()}`);
           }
 
-          console.log(`[OTP Verified via DB ✓] Código ${cleanCode} verificado para ${dbRecord.email}`);
+          console.log(`[OTP Verified via DB ✓] Código ${cleanCode} verificado para ${row.email}`);
           return res.status(200).json({
             valid: true,
             success: true,
             message: 'Código verificado correctamente',
-            email: dbRecord.email,
+            email: row.email,
           });
         }
       } catch (dbVerifyErr) {
@@ -312,9 +333,12 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], a
       return res.status(200).json({ valid: false, message: 'Código no corresponde a este correo' });
     }
 
-    if (Date.now() > record.expiresAt) {
+    const currentServerTime = Date.now();
+    console.log('Server time (memory check)', new Date(currentServerTime).toISOString(), 'expires_at memory', new Date(record.expiresAt).toISOString());
+
+    if (currentServerTime > record.expiresAt) {
       otpStore.delete(cleanCode);
-      console.log(`[OTP Expired] Código vencido: ${cleanCode}`);
+      console.log(`[OTP Expired Memory] Código vencido: ${cleanCode}`);
       return res.status(200).json({ valid: false, message: 'Código vencido (expiró hace más de 30 minutos)' });
     }
 
