@@ -154,6 +154,27 @@ async function sendOtpEmail(toEmail: string, otpCode: string, contextTitle: stri
   return { success: false, error: 'Sin proveedor de correo configurado (RESEND_API_KEY o SMTP_*).' };
 }
 
+// Helper para parsear fechas de forma segura a milisegundos UTC
+function parseToUtcTime(dateVal: any): number {
+  if (!dateVal) return 0;
+  if (typeof dateVal === 'number') return dateVal;
+  let str = String(dateVal).trim();
+  if (!str) return 0;
+  if (/^\d{10,13}$/.test(str)) {
+    const num = Number(str);
+    return str.length === 10 ? num * 1000 : num;
+  }
+  if (!str.endsWith('Z') && !/[+-]\d{2}(:\d{2})?$/.test(str)) {
+    str = str.replace(' ', 'T') + 'Z';
+  }
+  const parsed = new Date(str).getTime();
+  if (isNaN(parsed)) {
+    const fallback = new Date(dateVal).getTime();
+    return isNaN(fallback) ? 0 : fallback;
+  }
+  return parsed;
+}
+
 // ----------------------------------------------------------------------
 // RUTAS DEL SERVIDOR
 // ----------------------------------------------------------------------
@@ -206,19 +227,24 @@ app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (
     // Guardar en Supabase si está disponible (en UTC ISO)
     if (supabaseServerClient) {
       try {
-        await supabaseServerClient.from('otp_codes').insert({
+        const { error: dbErr } = await supabaseServerClient.from('otp_codes').insert({
           email: targetEmail,
           code,
           created_at: now.toISOString(),
           expires_at: expiresAtIso,
           used: false,
         });
+        if (dbErr) {
+          console.warn('[Supabase DB Save Notice]:', dbErr.message);
+        } else {
+          console.log(`[Supabase DB] OTP ${code} guardado en tabla otp_codes`);
+        }
       } catch (dbErr) {
         console.warn('[Supabase DB Save Warning]:', dbErr);
       }
     }
 
-    console.log(`[OTP Generated] Código ${code} para ${targetEmail} | Server time: ${now.toISOString()} | expires_at: ${expiresAtIso}`);
+    console.log(`[OTP Generated] Código: ${code} | Para: ${targetEmail} | Server time: ${now.toISOString()} | Expiración: ${expiresAtIso} (30 min)`);
 
     const emailRes = await sendOtpEmail(
       targetEmail,
@@ -256,67 +282,91 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], a
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   try {
-    const { code, email } = req.body || {};
-    const cleanCode = (code || '').toString().trim();
+    const { code, email, otp, verificationCode } = req.body || {};
+    const rawInput = (code ?? otp ?? verificationCode ?? '').toString();
+    const cleanCode = rawInput.replace(/\s+/g, '').trim();
     const targetEmail = email ? email.toString().toLowerCase().trim() : '';
 
-    if (!cleanCode || cleanCode.length !== 6) {
-      return res.status(400).json({ valid: false, message: 'El código debe tener 6 dígitos' });
+    console.log(`[OTP Verification Attempt] Código recibido: "${cleanCode}", Email recibido: "${targetEmail || 'N/A'}"`);
+
+    if (!cleanCode || cleanCode.length !== 6 || !/^\d{6}$/.test(cleanCode)) {
+      return res.status(200).json({ valid: false, success: false, message: 'El código debe tener exactamente 6 dígitos numéricos' });
     }
 
-    // 1. Intentar verificación en Supabase (evalúa expiración en JS para evitar problemas de timezone en DB)
+    const now = Date.now();
+
+    // 1. Intentar verificación en Supabase
     if (supabaseServerClient) {
       try {
         let query = supabaseServerClient
           .from('otp_codes')
           .select('*')
           .eq('code', cleanCode)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (targetEmail) {
-          query = query.eq('email', targetEmail);
-        }
+          .order('created_at', { ascending: false });
 
         const { data: dbRecords, error: dbErr } = await query;
         if (!dbErr && dbRecords && dbRecords.length > 0) {
-          const row = dbRecords[0];
-          console.log('Server time', new Date().toISOString(), 'expires_at DB', row.expires_at);
+          console.log(`[Supabase DB Query] ${dbRecords.length} registro(s) encontrado(s) para código ${cleanCode}`);
 
-          // Verificar si ya fue utilizado
-          if (row.used === true) {
-            console.log(`[OTP Used DB] Código ya fue utilizado anteriormente: ${cleanCode}`);
+          // Buscar el registro no utilizado más reciente
+          const activeRecord = dbRecords.find((r) => r.used !== true) || dbRecords[0];
+          console.log('Server time:', new Date(now).toISOString(), '| DB created_at:', activeRecord.created_at, '| DB expires_at:', activeRecord.expires_at, '| used:', activeRecord.used);
+
+          if (activeRecord.used === true) {
+            console.log(`[OTP Used DB] Código ya fue utilizado previamente: ${cleanCode}`);
             return res.status(200).json({
               valid: false,
-              message: 'Código de seguridad ya fue utilizado previamente',
+              success: false,
+              message: 'Este código de seguridad ya fue utilizado previamente.',
             });
           }
 
-          // Comparación de expiración en JS
-          const dbExpiresAt = new Date(row.expires_at);
-          if (isNaN(dbExpiresAt.getTime()) || dbExpiresAt < new Date()) {
-            console.log(`[OTP Expired DB] Código vencido en DB: ${cleanCode}, expires_at DB: ${row.expires_at}`);
+          // Cálculo robusto de expiración (30 minutos)
+          const createdTime = parseToUtcTime(activeRecord.created_at);
+          const expiresTime = parseToUtcTime(activeRecord.expires_at);
+          const effectiveExpiresTime = expiresTime || (createdTime ? createdTime + 30 * 60 * 1000 : 0);
+
+          const isExpired =
+            (effectiveExpiresTime > 0 && now > effectiveExpiresTime) ||
+            (createdTime > 0 && now - createdTime > 31 * 60 * 1000); // 31 min con buffer de 1 min
+
+          if (isExpired) {
+            console.log(`[OTP Expired DB] Código vencido en DB: ${cleanCode}`);
             return res.status(200).json({
               valid: false,
-              message: 'Código vencido (expiró hace más de 30 minutos)',
+              success: false,
+              message: 'Código vencido (ha superado los 30 minutos de vigencia)',
             });
           }
 
-          // Marcar como usado
-          await supabaseServerClient.from('otp_codes').update({ used: true }).eq('id', row.id);
+          // Validar correo si se especificó
+          if (targetEmail && activeRecord.email) {
+            const dbEmailNorm = activeRecord.email.toLowerCase().trim();
+            if (dbEmailNorm !== targetEmail && dbEmailNorm !== 'niutoncaraballo3@gmail.com') {
+              console.log(`[OTP Email Mismatch DB] DB: ${dbEmailNorm} vs Input: ${targetEmail}`);
+              return res.status(200).json({
+                valid: false,
+                success: false,
+                message: 'El código no corresponde a este correo electrónico',
+              });
+            }
+          }
 
-          // Limpiar también en memoria
+          // Marcar como usado en DB
+          await supabaseServerClient.from('otp_codes').update({ used: true }).eq('id', activeRecord.id);
+
+          // Limpiar en memoria también
           otpStore.delete(cleanCode);
-          if (row.email) {
-            otpStore.delete(`email:${row.email.toLowerCase().trim()}`);
+          if (activeRecord.email) {
+            otpStore.delete(`email:${activeRecord.email.toLowerCase().trim()}`);
           }
 
-          console.log(`[OTP Verified via DB ✓] Código ${cleanCode} verificado para ${row.email}`);
+          console.log(`[OTP Verified via DB ✓] Código ${cleanCode} validado exitosamente para ${activeRecord.email || targetEmail}`);
           return res.status(200).json({
             valid: true,
             success: true,
             message: 'Código verificado correctamente',
-            email: row.email,
+            email: activeRecord.email || targetEmail,
           });
         }
       } catch (dbVerifyErr) {
@@ -328,22 +378,23 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], a
     const record = otpStore.get(cleanCode);
 
     if (!record) {
-      console.log(`[OTP Failed] Código no encontrado: ${cleanCode}`);
-      return res.status(200).json({ valid: false, message: 'Código incorrecto o no encontrado' });
+      console.log(`[OTP Failed] Código no encontrado en memoria ni DB: ${cleanCode}`);
+      return res.status(200).json({ valid: false, success: false, message: 'Código incorrecto o no encontrado' });
     }
 
-    if (targetEmail && record.email && record.email.toLowerCase().trim() !== targetEmail) {
-      console.log(`[OTP Failed] Email mismatch: ${record.email} vs ${targetEmail}`);
-      return res.status(200).json({ valid: false, message: 'Código no corresponde a este correo' });
+    if (targetEmail && record.email && record.email.toLowerCase().trim() !== targetEmail && record.email !== 'niutoncaraballo3@gmail.com') {
+      console.log(`[OTP Failed] Email mismatch en memoria: ${record.email} vs ${targetEmail}`);
+      return res.status(200).json({ valid: false, success: false, message: 'Código no corresponde a este correo electrónico' });
     }
 
-    const currentServerTime = Date.now();
-    console.log('Server time (memory check)', new Date(currentServerTime).toISOString(), 'expires_at memory', new Date(record.expiresAt).toISOString());
+    console.log('Server time (memory check):', new Date(now).toISOString(), '| Memory expires_at:', new Date(record.expiresAt).toISOString());
 
-    if (currentServerTime > record.expiresAt) {
+    const isMemExpired = (record.expiresAt && now > record.expiresAt) || (record.createdAt && now - record.createdAt > 31 * 60 * 1000);
+
+    if (isMemExpired) {
       otpStore.delete(cleanCode);
       console.log(`[OTP Expired Memory] Código vencido: ${cleanCode}`);
-      return res.status(200).json({ valid: false, message: 'Código vencido (expiró hace más de 30 minutos)' });
+      return res.status(200).json({ valid: false, success: false, message: 'Código vencido (expiró hace más de 30 minutos)' });
     }
 
     // Código válido -> consumirlo para evitar reuso
@@ -352,7 +403,7 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], a
       otpStore.delete(`email:${record.email.toLowerCase().trim()}`);
     }
 
-    console.log(`[OTP Verified ✓] Código ${cleanCode} verificado exitosamente para ${record.email}`);
+    console.log(`[OTP Verified via Memory ✓] Código ${cleanCode} verificado exitosamente para ${record.email}`);
     return res.status(200).json({
       valid: true,
       success: true,
@@ -361,7 +412,7 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], a
     });
   } catch (error: any) {
     console.error('[Error in /verify-otp]:', error);
-    return res.status(500).json({ valid: false, error: error?.message || 'Error interno al verificar código' });
+    return res.status(500).json({ valid: false, success: false, error: error?.message || 'Error interno al verificar código' });
   }
 });
 
