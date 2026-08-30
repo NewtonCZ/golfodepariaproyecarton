@@ -10,43 +10,38 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuración de CORS Totalmente Permisivo para producción y desarrollo
 const allowedOrigins = [
-  'http://www.golfodepariaproyecarton.com',
   'https://www.golfodepariaproyecarton.com',
-  'http://golfodepariaproyecarton.com',
   'https://golfodepariaproyecarton.com',
-  'https://golfodepariaproyecarton.onrender.com',
   'http://localhost:3000',
-  'http://localhost:5173',
-  'http://localhost:4173',
+  'http://localhost:5173'
 ];
 
-const corsOptions: cors.CorsOptions = {
-  origin: (origin, callback) => {
-    // Permitir llamadas sin origin (curl, server-to-server, scripts, apps móviles)
-    if (!origin) return callback(null, true);
-    if (
-      allowedOrigins.includes(origin) ||
-      origin.includes('golfodepariaproyecarton') ||
-      origin.includes('vercel.app') ||
-      origin.includes('onrender.com') ||
-      origin.includes('localhost') ||
-      origin.includes('127.0.0.1')
-    ) {
-      return callback(null, true);
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.golfodepariaproyecarton.com')) {
+      callback(null, true);
+    } else {
+      callback(null, true); // permite todo temporalmente para probar
     }
-    // Permisivo por defecto para evitar bloqueos CORS
-    return callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-};
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
-app.use(cors(corsOptions));
-// REGLA CRÍTICA: Preflight handler explícito para TODAS las rutas
-app.options('*', cors(corsOptions));
+app.options('*', cors());
+
+// Middleware para agregar manualmente encabezados CORS en cada respuesta
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', (req.headers.origin as string) || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS,PUT,DELETE');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -166,6 +161,10 @@ async function sendResendOtpEmail(toEmail: string, otpCode: string, contextTitle
 
 // 1. Healthcheck
 app.get(['/health', '/api/health', '/ping'], (req, res) => {
+  res.header('Access-Control-Allow-Origin', (req.headers.origin as string) || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
   res.json({
     status: 'ok',
     service: 'golfodepariaproyecarton-api',
@@ -177,6 +176,10 @@ app.get(['/health', '/api/health', '/ping'], (req, res) => {
 
 // 2. Ruta /send-otp (y alias)
 app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (req, res) => {
+  res.header('Access-Control-Allow-Origin', (req.headers.origin as string) || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
   try {
     const { email, user, pack, amountVes } = req.body || {};
     const targetEmail = (email || 'niutoncaraballo3@gmail.com').toLowerCase().trim();
@@ -251,6 +254,10 @@ app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (
 
 // 3. Ruta /verify-otp (y alias)
 app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], async (req, res) => {
+  res.header('Access-Control-Allow-Origin', (req.headers.origin as string) || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
   try {
     const { code, email } = req.body || {};
     const cleanCode = (code || '').toString().trim();
