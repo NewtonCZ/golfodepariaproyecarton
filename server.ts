@@ -9,9 +9,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Habilitar CORS simple sin restricción de origen
+// Configuración de middlewares base
 app.use(cors());
-
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -108,22 +107,11 @@ async function sendResendOtpEmail(toEmail: string, otpCode: string, contextTitle
   }
 }
 
-// ----------------------------------------------------------------------
-// RUTAS DEL SERVIDOR
-// ----------------------------------------------------------------------
+// ======================================================================
+// 1. PRIMERO LAS RUTAS API (POST Y GET)
+// ======================================================================
 
-// 1. Healthcheck
-app.get(['/health', '/api/health', '/ping'], (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'golfodepariaproyecarton-api',
-    uptimeSeconds: process.uptime(),
-    timestamp: new Date().toISOString(),
-    resendConfigured: Boolean(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.startsWith('re_')),
-  });
-});
-
-// 2. Ruta /send-otp (y alias)
+// POST /send-otp (y alias compatibles)
 app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (req, res) => {
   try {
     const { email, user, pack, amountVes } = req.body || {};
@@ -136,7 +124,6 @@ app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (
 
     // Guardar en almacén
     otpStore.set(code, { code, email: targetEmail, createdAt: now, expiresAt });
-    // También guardar por email para búsquedas
     otpStore.set(`email:${targetEmail}`, { code, email: targetEmail, createdAt: now, expiresAt });
 
     console.log(`[OTP Generated] Código ${code} para ${targetEmail}`);
@@ -148,14 +135,12 @@ app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (
     );
 
     if (!emailRes.success) {
-      // Si falla Resend, retornamos advertencia pero no rompemos el flujo en desarrollo
       console.warn(`[OTP Warning] No se pudo enviar email vía Resend: ${emailRes.error}`);
       return res.status(200).json({
         success: true,
         sent: false,
         message: `Código generado. (Aviso de correo: ${emailRes.error})`,
         email: targetEmail,
-        // Solo como fallback en caso de testing
         debugCode: process.env.NODE_ENV !== 'production' ? code : undefined,
       });
     }
@@ -172,7 +157,7 @@ app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (
   }
 });
 
-// 3. Ruta /verify-otp (y alias)
+// POST /verify-otp (y alias compatibles)
 app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], (req, res) => {
   try {
     const { code, email } = req.body || {};
@@ -214,21 +199,32 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], (
   }
 });
 
-// Servir frontend en producción si se compila conjuntamente
-const distPath = path.join(process.cwd(), 'dist');
+// GET /health
+app.get(['/health', '/api/health', '/ping'], (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'golfodepariaproyecarton-api',
+    uptimeSeconds: process.uptime(),
+    timestamp: new Date().toISOString(),
+    resendConfigured: Boolean(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.startsWith('re_')),
+  });
+});
+
+// ======================================================================
+// 2. DESPUÉS EL SERVICIO DE ARCHIVOS ESTÁTICOS
+// ======================================================================
+const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
 
-// Fallback SPA para rutas del cliente
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path === '/send-otp' || req.path === '/verify-otp' || req.path === '/health') {
-    return next();
-  }
-  res.sendFile(path.join(distPath, 'index.html'));
+// ======================================================================
+// 3. AL FINAL EL FALLBACK SOLO PARA GET
+// ======================================================================
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // Iniciar servidor Express
 app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`🚀 [Backend Live] Servidor Express corriendo en el puerto ${PORT}`);
-  console.log(`📡 CORS configurado para: https://www.golfodepariaproyecarton.com`);
-  console.log(`📧 Resend Key: ${process.env.RESEND_API_KEY ? 'Presente (re_...)' : 'NO DETECTADA'}`);
+  console.log(`📧 Resend Key: ${process.env.RESEND_API_KEY ? 'Configurada (re_...)' : 'NO DETECTADA'}`);
 });
