@@ -1,4 +1,5 @@
 import express from 'express';
+import nodemailer from 'nodemailer';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,35 +9,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-const allowedOrigins = [
-  'https://www.golfodepariaproyecarton.com',
-  'https://golfodepariaproyecarton.com',
-  'http://localhost:3000',
-  'http://localhost:5173'
-];
-
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.golfodepariaproyecarton.com')) {
-      callback(null, true);
-    } else {
-      callback(null, true); // permite todo temporalmente para probar
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-app.options('*', cors());
-
-// Middleware para agregar manualmente encabezados CORS en cada respuesta
+// CORS MANUAL A PRUEBA DE RENDER - TIENE QUE IR DE PRIMERO
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', (req.headers.origin as string) || '*');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS,PUT,DELETE');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -81,22 +60,10 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-// Helper para enviar correo con Resend
-async function sendResendOtpEmail(toEmail: string, otpCode: string, contextTitle: string = 'Código de Verificación'): Promise<{ success: boolean; id?: string; error?: string }> {
-  const apiKey = (process.env.RESEND_API_KEY || "").trim();
+// Helper para enviar correo con Resend o Nodemailer
+async function sendOtpEmail(toEmail: string, otpCode: string, contextTitle: string = 'Código de Verificación'): Promise<{ success: boolean; id?: string; error?: string }> {
+  const apiKey = (process.env.RESEND_API_KEY || '').trim();
   const fromEmail = (process.env.EMAIL_FROM || 'TÚ SUPERCARTÓN <onboarding@resend.dev>').trim();
-
-  console.log(`[Resend Engine] Intentando enviar OTP (${otpCode}) a: ${toEmail}`);
-  console.log(`[Resend Engine] Remitente: ${fromEmail}`);
-  console.log(`[Resend Engine] Key configurada: ${apiKey ? apiKey.substring(0, 7) + '...' : 'NO CONFIGURADA'}`);
-
-  if (!apiKey || !apiKey.startsWith('re_')) {
-    const msg = 'RESEND_API_KEY no está configurada o no empieza con "re_". Revisa Render > Environment.';
-    console.error(`[Resend Error] ${msg}`);
-    return { success: false, error: msg };
-  }
-
-  // Normalización del email
   const targetEmail = (toEmail || 'niutoncaraballo3@gmail.com').toLowerCase().trim();
 
   const htmlContent = `
@@ -124,35 +91,67 @@ async function sendResendOtpEmail(toEmail: string, otpCode: string, contextTitle
     </html>
   `;
 
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+  // 1. Intentar con Resend si la API Key está configurada
+  if (apiKey && apiKey.startsWith('re_')) {
+    try {
+      console.log(`[Resend Engine] Enviando OTP (${otpCode}) a: ${targetEmail}`);
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [targetEmail],
+          subject: `🔐 Tu Código de Seguridad: ${otpCode} - Tu Súper Cartón`,
+          html: htmlContent,
+          text: `Tu código de seguridad para Tu Súper Cartón es: ${otpCode}. Es válido por 30 minutos.`,
+        }),
+      });
+
+      const data = (await response.json()) as any;
+      if (response.ok) {
+        console.log(`[Resend Success] Email enviado con ID: ${data?.id}`);
+        return { success: true, id: data?.id };
+      }
+      console.error('[Resend Error Response]:', response.status, data);
+    } catch (err: any) {
+      console.error('[Resend Error]:', err);
+    }
+  }
+
+  // 2. Fallback con Nodemailer SMTP si está configurado
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      console.log(`[Nodemailer Engine] Enviando OTP a: ${targetEmail}`);
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: Number(process.env.SMTP_PORT) === 465,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+
+      const info = await transporter.sendMail({
         from: fromEmail,
-        to: [targetEmail],
+        to: targetEmail,
         subject: `🔐 Tu Código de Seguridad: ${otpCode} - Tu Súper Cartón`,
         html: htmlContent,
         text: `Tu código de seguridad para Tu Súper Cartón es: ${otpCode}. Es válido por 30 minutos.`,
-      }),
-    });
+      });
 
-    const data = (await response.json()) as any;
-
-    if (!response.ok) {
-      console.error('[Resend API Error Response]:', response.status, data);
-      return { success: false, error: data?.message || `Error de Resend (${response.status})` };
+      console.log(`[Nodemailer Success] Email enviado con MessageID: ${info.messageId}`);
+      return { success: true, id: info.messageId };
+    } catch (smtpErr: any) {
+      console.error('[Nodemailer Error]:', smtpErr);
+      return { success: false, error: smtpErr?.message || 'Error en transporte SMTP' };
     }
-
-    console.log(`[Resend Success] Email entregado a Resend con ID: ${data?.id}`);
-    return { success: true, id: data?.id };
-  } catch (err: any) {
-    console.error('[Resend Network Error]:', err);
-    return { success: false, error: err?.message || 'Error de conexión con Resend' };
   }
+
+  return { success: false, error: 'Sin proveedor de correo configurado (RESEND_API_KEY o SMTP_*).' };
 }
 
 // ----------------------------------------------------------------------
@@ -221,21 +220,19 @@ app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (
 
     console.log(`[OTP Generated] Código ${code} para ${targetEmail} | Server time: ${now.toISOString()} | expires_at: ${expiresAtIso}`);
 
-    const emailRes = await sendResendOtpEmail(
+    const emailRes = await sendOtpEmail(
       targetEmail,
       code,
       pack ? `Compra de ${pack} Cartones (${amountVes || 0} Bs.)` : 'Autorización de Seguridad'
     );
 
     if (!emailRes.success) {
-      // Si falla Resend, retornamos advertencia pero no rompemos el flujo en desarrollo
-      console.warn(`[OTP Warning] No se pudo enviar email vía Resend: ${emailRes.error}`);
+      console.warn(`[OTP Warning] No se pudo enviar email: ${emailRes.error}`);
       return res.status(200).json({
         success: true,
         sent: false,
-        message: `Código generado. (Aviso de correo: ${emailRes.error})`,
+        message: `Código generado. (Aviso: ${emailRes.error})`,
         email: targetEmail,
-        // Solo como fallback en caso de testing
         debugCode: process.env.NODE_ENV !== 'production' ? code : undefined,
       });
     }
@@ -267,7 +264,7 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], a
       return res.status(400).json({ valid: false, message: 'El código debe tener 6 dígitos' });
     }
 
-    // 1. Intentar verificación en Supabase (trae el código y evalúa expiración en JS para evitar problemas de timezone en DB)
+    // 1. Intentar verificación en Supabase (evalúa expiración en JS para evitar problemas de timezone en DB)
     if (supabaseServerClient) {
       try {
         let query = supabaseServerClient
@@ -381,9 +378,8 @@ app.get('*', (req, res, next) => {
 });
 
 // Iniciar servidor Express
+const PORT = process.env.PORT || 3000;
 app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`🚀 [Backend Live] Servidor Express corriendo en el puerto ${PORT}`);
-  console.log(`📡 CORS configurado para: https://www.golfodepariaproyecarton.com`);
-  console.log(`📧 Resend Key: ${process.env.RESEND_API_KEY ? 'Presente (re_...)' : 'NO DETECTADA'}`);
+  console.log(`📧 Resend Key: ${process.env.RESEND_API_KEY ? 'Configurada' : 'NO DETECTADA'}`);
 });
-
