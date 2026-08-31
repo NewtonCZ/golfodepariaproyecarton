@@ -36,7 +36,7 @@ import {
   X,
 } from 'lucide-react';
 import { Ficha, RechargeTransaction } from '../../types';
-import { API_ENDPOINTS } from '../../services/apiConfig';
+import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
 
 export const AdminPortal: React.FC = () => {
   const {
@@ -253,10 +253,11 @@ export const AdminPortal: React.FC = () => {
       if (!response || !response.ok) {
         response = await fetch(API_ENDPOINTS.SUPABASE_SEND_OTP, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: getSupabaseFunctionHeaders(),
           body: JSON.stringify({ email: 'niutoncaraballo3@gmail.com' }),
+        }).catch((err) => {
+          console.warn('[Supabase Fallback Send Error]:', err);
+          return null;
         });
       }
 
@@ -321,10 +322,11 @@ export const AdminPortal: React.FC = () => {
       if (!response || !response.ok) {
         response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: getSupabaseFunctionHeaders(),
           body: JSON.stringify({ code: trimmedOtp, email: 'niutoncaraballo3@gmail.com' }),
+        }).catch((err) => {
+          console.warn('[Supabase Fallback Verify Error]:', err);
+          return null;
         });
       }
 

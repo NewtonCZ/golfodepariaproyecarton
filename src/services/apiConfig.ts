@@ -27,3 +27,23 @@ export const API_ENDPOINTS = {
   SUPABASE_SEND_OTP: 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/send-otp',
   SUPABASE_VERIFY_OTP: 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/verify-otp',
 };
+
+export const getSupabaseFunctionHeaders = (): Record<string, string> => {
+  const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env || {} : {};
+  const anonKey =
+    metaEnv.VITE_SUPABASE_ANON_KEY ||
+    (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : '') ||
+    metaEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    '';
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (anonKey) {
+    headers['apikey'] = anonKey;
+    headers['Authorization'] = `Bearer ${anonKey}`;
+  }
+
+  return headers;
+};

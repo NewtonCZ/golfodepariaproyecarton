@@ -3,7 +3,7 @@ import { useGame } from '../../context/GameContext';
 import { MatrixCardView } from '../cards/MatrixCardView';
 import { X, Sparkles, AlertCircle, ShoppingCart, Check, ShieldCheck, KeyRound, ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
 import { MatrixCard } from '../../types';
-import { API_ENDPOINTS } from '../../services/apiConfig';
+import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
 
 interface BuyCardsModalProps {
   isOpen: boolean;
@@ -78,12 +78,15 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
         // Fallback a Supabase Edge Function
         response = await fetch(API_ENDPOINTS.SUPABASE_SEND_OTP, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getSupabaseFunctionHeaders(),
           body: JSON.stringify(payload),
+        }).catch((err) => {
+          console.warn('[Supabase Fallback Send Error]:', err);
+          return null;
         });
       }
 
-      if (!response.ok) {
+      if (!response || !response.ok) {
         throw new Error('No se pudo enviar el código de verificación.');
       }
 
@@ -120,12 +123,15 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
         // Fallback a Supabase Edge Function
         response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getSupabaseFunctionHeaders(),
           body: JSON.stringify(payload),
+        }).catch((err) => {
+          console.warn('[Supabase Fallback Verify Error]:', err);
+          return null;
         });
       }
 
-      const data = await response.json().catch(() => ({}));
+      const data = await response?.json().catch(() => ({}));
 
       if (data && data.valid === true) {
         // Código válido -> Proseguir con la generación normal del cartón
