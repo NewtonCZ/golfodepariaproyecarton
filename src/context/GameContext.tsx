@@ -64,8 +64,8 @@ interface GameContextType {
   formatMoney: (amountVes: number, options?: { showBoth?: boolean }) => string;
   purchaseCards: (packCount: 2 | 4 | 6, roundId: string) => { success: boolean; message: string; cards?: MatrixCard[] };
   submitRecharge: (data: any) => Promise<{ success: boolean; message: string }>;
-  approveRecharge: (transactionId: string) => { success: boolean; message: string };
-  rejectRecharge: (transactionId: string, reason: string) => { success: boolean; message: string };
+  approveRecharge: (transactionId: string) => Promise<{ success: boolean; message: string }>;
+  rejectRecharge: (transactionId: string, reason: string) => Promise<{ success: boolean; message: string }>;
   submitWithdrawal: (data: any) => { success: boolean; message: string };
   completeWithdrawal: (transactionId: string) => { success: boolean; message: string };
   rejectWithdrawal: (transactionId: string, reason: string) => { success: boolean; message: string };
@@ -923,23 +923,27 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const approveRecharge = useCallback(
-    (transactionId: string): { success: boolean; message: string } => {
+    async (transactionId: string): Promise<{ success: boolean; message: string }> => {
       const target = recharges.find((r) => r.id === transactionId);
       if (!target) return { success: false, message: 'Transacción no encontrada.' };
       if (target.status !== 'pending') return { success: false, message: 'La transacción ya ha sido procesada.' };
 
       const processedAt = new Date().toISOString();
       const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
+      const montoVes = Number(target.amountVes) || 0;
+      const usuarioId = target.userId;
 
+      // Actualizar estado local reactivo de recargas
       setRecharges((prev) =>
         prev.map((r) => (r.id === transactionId ? { ...r, status: 'approved', processedAt, processedBy } : r))
       );
 
+      // Actualizar balance en el listado de usuarios local
       setUsers((prev) =>
         prev.map((u) => {
           if (u.id === target.userId) {
             const balBefore = u.availableBalance;
-            const balAfter = balBefore + target.amountVes;
+            const balAfter = balBefore + montoVes;
 
             setLedger((l) => [
               {
@@ -947,7 +951,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 userId: u.id,
                 userName: u.name,
                 type: 'recharge',
-                amountVes: target.amountVes,
+                amountVes: montoVes,
                 balanceBefore: balBefore,
                 balanceAfter: balAfter,
                 description: `Recarga aprobada (Ref: ${target.referenceNumber})`,
@@ -957,39 +961,93 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               ...l,
             ]);
 
-            return { ...u, availableBalance: balAfter };
+            return { ...u, availableBalance: balAfter, balance: (u.balance ?? balBefore) + montoVes };
           }
           return u;
         })
       );
 
+      // 1. Marcar recarga como aprobada en Supabase
       try {
         if (supabase) {
-          // Actualizar en recargas_pago_movil
-          supabase
-            .from('recargas_pago_movil')
-            .update({
-              estatus: 'aprobado',
-              procesado_por: processedBy,
-              fecha_procesado: processedAt,
-            })
-            .eq('referencia', target.referenceNumber)
-            .then(({ error }) => {
-              if (error) console.warn('[GameContext] Note recargas_pago_movil update:', error.message);
-            });
+          const isNumericOrUuid = target.id && !target.id.startsWith('rch-') && !target.id.startsWith('rpm-');
+          if (isNumericOrUuid) {
+            await supabase
+              .from('recargas_pago_movil')
+              .update({
+                estatus: 'aprobada',
+                procesado_por: processedBy,
+                fecha_procesado: processedAt,
+              })
+              .eq('id', target.id);
+          }
 
-          // Actualizar en recharges
-          supabase
-            .from('recharges')
-            .update({ status: 'approved', processed_at: processedAt, processed_by: processedBy })
-            .eq('id', transactionId)
-            .then(({ error }) => {
-              if (error) console.warn('[GameContext] Error updating recharge in Supabase:', error);
-            });
+          if (target.referenceNumber) {
+            await supabase
+              .from('recargas_pago_movil')
+              .update({
+                estatus: 'aprobada',
+                procesado_por: processedBy,
+                fecha_procesado: processedAt,
+              })
+              .eq('referencia', target.referenceNumber);
+          }
+
+          // 2. Sumar saldo al jugador en jugadores_bingo
+          if (usuarioId) {
+            try {
+              const { data: jugador } = await supabase
+                .from('jugadores_bingo')
+                .select('saldo')
+                .eq('id', usuarioId)
+                .maybeSingle();
+
+              if (jugador) {
+                const nuevoSaldo = (Number(jugador.saldo) || 0) + montoVes;
+                await supabase
+                  .from('jugadores_bingo')
+                  .update({
+                    saldo: nuevoSaldo,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', usuarioId);
+              } else if (target.payerDocumentId) {
+                // Fallback por cédula si el ID difiere
+                const { data: jCed } = await supabase
+                  .from('jugadores_bingo')
+                  .select('id, saldo')
+                  .eq('cedula', target.payerDocumentId)
+                  .maybeSingle();
+
+                if (jCed) {
+                  const nuevoSaldo = (Number(jCed.saldo) || 0) + montoVes;
+                  await supabase
+                    .from('jugadores_bingo')
+                    .update({
+                      saldo: nuevoSaldo,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', jCed.id);
+                }
+              }
+            } catch (errJugador) {
+              console.warn('[GameContext] Error actualizando saldo en jugadores_bingo:', errJugador);
+            }
+          }
+
+          // Actualizar complementario en tabla recharges
+          try {
+            await supabase
+              .from('recharges')
+              .update({ status: 'approved', processed_at: processedAt, processed_by: processedBy })
+              .eq('id', transactionId);
+          } catch {}
         }
-      } catch {}
+      } catch (errDb) {
+        console.warn('[GameContext] Error en persistencia Supabase al aprobar recarga:', errDb);
+      }
 
-      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(target.amountVes)} aprobada para ${target.userName}`);
+      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(montoVes)} aprobada para ${target.userName}`);
       try {
         soundService.playCoin();
       } catch {}
@@ -1000,7 +1058,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const rejectRecharge = useCallback(
-    (transactionId: string, reason: string): { success: boolean; message: string } => {
+    async (transactionId: string, reason: string): Promise<{ success: boolean; message: string }> => {
       const target = recharges.find((r) => r.id === transactionId);
       if (!target) return { success: false, message: 'Transacción no encontrada.' };
 
@@ -1013,30 +1071,41 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       try {
         if (supabase) {
-          // Actualizar en recargas_pago_movil
-          supabase
-            .from('recargas_pago_movil')
-            .update({
-              estatus: 'rechazado',
-              motivo_rechazo: reason,
-              procesado_por: processedBy,
-              fecha_procesado: processedAt,
-            })
-            .eq('referencia', target.referenceNumber)
-            .then(({ error }) => {
-              if (error) console.warn('[GameContext] Note recargas_pago_movil reject:', error.message);
-            });
+          const isNumericOrUuid = target.id && !target.id.startsWith('rch-') && !target.id.startsWith('rpm-');
+          if (isNumericOrUuid) {
+            await supabase
+              .from('recargas_pago_movil')
+              .update({
+                estatus: 'rechazada',
+                motivo_rechazo: reason,
+                procesado_por: processedBy,
+                fecha_procesado: processedAt,
+              })
+              .eq('id', target.id);
+          }
 
-          // Actualizar en recharges
-          supabase
-            .from('recharges')
-            .update({ status: 'rejected', rejection_reason: reason, processed_at: processedAt, processed_by: processedBy })
-            .eq('id', transactionId)
-            .then(({ error }) => {
-              if (error) console.warn('[GameContext] Error rejecting recharge in Supabase:', error);
-            });
+          if (target.referenceNumber) {
+            await supabase
+              .from('recargas_pago_movil')
+              .update({
+                estatus: 'rechazada',
+                motivo_rechazo: reason,
+                procesado_por: processedBy,
+                fecha_procesado: processedAt,
+              })
+              .eq('referencia', target.referenceNumber);
+          }
+
+          try {
+            await supabase
+              .from('recharges')
+              .update({ status: 'rejected', rejection_reason: reason, processed_at: processedAt, processed_by: processedBy })
+              .eq('id', transactionId);
+          } catch {}
         }
-      } catch {}
+      } catch (errReject) {
+        console.warn('[GameContext] Error en persistencia Supabase al rechazar recarga:', errReject);
+      }
 
       addAuditLog('RECHAZAR_RECARGA', `Recarga ${transactionId} rechazada. Motivo: ${reason}`);
       return { success: true, message: 'Recarga rechazada.' };

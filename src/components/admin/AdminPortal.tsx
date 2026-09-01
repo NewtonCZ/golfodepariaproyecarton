@@ -2063,8 +2063,8 @@ export const AdminPortal: React.FC = () => {
               <button
                 type="button"
                 disabled={!confirmBankArrivalChecked}
-                onClick={() => {
-                  const res = approveRecharge(selectedRechargeForReview.id);
+                onClick={async () => {
+                  const res = await approveRecharge(selectedRechargeForReview.id);
                   if (res.success) {
                     setSelectedRechargeForReview(null);
                   }
@@ -2137,8 +2137,8 @@ export const AdminPortal: React.FC = () => {
                 Cancelar
               </button>
               <button
-                onClick={() => {
-                  rejectRecharge(rejectRechargeId, rechargeRejectReason);
+                onClick={async () => {
+                  await rejectRecharge(rejectRechargeId, rechargeRejectReason);
                   setRejectRechargeId(null);
                 }}
                 className="w-1/2 py-2 bg-rose-600 text-white font-bold rounded-xl text-xs"

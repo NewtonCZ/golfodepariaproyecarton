@@ -641,6 +641,56 @@ app.post(['/api/recargas', '/recargas'], async (req, res) => {
   }
 });
 
+// Endpoint POST /api/recargas/aprobar
+app.post(['/api/recargas/aprobar', '/api/recargas/:id/aprobar'], async (req, res) => {
+  try {
+    const idRecarga = req.params.id || req.body?.id || req.body?.idRecarga || req.body?.transactionId;
+    const usuario_id = req.body?.usuario_id || req.body?.userId;
+    const monto_ves = Number(req.body?.monto_ves || req.body?.amountVes || req.body?.monto) || 0;
+    const referencia = req.body?.referencia || req.body?.referenceNumber;
+
+    if (supabaseServerClient) {
+      // 1. Marcar recarga como aprobada
+      if (idRecarga) {
+        await supabaseServerClient
+          .from('recargas_pago_movil')
+          .update({ estatus: 'aprobada', fecha_procesado: new Date().toISOString() })
+          .eq('id', idRecarga);
+      }
+      if (referencia) {
+        await supabaseServerClient
+          .from('recargas_pago_movil')
+          .update({ estatus: 'aprobada', fecha_procesado: new Date().toISOString() })
+          .eq('referencia', referencia);
+      }
+
+      // 2. Sumar saldo al jugador en jugadores_bingo
+      if (usuario_id && monto_ves > 0) {
+        const { data: jugador } = await supabaseServerClient
+          .from('jugadores_bingo')
+          .select('saldo')
+          .eq('id', usuario_id)
+          .single();
+
+        if (jugador) {
+          await supabaseServerClient
+            .from('jugadores_bingo')
+            .update({
+              saldo: (Number(jugador.saldo) || 0) + monto_ves,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', usuario_id);
+        }
+      }
+    }
+
+    return res.status(200).json({ success: true, message: 'Recarga aprobada y saldo acreditado con éxito' });
+  } catch (error: any) {
+    console.error('[Error in /api/recargas/aprobar]:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Error al aprobar recarga' });
+  }
+});
+
 // Servir frontend en producción si se compila conjuntamente
 const distPath = path.join(process.cwd(), 'dist');
 app.use(express.static(distPath));
