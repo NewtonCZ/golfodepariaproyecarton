@@ -280,6 +280,259 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_audit`, JSON.stringify(auditLogs)); }, [auditLogs]);
   useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_config`, JSON.stringify(commercialConfig)); }, [commercialConfig]);
 
+  // ==========================================
+  // Robust Schema Mapping & Error Recovery Helpers
+  // ==========================================
+  const normalizeGameRound = (raw: any): GameRound => {
+    if (!raw) return raw;
+    const roundNum = raw.roundNumber ?? raw.round_number ?? 1;
+    const price = raw.cardPriceVes ?? raw.card_price ?? raw.card_price_ves ?? 25;
+    const prizePct = raw.prizePercentage ?? raw.prize_percentage ?? 70;
+    const jackpot = raw.jackpotVes ?? raw.jackpot_ves ?? 15000;
+    const startsAt = raw.starts_at ?? raw.openBetAt ?? raw.open_bet_at ?? new Date().toISOString();
+    const endsAt = raw.ends_at ?? raw.closeBetAt ?? raw.close_bet_at ?? new Date(Date.now() + 3600000).toISOString();
+    const drawAt = raw.drawAt ?? raw.draw_at ?? raw.ends_at ?? endsAt;
+    const drawn = Array.isArray(raw.drawnFichas)
+      ? raw.drawnFichas
+      : Array.isArray(raw.drawn_fichas)
+      ? raw.drawn_fichas
+      : typeof raw.drawn_fichas === 'string'
+      ? (() => { try { return JSON.parse(raw.drawn_fichas); } catch { return []; } })()
+      : [];
+    const cardsSold = raw.totalCardsSold ?? raw.total_cards_sold ?? 0;
+    const winningCards = raw.winningCardsCount ?? raw.winning_cards_count ?? 0;
+    const prizesPaid = raw.totalPrizesPaidVes ?? raw.total_prizes_paid_ves ?? 0;
+    const locked = raw.resultLocked ?? raw.result_locked ?? false;
+
+    return {
+      id: String(raw.id || `round-${roundNum}`),
+      roundNumber: Number(roundNum),
+      round_number: Number(roundNum),
+      order: Number(raw.order ?? 1),
+      title: raw.title || `Sorteo #${roundNum}`,
+      openBetAt: startsAt,
+      closeBetAt: endsAt,
+      drawAt: drawAt,
+      draw_at: drawAt,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      status: raw.status || 'scheduled',
+      drawnFichas: drawn,
+      drawn_fichas: drawn,
+      totalCardsSold: Number(cardsSold),
+      total_cards_sold: Number(cardsSold),
+      cardPriceVes: Number(price),
+      card_price: Number(price),
+      card_price_ves: Number(price),
+      prize_percentage: Number(prizePct),
+      prizePercentage: Number(prizePct),
+      jackpotVes: Number(jackpot),
+      jackpot_ves: Number(jackpot),
+      winningCardsCount: Number(winningCards),
+      winning_cards_count: Number(winningCards),
+      totalPrizesPaidVes: Number(prizesPaid),
+      total_prizes_paid_ves: Number(prizesPaid),
+      resultLocked: Boolean(locked),
+      result_locked: Boolean(locked),
+      resultSubmittedBy: raw.resultSubmittedBy ?? raw.result_submitted_by,
+      resultSubmittedAt: raw.resultSubmittedAt ?? raw.result_submitted_at,
+      result_submitted_at: raw.resultSubmittedAt ?? raw.result_submitted_at,
+    };
+  };
+
+  const formatRoundForSupabase = (round: any): Record<string, any> => {
+    const payload: Record<string, any> = {};
+
+    if (round.title !== undefined) payload.title = round.title;
+    if (round.status !== undefined) payload.status = round.status;
+    if (round.order !== undefined) payload.order = Number(round.order);
+
+    const roundNum = round.roundNumber ?? round.round_number;
+    if (roundNum !== undefined) payload.round_number = Number(roundNum);
+
+    const price = round.card_price ?? round.cardPriceVes ?? round.card_price_ves;
+    if (price !== undefined) {
+      payload.card_price = Number(price);
+      payload.card_price_ves = Number(price);
+    }
+
+    const prizePct = round.prize_percentage ?? round.prizePercentage;
+    if (prizePct !== undefined) payload.prize_percentage = Number(prizePct);
+
+    const jackpot = round.jackpot_ves ?? round.jackpotVes;
+    if (jackpot !== undefined) payload.jackpot_ves = Number(jackpot);
+
+    const totalCards = round.total_cards_sold ?? round.totalCardsSold;
+    if (totalCards !== undefined) payload.total_cards_sold = Number(totalCards);
+
+    const drawn = round.drawn_fichas ?? round.drawnFichas;
+    if (drawn !== undefined) payload.drawn_fichas = drawn;
+
+    const winCount = round.winning_cards_count ?? round.winningCardsCount;
+    if (winCount !== undefined) payload.winning_cards_count = Number(winCount);
+
+    const prizesPaid = round.total_prizes_paid_ves ?? round.totalPrizesPaidVes;
+    if (prizesPaid !== undefined) payload.total_prizes_paid_ves = Number(prizesPaid);
+
+    const locked = round.result_locked ?? round.resultLocked;
+    if (locked !== undefined) payload.result_locked = Boolean(locked);
+
+    const starts = round.starts_at ?? round.openBetAt;
+    if (starts !== undefined) payload.starts_at = starts;
+
+    const ends = round.ends_at ?? round.closeBetAt;
+    if (ends !== undefined) payload.ends_at = ends;
+
+    const draw = round.draw_at ?? round.drawAt;
+    if (draw !== undefined) payload.draw_at = draw;
+
+    const subBy = round.result_submitted_by ?? round.resultSubmittedBy;
+    if (subBy !== undefined) payload.result_submitted_by = subBy;
+
+    const subAt = round.result_submitted_at ?? round.resultSubmittedAt;
+    if (subAt !== undefined) payload.result_submitted_at = subAt;
+
+    if (round.id) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(round.id));
+      if (isUuid) {
+        payload.id = round.id;
+      }
+    }
+
+    return payload;
+  };
+
+  const safeInsertRoundToSupabase = async (roundData: GameRound): Promise<any> => {
+    if (!supabase) return null;
+    const payload = formatRoundForSupabase(roundData);
+    let currentPayload = { ...payload };
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        const { data, error } = await supabase.from('rounds').insert([currentPayload]).select().maybeSingle();
+        if (!error) {
+          return data;
+        }
+        console.warn(`[GameContext] safeInsertRoundToSupabase attempt ${attempt + 1} failed:`, error);
+
+        // PGRST204: column not found in schema cache
+        if (error.code === 'PGRST204' || (error.message && error.message.includes('Could not find the'))) {
+          const match = error.message.match(/Could not find the '([^']+)' column/);
+          if (match && match[1]) {
+            delete currentPayload[match[1]];
+            continue;
+          }
+        }
+
+        if (error.message && (error.message.includes('invalid input syntax for type uuid') || error.message.includes('uuid'))) {
+          delete currentPayload.id;
+          continue;
+        }
+
+        break;
+      } catch (e) {
+        console.warn('[GameContext] safeInsertRoundToSupabase exception:', e);
+        break;
+      }
+    }
+    return null;
+  };
+
+  const safeUpdateRoundInSupabase = async (
+    roundId: string,
+    roundData: Partial<GameRound> | Record<string, any>
+  ): Promise<any> => {
+    if (!supabase) return null;
+    const payload = formatRoundForSupabase(roundData);
+    delete payload.id;
+
+    let currentPayload = { ...payload };
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        let query = supabase.from('rounds').update(currentPayload);
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(roundId);
+        if (isUuid) {
+          query = query.eq('id', roundId);
+        } else {
+          const roundNumMatch = roundId.match(/\d+/);
+          if (roundNumMatch) {
+            query = query.or(`id.eq.${roundId},round_number.eq.${Number(roundNumMatch[0])}`);
+          } else {
+            query = query.eq('id', roundId);
+          }
+        }
+
+        const { data, error } = await query.select();
+        if (!error) {
+          return data;
+        }
+        console.warn(`[GameContext] safeUpdateRoundInSupabase attempt ${attempt + 1} failed:`, error);
+
+        if (error.code === 'PGRST204' || (error.message && error.message.includes('Could not find the'))) {
+          const match = error.message.match(/Could not find the '([^']+)' column/);
+          if (match && match[1]) {
+            delete currentPayload[match[1]];
+            continue;
+          }
+        }
+
+        break;
+      } catch (e) {
+        console.warn('[GameContext] safeUpdateRoundInSupabase exception:', e);
+        break;
+      }
+    }
+    return null;
+  };
+
+  const formatCardForSupabase = (card: MatrixCard): Record<string, any> => ({
+    id: card.id,
+    code: card.code,
+    round_id: card.roundId,
+    round_number: card.roundNumber,
+    user_id: card.userId,
+    user_name: card.userName,
+    matrix: card.matrix,
+    purchase_time: card.purchaseTime,
+    price_ves: card.priceVes,
+    status: card.status,
+    matched_count: card.matchedCount || 0,
+    winning_patterns: card.winningPatterns || [],
+    total_prize_ves: card.totalPrizeVes || 0,
+  });
+
+  const formatLedgerForSupabase = (entry: WalletLedgerEntry): Record<string, any> => ({
+    id: entry.id,
+    user_id: entry.userId,
+    user_name: entry.userName,
+    type: entry.type,
+    amount_ves: entry.amountVes,
+    balance_before: entry.balanceBefore,
+    balance_after: entry.balanceAfter,
+    description: entry.description,
+    reference_id: entry.referenceId,
+    created_at: entry.createdAt,
+  });
+
+  const formatWithdrawalForSupabase = (w: WithdrawalTransaction): Record<string, any> => ({
+    id: w.id,
+    user_id: w.userId,
+    user_name: w.userName,
+    user_phone: w.userPhone,
+    amount_ves: w.amountVes,
+    channel: w.channel || 'pago_movil',
+    bank_dest: w.bankDest,
+    phone_or_account: w.phoneOrAccount,
+    document_id: w.documentId,
+    titular_name: w.titularName,
+    account_type: w.accountType,
+    status: w.status,
+    rejection_reason: w.rejectionReason,
+    processed_at: w.processedAt,
+    processed_by: w.processedBy,
+    created_at: w.createdAt,
+  });
+
   // FIX CRITICO DE ROUNDS
   const fetchActiveRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
     try {
@@ -287,12 +540,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: rawRounds, error } = await supabase.from('rounds').select('*').in('status', ['open', 'scheduled']).order('starts_at', { ascending: true }).limit(limit);
       if (error) throw error;
       if (!rawRounds || rawRounds.length === 0) return;
-      const fetchedRounds = rawRounds as GameRound[];
+      const fetchedRounds: GameRound[] = (rawRounds || []).map(normalizeGameRound);
       setRounds(prev => {
-        const fetchedMap = new Map(fetchedRounds.map(r => [r.id, r]));
+        const fetchedMap = new Map<string, GameRound>(fetchedRounds.map((r) => [r.id, r]));
         const updated = prev.map(r => {
           const serverR = fetchedMap.get(r.id);
-          if (serverR) return {...r,...serverR, drawnFichas: r.drawnFichas && r.drawnFichas.length > 0? r.drawnFichas : serverR.drawnFichas || [] };
+          if (serverR) return {...r, ...serverR, drawnFichas: r.drawnFichas && r.drawnFichas.length > 0 ? r.drawnFichas : serverR.drawnFichas || [] };
           return r;
         });
         const existingIds = new Set(prev.map(r => r.id));
@@ -690,10 +943,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
           if (payload?.new) {
-            const item = payload.new as GameRound;
+            const item = normalizeGameRound(payload.new);
             setRounds((prev) => {
-              const exists = prev.some((r) => r.id === item.id);
-              return exists ? prev.map((r) => (r.id === item.id ? { ...r, ...item } : r)) : [item, ...prev];
+              const exists = prev.some((r) => r.id === item.id || (r.roundNumber && r.roundNumber === item.roundNumber));
+              return exists
+                ? prev.map((r) =>
+                    r.id === item.id || (r.roundNumber && r.roundNumber === item.roundNumber)
+                      ? { ...r, ...item }
+                      : r
+                  )
+                : [item, ...prev];
             });
           }
         })
@@ -844,14 +1103,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Persist cards, ledger and update round cards sold in Supabase
       try {
-        supabase.from('cards').insert(newCards).then(({ error }) => {
+        supabase.from('cards').insert(newCards.map(formatCardForSupabase)).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert cards error:', error);
         });
-        supabase.from('ledger').insert([newLedger]).then(({ error }) => {
+        supabase.from('ledger').insert([formatLedgerForSupabase(newLedger)]).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert ledger error:', error);
         });
-        supabase.from('rounds').update({ totalCardsSold: (round.totalCardsSold || 0) + packCount }).eq('id', roundId).then(({ error }) => {
-          if (error) console.warn('[GameContext] Supabase update round error:', error);
+        safeUpdateRoundInSupabase(roundId, {
+          totalCardsSold: (round.totalCardsSold || 0) + packCount,
         });
 
         // Actualizar saldo del jugador en jugadores_bingo
@@ -1225,11 +1484,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ]);
 
       try {
-        supabase.from('withdrawals').insert([newWithdrawal]).then(({ error }) => {
+        supabase.from('withdrawals').insert([formatWithdrawalForSupabase(newWithdrawal)]).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert withdrawal error:', error);
         });
         supabase.from('ledger').insert([
-          {
+          formatLedgerForSupabase({
             id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
             userId: currentUser.id,
             userName: currentUser.name,
@@ -1240,7 +1499,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             description: `Solicitud de retiro (${newWithdrawal.channel === 'pago_movil' ? 'Pago Móvil' : 'Transferencia'})`,
             referenceId: newWithdrawal.id,
             createdAt: new Date().toISOString(),
-          },
+          }),
         ]).then();
 
         // Actualizar saldo disponible en jugadores_bingo
@@ -1412,8 +1671,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setRounds((prev) => [newRound, ...prev]);
       try {
-        supabase.from('rounds').insert([newRound]).then(({ error }) => {
-          if (error) console.warn('[GameContext] Supabase insert round error:', error);
+        safeInsertRoundToSupabase(newRound).then((inserted) => {
+          if (inserted?.id && inserted.id !== newRound.id) {
+            setRounds((prev) => prev.map((r) => (r.id === newRound.id ? { ...r, id: inserted.id } : r)));
+          }
         });
       } catch {}
 
@@ -1431,9 +1692,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         prev.map((r) => (r.id === roundId ? { ...r, ...data } : r))
       );
       try {
-        supabase.from('rounds').update(data).eq('id', roundId).then(({ error }) => {
-          if (error) console.warn('[GameContext] Supabase update round error:', error);
-        });
+        safeUpdateRoundInSupabase(roundId, data);
       } catch {}
       addAuditLog('MODIFICAR_SORTEO', `Configuración del sorteo ${roundId} actualizada`);
       return { success: true, message: 'Configuración de sorteo actualizada exitosamente.' };
@@ -1447,9 +1706,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         prev.map((r) => (r.id === roundId ? { ...r, status } : r))
       );
       try {
-        supabase.from('rounds').update({ status }).eq('id', roundId).then(({ error }) => {
-          if (error) console.warn('[GameContext] Supabase update status error:', error);
-        });
+        safeUpdateRoundInSupabase(roundId, { status });
       } catch {}
       const target = rounds.find((r) => r.id === roundId);
       addAuditLog('ESTADO_SORTEO', `Sorteo ${target?.title || roundId} cambió a estado: ${status}`);
@@ -1577,23 +1834,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // 4. Actualizar en Supabase si está disponible
       try {
-        supabase
-          .from('rounds')
-          .update({
-            status: 'finished',
-            drawn_fichas: drawnFichas,
-            winning_cards_count: totalWinnersCount,
-            total_prizes_paid_ves: totalPrizesPaidVes,
-            result_locked: true,
-            result_submitted_at: new Date().toISOString(),
-          })
-          .eq('id', roundId)
-          .then(({ error }) => {
-            if (error) console.warn('[GameContext] Error updating round in Supabase:', error);
-          });
+        safeUpdateRoundInSupabase(roundId, {
+          status: 'finished',
+          drawn_fichas: drawnFichas,
+          winning_cards_count: totalWinnersCount,
+          total_prizes_paid_ves: totalPrizesPaidVes,
+          result_locked: true,
+          result_submitted_by: signedBy,
+          result_submitted_at: new Date().toISOString(),
+        });
 
         if (newLedgerEntries.length > 0) {
-          supabase.from('ledger').insert(newLedgerEntries).then(({ error }) => {
+          supabase.from('ledger').insert(newLedgerEntries.map(formatLedgerForSupabase)).then(({ error }) => {
             if (error) console.warn('[GameContext] Supabase insert prize ledger error:', error);
           });
         }
