@@ -648,39 +648,136 @@ app.post(['/api/recargas/aprobar', '/api/recargas/:id/aprobar'], async (req, res
     const usuario_id = req.body?.usuario_id || req.body?.userId;
     const monto_ves = Number(req.body?.monto_ves || req.body?.amountVes || req.body?.monto) || 0;
     const referencia = req.body?.referencia || req.body?.referenceNumber;
+    const cedula_pagador = (req.body?.cedula_pagador || req.body?.payerDocumentId || '').trim();
+    const cleanCedula = cedula_pagador.replace(/\D/g, '');
+    const telefono_pagador = (req.body?.telefono_pagador || req.body?.payerPhone || req.body?.userPhone || '').trim();
+    const cleanPhone = telefono_pagador.replace(/\D/g, '');
+    const nombre_usuario = (req.body?.nombre_usuario || req.body?.payerName || req.body?.userName || '').trim();
+    const procesado_por = req.body?.procesado_por || req.body?.processedBy || 'limitlessmarketve@gmail.com';
+    const fecha_procesado = req.body?.fecha_procesado || req.body?.processedAt || new Date().toISOString();
 
     if (supabaseServerClient) {
-      // 1. Marcar recarga como aprobada
-      if (idRecarga) {
-        await supabaseServerClient
-          .from('recargas_pago_movil')
-          .update({ estatus: 'aprobada', fecha_procesado: new Date().toISOString() })
-          .eq('id', idRecarga);
-      }
+      // 1. Marcar recarga como aprobada (por referencia, no por id, es más seguro)
+      let err1: any = null;
       if (referencia) {
-        await supabaseServerClient
+        const { error } = await supabaseServerClient
           .from('recargas_pago_movil')
-          .update({ estatus: 'aprobada', fecha_procesado: new Date().toISOString() })
+          .update({
+            estatus: 'aprobada',
+            procesado_por,
+            fecha_procesado,
+          })
           .eq('referencia', referencia);
+        err1 = error;
       }
 
-      // 2. Sumar saldo al jugador en jugadores_bingo
-      if (usuario_id && monto_ves > 0) {
-        const { data: jugador } = await supabaseServerClient
+      if (!referencia || err1) {
+        // Fallback por id si falla por referencia o no hay referencia
+        if (idRecarga) {
+          await supabaseServerClient
+            .from('recargas_pago_movil')
+            .update({
+              estatus: 'aprobada',
+              procesado_por,
+              fecha_procesado,
+            })
+            .eq('id', idRecarga);
+        }
+      }
+
+      // 2. ACREDITAR SALDO - Buscar jugador por cedula o telefono, no solo por id
+      // El usuario_id en recarga puede ser B4121834578 pero en jugadores_bingo el id es UUID
+      let jugadorId: string | null = null;
+
+      // A. Intentar por cedula_pagador (ej: 12673219)
+      if (cedula_pagador) {
+        const { data: j1 } = await supabaseServerClient
+          .from('jugadores_bingo')
+          .select('id, saldo')
+          .eq('cedula', cedula_pagador)
+          .maybeSingle();
+
+        if (j1) {
+          jugadorId = j1.id;
+        } else if (cleanCedula && cleanCedula !== cedula_pagador) {
+          const { data: j1b } = await supabaseServerClient
+            .from('jugadores_bingo')
+            .select('id, saldo')
+            .eq('cedula', cleanCedula)
+            .maybeSingle();
+          if (j1b) jugadorId = j1b.id;
+        }
+      }
+
+      // B. Intentar por telefono_pagador si no se encontró
+      if (!jugadorId && telefono_pagador) {
+        const { data: jTel } = await supabaseServerClient
+          .from('jugadores_bingo')
+          .select('id, saldo')
+          .eq('telefono', telefono_pagador)
+          .maybeSingle();
+
+        if (jTel) {
+          jugadorId = jTel.id;
+        } else if (cleanPhone.length >= 7) {
+          const { data: jTel2 } = await supabaseServerClient
+            .from('jugadores_bingo')
+            .select('id, saldo')
+            .ilike('telefono', `%${cleanPhone.slice(-7)}%`)
+            .maybeSingle();
+          if (jTel2) jugadorId = jTel2.id;
+        }
+      }
+
+      // C. Intentar por id directo si ya es UUID
+      if (!jugadorId && usuario_id) {
+        const { data: jId } = await supabaseServerClient
+          .from('jugadores_bingo')
+          .select('id, saldo')
+          .eq('id', usuario_id)
+          .maybeSingle();
+        if (jId) jugadorId = jId.id;
+      }
+
+      // D. Intentar por nombre de usuario con ilike
+      if (!jugadorId && nombre_usuario) {
+        const { data: j2 } = await supabaseServerClient
+          .from('jugadores_bingo')
+          .select('id, saldo')
+          .ilike('nombre', `%${nombre_usuario}%`)
+          .maybeSingle();
+        if (j2) jugadorId = j2.id;
+      }
+
+      if (jugadorId && monto_ves > 0) {
+        const { data: jugadorActual } = await supabaseServerClient
           .from('jugadores_bingo')
           .select('saldo')
-          .eq('id', usuario_id)
+          .eq('id', jugadorId)
           .single();
 
-        if (jugador) {
+        const nuevoSaldo = (Number(jugadorActual?.saldo) || 0) + monto_ves;
+
+        await supabaseServerClient
+          .from('jugadores_bingo')
+          .update({
+            saldo: nuevoSaldo,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', jugadorId);
+
+        console.log('[server.ts] SALDO ACREDITADO OK a:', jugadorId, 'Nuevo saldo:', nuevoSaldo);
+      } else {
+        console.error('[server.ts] No se encontró jugador para acreditar', { idRecarga, referencia, cedula_pagador, usuario_id, monto_ves });
+      }
+
+      if (idRecarga) {
+        try {
           await supabaseServerClient
-            .from('jugadores_bingo')
-            .update({
-              saldo: (Number(jugador.saldo) || 0) + monto_ves,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', usuario_id);
-        }
+            .from('recharges')
+            .update({ status: 'approved', processed_at: fecha_procesado, processed_by: procesado_por })
+            .eq('id', idRecarga);
+        } catch {}
       }
     }
 
