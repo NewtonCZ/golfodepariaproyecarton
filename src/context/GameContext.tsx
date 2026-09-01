@@ -378,6 +378,60 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!error && data && data.length > 0) { setWithdrawals(data as any); try { localStorage.setItem(`${STORAGE_KEY}_withdrawals`, JSON.stringify(data)); } catch {} }
     } catch (err) { console.warn('[GameContext] fetchWithdrawals:', err); }
   }, []);
+  const fetchJugadores = useCallback(async () => {
+    try {
+      if (supabase) {
+        const { data, error } = await supabase.from('jugadores_bingo').select('*');
+        if (!error && Array.isArray(data) && data.length > 0) {
+          setUsers((prevUsers) => {
+            const userMap = new Map(prevUsers.map((u) => [u.id, u]));
+            for (const j of data) {
+              const jSaldo = Number(j.saldo) || 0;
+              const existing = prevUsers.find(
+                (u) =>
+                  u.id === j.id ||
+                  (j.correo && u.email?.toLowerCase() === j.correo.toLowerCase()) ||
+                  (j.cedula && u.documentId === j.cedula)
+              );
+              if (existing) {
+                userMap.set(existing.id, {
+                  ...existing,
+                  availableBalance: jSaldo,
+                  balance: jSaldo,
+                });
+              } else {
+                const newAppUser: AppUser = {
+                  id: j.id || `usr-${j.cedula || Date.now()}`,
+                  name: j.nombre || 'Jugador',
+                  firstName: (j.nombre || 'Jugador').split(' ')[0],
+                  lastName: (j.nombre || '').split(' ').slice(1).join(' '),
+                  email: j.correo || '',
+                  phone: j.telefono || '',
+                  documentId: j.cedula || '',
+                  birthDate: '1990-01-01',
+                  country: 'Venezuela',
+                  role: 'Player',
+                  status: 'active',
+                  availableBalance: jSaldo,
+                  pendingBalance: 0,
+                  lockedBalance: 0,
+                  totalWonVes: 0,
+                  totalSpentVes: 0,
+                  createdAt: j.created_at || new Date().toISOString(),
+                  kycStatus: 'Aprobado',
+                };
+                userMap.set(newAppUser.id, newAppUser);
+              }
+            }
+            return Array.from(userMap.values());
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[GameContext] fetchJugadores error:', err);
+    }
+  }, []);
+
   const fetchCommercialConfig = useCallback(async () => {
     try {
       const { data: dbData1 } = await supabase
@@ -435,12 +489,34 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
-    fetchActiveRounds({ bypassCache: true }); fetchPendingRecharges(); fetchWithdrawals(); fetchCommercialConfig();
-    const handleVis = () => { if (document.visibilityState === 'visible') { fetchCommercialConfig(); fetchActiveRounds({ bypassCache: true }); fetchPendingRecharges(); fetchWithdrawals(); } };
-    window.addEventListener('visibilitychange', handleVis); window.addEventListener('focus', handleVis);
-    const intervalTimer = setInterval(() => { fetchCommercialConfig(); fetchWithdrawals(); }, 30000);
-    return () => { clearInterval(intervalTimer); window.removeEventListener('visibilitychange', handleVis); window.removeEventListener('focus', handleVis); };
-  }, [fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals, fetchCommercialConfig]);
+    fetchActiveRounds({ bypassCache: true });
+    fetchPendingRecharges();
+    fetchWithdrawals();
+    fetchCommercialConfig();
+    fetchJugadores();
+
+    const handleVis = () => {
+      if (document.visibilityState === 'visible') {
+        fetchCommercialConfig();
+        fetchActiveRounds({ bypassCache: true });
+        fetchPendingRecharges();
+        fetchWithdrawals();
+        fetchJugadores();
+      }
+    };
+    window.addEventListener('visibilitychange', handleVis);
+    window.addEventListener('focus', handleVis);
+    const intervalTimer = setInterval(() => {
+      fetchCommercialConfig();
+      fetchWithdrawals();
+      fetchJugadores();
+    }, 25000);
+    return () => {
+      clearInterval(intervalTimer);
+      window.removeEventListener('visibilitychange', handleVis);
+      window.removeEventListener('focus', handleVis);
+    };
+  }, [fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals, fetchCommercialConfig, fetchJugadores]);
 
   const addAuditLog = useCallback((action: string, details: string) => {
     const newLog: AuditLogEntry = { id: `aud-${Date.now()}-${Math.floor(Math.random()*1000)}`, timestamp: new Date().toISOString(), operatorRole, operatorName: operatorRole === 'Super Admin'? 'SuperAdmin Master' : `${operatorRole} Panel`, action, details, ip: '190.202.45.12' };
@@ -462,7 +538,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       switch (event.type) {
         case 'RECHARGE_STATUS_CHANGED': {
-          const { recharge, transactionId, status } = event.payload || {};
+          const { recharge, transactionId, status, newBalance } = event.payload || {};
           if (recharge) {
             setRecharges((prev) => {
               const exists = prev.some((r) => r.id === recharge.id);
@@ -471,9 +547,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (status === 'pending') {
               try { soundService.playCoin(); } catch {}
               addAuditLog('NOTIF_DEPOSITO', `Nuevo depósito en tiempo real: ${formatMoney(recharge.amountVes)} de ${recharge.userName}`);
+            } else if (status === 'approved') {
+              if (typeof newBalance === 'number') {
+                setUsers((prev) =>
+                  prev.map((u) =>
+                    u.id === recharge.userId || (recharge.correo && u.email === recharge.correo)
+                      ? { ...u, availableBalance: newBalance, balance: newBalance }
+                      : u
+                  )
+                );
+              }
+              fetchJugadores();
             }
           } else if (transactionId && status) {
             setRecharges((prev) => prev.map((r) => (r.id === transactionId ? { ...r, status } : r)));
+            if (status === 'approved') {
+              fetchJugadores();
+            }
           }
           break;
         }
@@ -564,6 +654,27 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sbChannel = supabase.channel('supercarton_realtime_db')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => {
           fetchPendingRecharges();
+          fetchJugadores();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'jugadores_bingo' }, (payload: any) => {
+          if (payload?.new) {
+            const j = payload.new;
+            const jSaldo = Number(j.saldo) || 0;
+            setUsers((prev) =>
+              prev.map((u) => {
+                if (
+                  u.id === j.id ||
+                  (j.correo && u.email?.toLowerCase() === j.correo?.toLowerCase()) ||
+                  (j.cedula && u.documentId === j.cedula)
+                ) {
+                  return { ...u, availableBalance: jSaldo, balance: jSaldo };
+                }
+                return u;
+              })
+            );
+          } else {
+            fetchJugadores();
+          }
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cards' }, (payload: any) => {
           if (payload?.new) {
@@ -742,6 +853,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('rounds').update({ totalCardsSold: (round.totalCardsSold || 0) + packCount }).eq('id', roundId).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase update round error:', error);
         });
+
+        // Actualizar saldo del jugador en jugadores_bingo
+        if (user.email) {
+          supabase.from('jugadores_bingo').update({ saldo: balAfter, updated_at: new Date().toISOString() }).eq('correo', user.email).then();
+        } else if (user.documentId) {
+          supabase.from('jugadores_bingo').update({ saldo: balAfter, updated_at: new Date().toISOString() }).eq('cedula', user.documentId).then();
+        } else if (user.id) {
+          supabase.from('jugadores_bingo').update({ saldo: balAfter, updated_at: new Date().toISOString() }).eq('id', user.id).then();
+        }
       } catch (err) {}
 
       try {
@@ -994,6 +1114,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         soundService.playCoin();
       } catch {}
 
+      try {
+        syncEngine.broadcastRechargeStatus({
+          transactionId: target.id,
+          status: 'approved',
+          userId: target.userId,
+          recharge: { ...target, status: 'approved', estatus: 'aprobada' },
+        });
+      } catch {}
+
       return { success: true, message: 'Recarga aprobada y saldo acreditado con éxito.' };
     },
     [recharges, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
@@ -1099,6 +1228,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('withdrawals').insert([newWithdrawal]).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert withdrawal error:', error);
         });
+        supabase.from('ledger').insert([
+          {
+            id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            type: 'withdrawal_lock',
+            amountVes: -amount,
+            balanceBefore: balBefore,
+            balanceAfter: balAfter,
+            description: `Solicitud de retiro (${newWithdrawal.channel === 'pago_movil' ? 'Pago Móvil' : 'Transferencia'})`,
+            referenceId: newWithdrawal.id,
+            createdAt: new Date().toISOString(),
+          },
+        ]).then();
+
+        // Actualizar saldo disponible en jugadores_bingo
+        if (currentUser.email) {
+          supabase.from('jugadores_bingo').update({ saldo: balAfter, updated_at: new Date().toISOString() }).eq('correo', currentUser.email).then();
+        } else if (currentUser.documentId) {
+          supabase.from('jugadores_bingo').update({ saldo: balAfter, updated_at: new Date().toISOString() }).eq('cedula', currentUser.documentId).then();
+        } else if (currentUser.id) {
+          supabase.from('jugadores_bingo').update({ saldo: balAfter, updated_at: new Date().toISOString() }).eq('id', currentUser.id).then();
+        }
       } catch {}
 
       try {
@@ -1205,6 +1357,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .then(({ error }) => {
             if (error) console.warn('[GameContext] Supabase reject withdrawal error:', error);
           });
+
+        const userToRefund = users.find((u) => u.id === target.userId);
+        if (userToRefund) {
+          const balAfterRefund = userToRefund.availableBalance + target.amountVes;
+          if (userToRefund.email) {
+            supabase.from('jugadores_bingo').update({ saldo: balAfterRefund, updated_at: new Date().toISOString() }).eq('correo', userToRefund.email).then();
+          } else if (userToRefund.documentId) {
+            supabase.from('jugadores_bingo').update({ saldo: balAfterRefund, updated_at: new Date().toISOString() }).eq('cedula', userToRefund.documentId).then();
+          } else if (userToRefund.id) {
+            supabase.from('jugadores_bingo').update({ saldo: balAfterRefund, updated_at: new Date().toISOString() }).eq('id', userToRefund.id).then();
+          }
+        }
       } catch {}
 
       addAuditLog('RECHAZAR_RETIRO', `Retiro ${transactionId} rechazado. Motivo: ${reason}`);
@@ -1427,6 +1591,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .then(({ error }) => {
             if (error) console.warn('[GameContext] Error updating round in Supabase:', error);
           });
+
+        if (newLedgerEntries.length > 0) {
+          supabase.from('ledger').insert(newLedgerEntries).then(({ error }) => {
+            if (error) console.warn('[GameContext] Supabase insert prize ledger error:', error);
+          });
+        }
+
+        // Acreditar premios a cada jugador ganador en jugadores_bingo
+        for (const [winningUserId, wonAmount] of userPrizeMap.entries()) {
+          if (wonAmount > 0) {
+            const winner = users.find((u) => u.id === winningUserId);
+            if (winner) {
+              const newBal = winner.availableBalance + wonAmount;
+              if (winner.email) {
+                supabase.from('jugadores_bingo').update({ saldo: newBal, updated_at: new Date().toISOString() }).eq('correo', winner.email).then();
+              } else if (winner.documentId) {
+                supabase.from('jugadores_bingo').update({ saldo: newBal, updated_at: new Date().toISOString() }).eq('cedula', winner.documentId).then();
+              } else if (winner.id) {
+                supabase.from('jugadores_bingo').update({ saldo: newBal, updated_at: new Date().toISOString() }).eq('id', winner.id).then();
+              }
+            }
+          }
+        }
       } catch (err) {
         console.warn('[GameContext] Supabase update error:', err);
       }
