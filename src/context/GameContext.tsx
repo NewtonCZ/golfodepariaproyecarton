@@ -318,31 +318,58 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
   const fetchCommercialConfig = useCallback(async () => {
     try {
-      const { data: dbData1 } = await supabase.from('config_comercial').select('*').limit(1).maybeSingle();
-      if (dbData1 && (dbData1.config || dbData1.adminBank)) {
-        const cfg = dbData1.config || dbData1;
-        setCommercialConfig(prev => ({
-          ...prev,
-          ...cfg,
-          adminBank: { ...prev.adminBank, ...(cfg.adminBank || {}) },
-          cardPrices: { ...prev.cardPrices, ...(cfg.cardPrices || {}) },
-          prizeMultipliers: { ...prev.prizeMultipliers, ...(cfg.prizeMultipliers || {}) }
-        }));
-        return;
-      }
+      const { data: dbData1 } = await supabase
+        .from('config_comercial')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
 
-      const { data: dbData2 } = await supabase.from('comercial').select('*').limit(1).maybeSingle();
-      if (dbData2 && (dbData2.config || dbData2.adminBank)) {
-        const cfg = dbData2.config || dbData2;
-        setCommercialConfig(prev => ({
+      if (dbData1) {
+        const basePrice = Number(dbData1.precio_carton_base) || 25;
+        const mapped: CommercialConfig = {
+          adminBank: {
+            bankName: dbData1.banco_nombre || 'BANCO DE VENEZUELA',
+            phone: dbData1.telefono_pago_movil || '0424-8653039',
+            rif: dbData1.rif_titular || 'J-50769027-0',
+            holderName: dbData1.razon_social || 'INVERSIONES GOLFO DE PARIA C.A.',
+            type: 'Pago Móvil',
+          },
+          bankName: dbData1.banco_nombre,
+          phone: dbData1.telefono_pago_movil,
+          rif: dbData1.rif_titular,
+          holderName: dbData1.razon_social,
+          precio_carton_base_ves: basePrice,
+          singleCardPriceVes: basePrice,
+          exchangeRateVesUsd: 1,
+          cardPrices: {
+            pack2: basePrice * 2,
+            pack4: basePrice * 4,
+            pack6: basePrice * 6,
+          },
+          prizeMultipliers: {
+            fullCard: 50,
+            fourCorners: 10,
+            lineHorizontal: 5,
+            lineVertical: 5,
+            diagonal: 8,
+            lineDiagonal: 8,
+          },
+        };
+
+        setCommercialConfig((prev) => ({
           ...prev,
-          ...cfg,
-          adminBank: { ...prev.adminBank, ...(cfg.adminBank || {}) },
-          cardPrices: { ...prev.cardPrices, ...(cfg.cardPrices || {}) },
-          prizeMultipliers: { ...prev.prizeMultipliers, ...(cfg.prizeMultipliers || {}) }
+          ...mapped,
+          adminBank: { ...prev.adminBank, ...(mapped.adminBank || {}) },
+          cardPrices: { ...prev.cardPrices, ...(mapped.cardPrices || {}) },
+          prizeMultipliers: { ...prev.prizeMultipliers, ...(mapped.prizeMultipliers || {}) },
         }));
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_config`, JSON.stringify(mapped));
+        } catch {}
       }
-    } catch (err) { console.warn('[GameContext] fetchCommercialConfig:', err); }
+    } catch (err) {
+      console.warn('[GameContext] fetchCommercialConfig error:', err);
+    }
   }, []);
 
   useEffect(() => {
@@ -1309,15 +1336,31 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {}
 
       try {
-        const { error: err1 } = await supabase.from('config_comercial').upsert({
-          id: 1,
-          config: merged,
-          updated_at: new Date().toISOString(),
-        });
-        if (err1) console.warn('[GameContext] config_comercial note:', err1.message);
+        const bank: any = merged.adminBank || {};
+        const bancoNombre = bank.bankName || merged.bankName || 'BANCO DE VENEZUELA';
+        const telefonoPagoMovil = bank.phone || merged.phone || '0424-8653039';
+        const rifTitular = bank.rif || merged.rif || 'J-50769027-0';
+        const razonSocial = bank.holderName || merged.holderName || 'INVERSIONES GOLFO DE PARIA C.A.';
+        const precioBase = Number(
+          merged.precio_carton_base ??
+          merged.precio_carton_base_ves ??
+          merged.singleCardPriceVes ??
+          (merged.cardPrices?.pack2 ? merged.cardPrices.pack2 / 2 : 25)
+        ) || 25;
 
-        const { error: err2 } = await supabase.from('comercial').upsert({ id: 1, config: merged });
-        if (err2) console.warn('[GameContext] comercial note:', err2.message);
+        const { error: err1 } = await supabase.from('config_comercial').upsert(
+          {
+            id: 1,
+            banco_nombre: bancoNombre,
+            telefono_pago_movil: telefonoPagoMovil,
+            rif_titular: rifTitular,
+            razon_social: razonSocial,
+            precio_carton_base: precioBase,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+        if (err1) console.warn('[GameContext] config_comercial upsert warning:', err1.message);
       } catch (err) {
         console.warn('[GameContext] Supabase commercial config save failed:', err);
       }

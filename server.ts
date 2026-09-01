@@ -423,16 +423,45 @@ let serverCommercialConfig: any = null;
 app.get(['/api/config/comercial', '/config/comercial'], async (req, res) => {
   try {
     if (supabaseServerClient) {
-      const { data: dbData1 } = await supabaseServerClient.from('config_comercial').select('*').limit(1).maybeSingle();
-      if (dbData1 && (dbData1.config || dbData1.adminBank)) {
-        serverCommercialConfig = dbData1.config || dbData1;
-        return res.status(200).json({ success: true, data: serverCommercialConfig });
-      }
+      const { data: dbData1 } = await supabaseServerClient
+        .from('config_comercial')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
 
-      const { data: dbData2 } = await supabaseServerClient.from('comercial').select('*').limit(1).maybeSingle();
-      if (dbData2 && (dbData2.config || dbData2.adminBank)) {
-        serverCommercialConfig = dbData2.config || dbData2;
-        return res.status(200).json({ success: true, data: serverCommercialConfig });
+      if (dbData1) {
+        const basePrice = Number(dbData1.precio_carton_base) || 25;
+        const mapped = {
+          adminBank: {
+            bankName: dbData1.banco_nombre || 'BANCO DE VENEZUELA',
+            phone: dbData1.telefono_pago_movil || '0424-8653039',
+            rif: dbData1.rif_titular || 'J-50769027-0',
+            holderName: dbData1.razon_social || 'INVERSIONES GOLFO DE PARIA C.A.',
+            type: 'Pago Móvil',
+          },
+          bankName: dbData1.banco_nombre,
+          phone: dbData1.telefono_pago_movil,
+          rif: dbData1.rif_titular,
+          holderName: dbData1.razon_social,
+          precio_carton_base_ves: basePrice,
+          singleCardPriceVes: basePrice,
+          exchangeRateVesUsd: 1,
+          cardPrices: {
+            pack2: basePrice * 2,
+            pack4: basePrice * 4,
+            pack6: basePrice * 6,
+          },
+          prizeMultipliers: {
+            fullCard: 50,
+            fourCorners: 10,
+            lineHorizontal: 5,
+            lineVertical: 5,
+            diagonal: 8,
+            lineDiagonal: 8,
+          },
+        };
+        serverCommercialConfig = mapped;
+        return res.status(200).json({ success: true, data: mapped });
       }
     }
   } catch (err) {
@@ -445,20 +474,35 @@ app.get(['/api/config/comercial', '/config/comercial'], async (req, res) => {
 // Endpoint POST /api/config/comercial
 app.post(['/api/config/comercial', '/config/comercial'], async (req, res) => {
   try {
-    const config = req.body;
+    const config = req.body || {};
     serverCommercialConfig = config;
 
     if (supabaseServerClient && config) {
       try {
-        await supabaseServerClient.from('config_comercial').upsert({
-          id: 1,
-          config,
-          updated_at: new Date().toISOString(),
-        });
-        await supabaseServerClient.from('comercial').upsert({
-          id: 1,
-          config,
-        });
+        const bank = config.adminBank || {};
+        const bancoNombre = bank.bankName || config.bankName || config.banco_nombre || 'BANCO DE VENEZUELA';
+        const telefonoPagoMovil = bank.phone || config.phone || config.telefono_pago_movil || '0424-8653039';
+        const rifTitular = bank.rif || config.rif || config.rif_titular || 'J-50769027-0';
+        const razonSocial = bank.holderName || config.holderName || config.razon_social || 'INVERSIONES GOLFO DE PARIA C.A.';
+        const precioBase = Number(
+          config.precio_carton_base ??
+          config.precio_carton_base_ves ??
+          config.singleCardPriceVes ??
+          (config.cardPrices?.pack2 ? config.cardPrices.pack2 / 2 : 25)
+        ) || 25;
+
+        await supabaseServerClient.from('config_comercial').upsert(
+          {
+            id: 1,
+            banco_nombre: bancoNombre,
+            telefono_pago_movil: telefonoPagoMovil,
+            rif_titular: rifTitular,
+            razon_social: razonSocial,
+            precio_carton_base: precioBase,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
       } catch (dbErr) {
         console.warn('[server.ts] Error persisting config in Supabase:', dbErr);
       }

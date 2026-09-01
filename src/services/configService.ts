@@ -58,21 +58,37 @@ export async function saveCommercialConfigToDb(config: CommercialConfig): Promis
   realtimeService.emit('config/comercial', { config });
   realtimeService.emit('commercial_config_updated', { config });
 
-  // 4. Always persist directly to Supabase table config_comercial (and fallback table comercial)
+  // 4. Always persist directly to Supabase table config_comercial with FLAT schema
   try {
     if (supabase) {
-      const { error: sbErr1 } = await supabase.from('config_comercial').upsert({
-        id: 1,
-        config: config,
-        updated_at: new Date().toISOString(),
-      });
+      const bank: any = config.adminBank || {};
+      const bancoNombre = bank.bankName || config.bankName || config.banco_nombre || 'BANCO DE VENEZUELA';
+      const telefonoPagoMovil = bank.phone || config.phone || config.telefono_pago_movil || '0424-8653039';
+      const rifTitular = bank.rif || config.rif || config.rif_titular || 'J-50769027-0';
+      const razonSocial = bank.holderName || config.holderName || config.razon_social || 'INVERSIONES GOLFO DE PARIA C.A.';
+      const precioBase = Number(
+        config.precio_carton_base ??
+        config.precio_carton_base_ves ??
+        config.singleCardPriceVes ??
+        (config.cardPrices?.pack2 ? config.cardPrices.pack2 / 2 : 25)
+      ) || 25;
+
+      const { error: sbErr1 } = await supabase.from('config_comercial').upsert(
+        {
+          id: 1,
+          banco_nombre: bancoNombre,
+          telefono_pago_movil: telefonoPagoMovil,
+          rif_titular: rifTitular,
+          razon_social: razonSocial,
+          precio_carton_base: precioBase,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+
       if (sbErr1) {
-        console.warn('[configService] Aviso en config_comercial, guardando en tabla comercial:', sbErr1.message);
+        console.warn('[configService] Aviso en config_comercial:', sbErr1.message);
       }
-      await supabase.from('comercial').upsert({
-        id: 1,
-        config: config,
-      });
     }
   } catch (sbErr) {
     console.warn('[configService] Supabase config direct save note:', sbErr);
@@ -159,23 +175,49 @@ export function onSnapshot(
       // Fallback Supabase directo
       try {
         if (supabase) {
-          const { data: dbData1 } = await supabase.from('config_comercial').select('*').limit(1).maybeSingle();
-          if (dbData1 && (dbData1.config || dbData1.adminBank)) {
-            const resolved = dbData1.config || dbData1;
-            try {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(resolved));
-            } catch (e) {}
-            emitSnapshot(resolved);
-            return;
-          }
+          const { data: dbData1 } = await supabase
+            .from('config_comercial')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
 
-          const { data: dbData2 } = await supabase.from('comercial').select('*').limit(1).maybeSingle();
-          if (dbData2 && (dbData2.config || dbData2.adminBank)) {
-            const resolved = dbData2.config || dbData2;
+          if (dbData1) {
+            const basePrice = Number(dbData1.precio_carton_base) || 25;
+            const mapped: CommercialConfig = {
+              adminBank: {
+                bankName: dbData1.banco_nombre || 'BANCO DE VENEZUELA',
+                phone: dbData1.telefono_pago_movil || '0424-8653039',
+                rif: dbData1.rif_titular || 'J-50769027-0',
+                holderName: dbData1.razon_social || 'INVERSIONES GOLFO DE PARIA C.A.',
+                type: 'Pago Móvil',
+              },
+              bankName: dbData1.banco_nombre,
+              phone: dbData1.telefono_pago_movil,
+              rif: dbData1.rif_titular,
+              holderName: dbData1.razon_social,
+              precio_carton_base_ves: basePrice,
+              singleCardPriceVes: basePrice,
+              exchangeRateVesUsd: 1,
+              cardPrices: {
+                pack2: basePrice * 2,
+                pack4: basePrice * 4,
+                pack6: basePrice * 6,
+              },
+              prizeMultipliers: {
+                fullCard: 50,
+                fourCorners: 10,
+                lineHorizontal: 5,
+                lineVertical: 5,
+                diagonal: 8,
+                lineDiagonal: 8,
+              },
+            };
+
             try {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(resolved));
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
             } catch (e) {}
-            emitSnapshot(resolved);
+            emitSnapshot(mapped);
+            return;
           }
         }
       } catch (err) {
