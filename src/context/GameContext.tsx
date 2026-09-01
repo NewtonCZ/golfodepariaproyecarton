@@ -321,24 +321,32 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const mappedRpm: RechargeTransaction[] = rpmData.map((item: any) => {
               const rawStatus = (item.estatus || item.status || '').toLowerCase();
               const status: 'pending' | 'approved' | 'rejected' =
-                rawStatus === 'aprobado' || rawStatus === 'approved'
+                rawStatus === 'aprobado' || rawStatus === 'aprobada' || rawStatus === 'approved'
                   ? 'approved'
-                  : rawStatus === 'rechazado' || rawStatus === 'rejected'
+                  : rawStatus === 'rechazado' || rawStatus === 'rechazada' || rawStatus === 'rejected'
                   ? 'rejected'
                   : 'pending';
+
+              const monto = Number(item.monto_ves ?? item.monto ?? item.amount_ves ?? item.amountVes) || 0;
+              const correo = item.correo || item.email || '';
 
               return {
                 id: item.id ? String(item.id) : `rpm-${item.referencia || Date.now()}`,
                 userId: item.usuario_id || item.user_id || item.userId || '',
                 userName: item.nombre_usuario || item.user_name || item.userName || 'Jugador',
                 userPhone: item.telefono_pagador || item.user_phone || item.userPhone || '',
-                amountVes: Number(item.monto_ves ?? item.amount_ves ?? item.amountVes ?? item.monto) || 0,
+                correo,
+                email: correo,
+                amountVes: monto,
+                monto,
                 payerPhone: item.telefono_pagador || item.payer_phone || item.payerPhone || '',
                 payerName: item.nombre_usuario || item.payer_name || item.payerName || '',
                 payerDocumentId: item.cedula_pagador || item.payer_document_id || item.payerDocumentId || '',
                 bankOrigin: item.banco_origen || item.bank_origin || item.bankOrigin || 'Banco de Venezuela',
                 referenceNumber: item.referencia || item.reference_number || item.referenceNumber || '',
+                referencia: item.referencia || item.reference_number || item.referenceNumber || '',
                 voucherImageUrl: item.comprobante_url || item.voucher_url || item.voucherImageUrl || '',
+                estatus: rawStatus,
                 status,
                 rejectionReason: item.motivo_rechazo || item.rejectionReason,
                 processedAt: item.processed_at || item.fecha_procesado,
@@ -351,58 +359,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (e) {
         console.warn('[GameContext] Error consultando recargas_pago_movil:', e);
-      }
-
-      // 2. Consultar también tabla recharges para compatibilidad total
-      try {
-        if (supabase) {
-          const { data: recData, error: recError } = await supabase
-            .from('recharges')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-          if (!recError && Array.isArray(recData) && recData.length > 0) {
-            const mappedRec: RechargeTransaction[] = recData.map((item: any) => {
-              const rawStatus = (item.status || item.estatus || '').toLowerCase();
-              const status: 'pending' | 'approved' | 'rejected' =
-                rawStatus === 'approved' || rawStatus === 'aprobado'
-                  ? 'approved'
-                  : rawStatus === 'rejected' || rawStatus === 'rechazado'
-                  ? 'rejected'
-                  : 'pending';
-
-              return {
-                id: String(item.id),
-                userId: item.userId || item.user_id || item.usuario_id || '',
-                userName: item.userName || item.user_name || item.nombre_usuario || 'Jugador',
-                userPhone: item.userPhone || item.user_phone || item.telefono_pagador || '',
-                amountVes: Number(item.amountVes ?? item.amount_ves ?? item.monto_ves) || 0,
-                payerPhone: item.payerPhone || item.payer_phone || item.telefono_pagador || '',
-                payerName: item.payerName || item.payer_name || item.nombre_usuario || '',
-                payerDocumentId: item.payerDocumentId || item.payer_document_id || item.cedula_pagador || '',
-                bankOrigin: item.bankOrigin || item.bank_origin || item.banco_origen || 'Banco de Venezuela',
-                referenceNumber: item.referenceNumber || item.reference_number || item.referencia || '',
-                voucherImageUrl: item.voucherImageUrl || item.voucher_url || item.comprobante_url || '',
-                status,
-                rejectionReason: item.rejectionReason || item.motivo_rechazo,
-                processedAt: item.processedAt || item.processed_at,
-                processedBy: item.processedBy || item.processed_by,
-                createdAt: item.createdAt || item.created_at || new Date().toISOString(),
-              };
-            });
-
-            const existingIds = new Set(allItems.map((r) => r.id));
-            const existingRefs = new Set(allItems.map((r) => r.referenceNumber).filter(Boolean));
-
-            for (const r of mappedRec) {
-              if (!existingIds.has(r.id) && !existingRefs.has(r.referenceNumber)) {
-                allItems.push(r);
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('[GameContext] Error consultando recharges:', e);
       }
 
       if (allItems.length > 0) {
@@ -608,19 +564,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sbChannel = supabase.channel('supercarton_realtime_db')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => {
           fetchPendingRecharges();
-        })
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharges' }, (payload: any) => {
-          if (payload?.new) {
-            const item = payload.new as RechargeTransaction;
-            setRecharges((prev) => (prev.some((r) => r.id === item.id) ? prev : [item, ...prev]));
-            try { soundService.playCoin(); } catch {}
-          }
-        })
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recharges' }, (payload: any) => {
-          if (payload?.new) {
-            const item = payload.new as RechargeTransaction;
-            setRecharges((prev) => prev.map((r) => (r.id === item.id ? { ...r, ...item } : r)));
-          }
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cards' }, (payload: any) => {
           if (payload?.new) {
@@ -877,11 +820,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               newRecharge.id = String(insertedData.id);
             }
           }
-
-          // Inserción complementaria en tabla recharges
-          try {
-            await supabase.from('recharges').insert([newRecharge]);
-          } catch {}
         }
       } catch (err) {
         console.warn('[GameContext] Error en insert directo a Supabase:', err);
@@ -926,22 +864,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (transactionId: string): Promise<{ success: boolean; message: string }> => {
       const target = recharges.find((r) => r.id === transactionId);
       if (!target) return { success: false, message: 'Transacción no encontrada.' };
-      if (target.status !== 'pending') return { success: false, message: 'La transacción ya ha sido procesada.' };
+      if (target.status === 'approved' || target.estatus === 'aprobada') {
+        console.log('Ya estaba aprobada');
+        return { success: true, message: 'La recarga ya estaba aprobada.' };
+      }
 
       const processedAt = new Date().toISOString();
-      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
-      const montoVes = Number(target.amountVes) || 0;
-      const usuarioId = target.userId;
+      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole || 'limitlessmarketve@gmail.com';
+      const montoVes = Number(target.monto || target.amountVes) || 0;
 
       // Actualizar estado local reactivo de recargas
       setRecharges((prev) =>
-        prev.map((r) => (r.id === transactionId ? { ...r, status: 'approved', processedAt, processedBy } : r))
+        prev.map((r) => (r.id === transactionId ? { ...r, status: 'approved', estatus: 'aprobada', processedAt, processedBy } : r))
       );
 
       // Actualizar balance en el listado de usuarios local
       setUsers((prev) =>
         prev.map((u) => {
-          if (u.id === target.userId) {
+          if (u.id === target.userId || (target.correo && u.email === target.correo)) {
             const balBefore = u.availableBalance;
             const balAfter = balBefore + montoVes;
 
@@ -954,7 +894,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 amountVes: montoVes,
                 balanceBefore: balBefore,
                 balanceAfter: balAfter,
-                description: `Recarga aprobada (Ref: ${target.referenceNumber})`,
+                description: `Recarga aprobada (Ref: ${target.referenceNumber || target.referencia})`,
                 referenceId: target.id,
                 createdAt: processedAt,
               },
@@ -967,139 +907,86 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
       );
 
-      // 1. Marcar recarga como aprobada en Supabase (por referencia, fallback por id)
+      // FIX SEGURO - Solo actualiza recargas_pago_movil y suma saldo por correo
       try {
         if (supabase) {
-          const referencia = target.referenceNumber;
-          const procesador = loggedUsername || activeCredential?.displayName || operatorRole || 'limitlessmarketve@gmail.com';
-          const fechaProcesado = processedAt;
+          const correoUsuario = target.correo || target.email;
 
-          let err1: any = null;
-          if (referencia) {
-            const resRef = await supabase
-              .from('recargas_pago_movil')
-              .update({
-                estatus: 'aprobada',
-                procesado_por: procesador,
-                fecha_procesado: fechaProcesado,
-              })
-              .eq('referencia', referencia);
-            err1 = resRef.error;
-          }
-
-          if (!referencia || err1) {
-            // Fallback por id si falla por referencia o no hay referencia
-            await supabase
-              .from('recargas_pago_movil')
-              .update({
-                estatus: 'aprobada',
-                procesado_por: procesador,
-                fecha_procesado: fechaProcesado,
-              })
-              .eq('id', target.id);
-          }
-
-          // 2. ACREDITAR SALDO - Buscar jugador por cedula o telefono, no solo por id
-          // El usuario_id en recarga puede ser B4121834578 pero en jugadores_bingo el id es UUID
-          let jugadorId: string | null = null;
-          const cedulaPagador = (target.payerDocumentId || '').trim();
-          const cleanCedula = cedulaPagador.replace(/\D/g, '');
-          const telefonoPagador = (target.payerPhone || target.userPhone || '').trim();
-          const cleanPhone = telefonoPagador.replace(/\D/g, '');
-          const nombreUsuario = (target.payerName || target.userName || '').trim();
-
-          // A. Intentar por cedula_pagador (ej: 12673219)
-          if (cedulaPagador) {
-            const { data: j1 } = await supabase
-              .from('jugadores_bingo')
-              .select('id, saldo')
-              .eq('cedula', cedulaPagador)
-              .maybeSingle();
-
-            if (j1) {
-              jugadorId = j1.id;
-            } else if (cleanCedula && cleanCedula !== cedulaPagador) {
-              const { data: j1b } = await supabase
-                .from('jugadores_bingo')
-                .select('id, saldo')
-                .eq('cedula', cleanCedula)
-                .maybeSingle();
-              if (j1b) jugadorId = j1b.id;
-            }
-          }
-
-          // B. Intentar por telefono_pagador si no se encontró
-          if (!jugadorId && telefonoPagador) {
-            const { data: jTel } = await supabase
-              .from('jugadores_bingo')
-              .select('id, saldo')
-              .eq('telefono', telefonoPagador)
-              .maybeSingle();
-
-            if (jTel) {
-              jugadorId = jTel.id;
-            } else if (cleanPhone.length >= 7) {
-              const { data: jTel2 } = await supabase
-                .from('jugadores_bingo')
-                .select('id, saldo')
-                .ilike('telefono', `%${cleanPhone.slice(-7)}%`)
-                .maybeSingle();
-              if (jTel2) jugadorId = jTel2.id;
-            }
-          }
-
-          // C. Intentar por id directo de usuario (por si ya es UUID)
-          if (!jugadorId && usuarioId) {
-            const { data: jId } = await supabase
-              .from('jugadores_bingo')
-              .select('id, saldo')
-              .eq('id', usuarioId)
-              .maybeSingle();
-            if (jId) jugadorId = jId.id;
-          }
-
-          // D. Intentar por nombre de usuario con ilike
-          if (!jugadorId && nombreUsuario) {
-            const { data: j2 } = await supabase
-              .from('jugadores_bingo')
-              .select('id, saldo')
-              .ilike('nombre', `%${nombreUsuario}%`)
-              .maybeSingle();
-            if (j2) jugadorId = j2.id;
-          }
-
-          if (jugadorId) {
-            const { data: jugadorActual } = await supabase
+          // 1. Sumar saldo por correo
+          if (correoUsuario) {
+            const { data: jugador } = await supabase
               .from('jugadores_bingo')
               .select('saldo')
-              .eq('id', jugadorId)
-              .single();
+              .eq('correo', correoUsuario)
+              .maybeSingle();
 
-            const nuevoSaldo = (Number(jugadorActual?.saldo) || 0) + montoVes;
+            if (jugador) {
+              const nuevoSaldo = (Number(jugador.saldo) || 0) + montoVes;
+              await supabase
+                .from('jugadores_bingo')
+                .update({ saldo: nuevoSaldo, updated_at: new Date().toISOString() })
+                .eq('correo', correoUsuario);
 
-            await supabase
-              .from('jugadores_bingo')
-              .update({
-                saldo: nuevoSaldo,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', jugadorId);
-
-            console.log('SALDO ACREDITADO OK a:', jugadorId, 'Nuevo saldo:', nuevoSaldo);
+              console.log('SALDO ACREDITADO OK por correo a:', correoUsuario, 'Nuevo saldo:', nuevoSaldo);
+            } else {
+              // Fallback por cédula si no se encontró por correo
+              const cedula = (target.payerDocumentId || target.cedula_pagador || '').trim();
+              if (cedula) {
+                const { data: jCed } = await supabase
+                  .from('jugadores_bingo')
+                  .select('id, saldo')
+                  .eq('cedula', cedula)
+                  .maybeSingle();
+                if (jCed) {
+                  const nuevoSaldo = (Number(jCed.saldo) || 0) + montoVes;
+                  await supabase
+                    .from('jugadores_bingo')
+                    .update({ saldo: nuevoSaldo, updated_at: new Date().toISOString() })
+                    .eq('id', jCed.id);
+                  console.log('SALDO ACREDITADO OK por cédula a:', jCed.id);
+                }
+              }
+            }
           } else {
-            console.error('No se encontró jugador para acreditar', target);
+            // Fallback por cédula si no hay correo
+            const cedula = (target.payerDocumentId || target.cedula_pagador || '').trim();
+            if (cedula) {
+              const { data: jCed } = await supabase
+                .from('jugadores_bingo')
+                .select('id, saldo')
+                .eq('cedula', cedula)
+                .maybeSingle();
+              if (jCed) {
+                const nuevoSaldo = (Number(jCed.saldo) || 0) + montoVes;
+                await supabase
+                  .from('jugadores_bingo')
+                  .update({ saldo: nuevoSaldo, updated_at: new Date().toISOString() })
+                  .eq('id', jCed.id);
+              }
+            }
           }
 
-          // Actualizar complementario en tabla recharges
-          try {
+          // 2. Marcar como aprobada SOLO en recargas_pago_movil
+          const isNumericOrUuid = target.id && !target.id.startsWith('rch-') && !target.id.startsWith('rpm-');
+          if (isNumericOrUuid) {
             await supabase
-              .from('recharges')
-              .update({ status: 'approved', processed_at: fechaProcesado, processed_by: procesador })
-              .eq('id', transactionId);
-          } catch {}
+              .from('recargas_pago_movil')
+              .update({ estatus: 'aprobada', fecha_procesado: processedAt, procesado_por: processedBy })
+              .eq('id', target.id);
+          } else if (target.referenceNumber || target.referencia) {
+            await supabase
+              .from('recargas_pago_movil')
+              .update({ estatus: 'aprobada', fecha_procesado: processedAt, procesado_por: processedBy })
+              .eq('referencia', target.referenceNumber || target.referencia);
+          } else {
+            await supabase
+              .from('recargas_pago_movil')
+              .update({ estatus: 'aprobada', fecha_procesado: processedAt, procesado_por: processedBy })
+              .eq('id', target.id);
+          }
         }
-      } catch (errDb) {
-        console.warn('[GameContext] Error en persistencia Supabase al aprobar recarga:', errDb);
+      } catch (e) {
+        console.error('[GameContext] Error en persistencia al aprobar recarga:', e);
       }
 
       addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(montoVes)} aprobada para ${target.userName}`);
@@ -1118,10 +1005,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!target) return { success: false, message: 'Transacción no encontrada.' };
 
       const processedAt = new Date().toISOString();
-      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
+      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole || 'limitlessmarketve@gmail.com';
 
       setRecharges((prev) =>
-        prev.map((r) => (r.id === transactionId ? { ...r, status: 'rejected', rejectionReason: reason, processedAt, processedBy } : r))
+        prev.map((r) => (r.id === transactionId ? { ...r, status: 'rejected', estatus: 'rechazada', rejectionReason: reason, processedAt, processedBy } : r))
       );
 
       try {
@@ -1137,9 +1024,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 fecha_procesado: processedAt,
               })
               .eq('id', target.id);
-          }
-
-          if (target.referenceNumber) {
+          } else if (target.referenceNumber || target.referencia) {
             await supabase
               .from('recargas_pago_movil')
               .update({
@@ -1148,15 +1033,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 procesado_por: processedBy,
                 fecha_procesado: processedAt,
               })
-              .eq('referencia', target.referenceNumber);
+              .eq('referencia', target.referenceNumber || target.referencia);
           }
-
-          try {
-            await supabase
-              .from('recharges')
-              .update({ status: 'rejected', rejection_reason: reason, processed_at: processedAt, processed_by: processedBy })
-              .eq('id', transactionId);
-          } catch {}
         }
       } catch (errReject) {
         console.warn('[GameContext] Error en persistencia Supabase al rechazar recarga:', errReject);

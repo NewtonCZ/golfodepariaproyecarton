@@ -551,15 +551,6 @@ app.get(['/api/recargas', '/recargas'], async (req, res) => {
       if (!rpmError && rpmData) {
         return res.status(200).json({ success: true, data: rpmData });
       }
-
-      const { data: recData, error: recError } = await supabaseServerClient
-        .from('recharges')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!recError && recData) {
-        return res.status(200).json({ success: true, data: recData });
-      }
     }
   } catch (err) {
     console.warn('[server.ts] Error fetching recargas from Supabase:', err);
@@ -579,26 +570,32 @@ app.post(['/api/recargas', '/recargas'], async (req, res) => {
     const telefonoPagador = String(payload.telefono_pagador || payload.payerPhone || payload.userPhone || '');
     const cedulaPagador = String(payload.cedula_pagador || payload.payerDocumentId || '');
     const voucherUrl = String(payload.comprobante_url || payload.voucherImageUrl || payload.voucher_url || '');
+    const correo = String(payload.correo || payload.email || '');
     const createdAt = payload.created_at || payload.createdAt || new Date().toISOString();
 
     let insertedRecord = null;
 
     if (supabaseServerClient) {
       try {
+        const insertPayload: any = {
+          usuario_id: usuarioId,
+          nombre_usuario: nombreUsuario,
+          monto_ves: monto,
+          referencia: referencia,
+          banco_origen: bancoOrigen,
+          telefono_pagador: telefonoPagador,
+          cedula_pagador: cedulaPagador,
+          comprobante_url: voucherUrl,
+          estatus: 'pendiente',
+          created_at: createdAt,
+        };
+        if (correo) {
+          insertPayload.correo = correo;
+        }
+
         const { data: dbData, error: dbError } = await supabaseServerClient
           .from('recargas_pago_movil')
-          .insert({
-            usuario_id: usuarioId,
-            nombre_usuario: nombreUsuario,
-            monto_ves: monto,
-            referencia: referencia,
-            banco_origen: bancoOrigen,
-            telefono_pagador: telefonoPagador,
-            cedula_pagador: cedulaPagador,
-            comprobante_url: voucherUrl,
-            estatus: 'pendiente',
-            created_at: createdAt,
-          })
+          .insert(insertPayload)
           .select()
           .maybeSingle();
 
@@ -607,24 +604,6 @@ app.post(['/api/recargas', '/recargas'], async (req, res) => {
         } else {
           insertedRecord = dbData;
         }
-
-        try {
-          await supabaseServerClient.from('recharges').insert({
-            id: `rch-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            userId: usuarioId,
-            userName: nombreUsuario,
-            userPhone: telefonoPagador,
-            amountVes: monto,
-            payerPhone: telefonoPagador,
-            payerName: nombreUsuario,
-            payerDocumentId: cedulaPagador,
-            bankOrigin: bancoOrigen,
-            referenceNumber: referencia,
-            voucherImageUrl: voucherUrl,
-            status: 'pending',
-            createdAt,
-          });
-        } catch {}
       } catch (insertErr) {
         console.warn('[server.ts] Supabase insert error:', insertErr);
       }
@@ -648,6 +627,7 @@ app.post(['/api/recargas/aprobar', '/api/recargas/:id/aprobar'], async (req, res
     const usuario_id = req.body?.usuario_id || req.body?.userId;
     const monto_ves = Number(req.body?.monto_ves || req.body?.amountVes || req.body?.monto) || 0;
     const referencia = req.body?.referencia || req.body?.referenceNumber;
+    const correo = (req.body?.correo || req.body?.email || '').trim();
     const cedula_pagador = (req.body?.cedula_pagador || req.body?.payerDocumentId || '').trim();
     const cleanCedula = cedula_pagador.replace(/\D/g, '');
     const telefono_pagador = (req.body?.telefono_pagador || req.body?.payerPhone || req.body?.userPhone || '').trim();
@@ -657,7 +637,7 @@ app.post(['/api/recargas/aprobar', '/api/recargas/:id/aprobar'], async (req, res
     const fecha_procesado = req.body?.fecha_procesado || req.body?.processedAt || new Date().toISOString();
 
     if (supabaseServerClient) {
-      // 1. Marcar recarga como aprobada (por referencia, no por id, es más seguro)
+      // 1. Marcar recarga como aprobada en recargas_pago_movil
       let err1: any = null;
       if (referencia) {
         const { error } = await supabaseServerClient
@@ -672,7 +652,6 @@ app.post(['/api/recargas/aprobar', '/api/recargas/:id/aprobar'], async (req, res
       }
 
       if (!referencia || err1) {
-        // Fallback por id si falla por referencia o no hay referencia
         if (idRecarga) {
           await supabaseServerClient
             .from('recargas_pago_movil')
@@ -685,12 +664,20 @@ app.post(['/api/recargas/aprobar', '/api/recargas/:id/aprobar'], async (req, res
         }
       }
 
-      // 2. ACREDITAR SALDO - Buscar jugador por cedula o telefono, no solo por id
-      // El usuario_id en recarga puede ser B4121834578 pero en jugadores_bingo el id es UUID
+      // 2. ACREDITAR SALDO - Buscar jugador por correo primero
       let jugadorId: string | null = null;
 
-      // A. Intentar por cedula_pagador (ej: 12673219)
-      if (cedula_pagador) {
+      if (correo) {
+        const { data: jCorreo } = await supabaseServerClient
+          .from('jugadores_bingo')
+          .select('id, saldo')
+          .eq('correo', correo)
+          .maybeSingle();
+        if (jCorreo) jugadorId = jCorreo.id;
+      }
+
+      // A. Fallback por cedula_pagador (ej: 12673219)
+      if (!jugadorId && cedula_pagador) {
         const { data: j1 } = await supabaseServerClient
           .from('jugadores_bingo')
           .select('id, saldo')
@@ -709,7 +696,7 @@ app.post(['/api/recargas/aprobar', '/api/recargas/:id/aprobar'], async (req, res
         }
       }
 
-      // B. Intentar por telefono_pagador si no se encontró
+      // B. Fallback por telefono_pagador si no se encontró
       if (!jugadorId && telefono_pagador) {
         const { data: jTel } = await supabaseServerClient
           .from('jugadores_bingo')
@@ -729,7 +716,7 @@ app.post(['/api/recargas/aprobar', '/api/recargas/:id/aprobar'], async (req, res
         }
       }
 
-      // C. Intentar por id directo si ya es UUID
+      // C. Fallback por id directo si ya es UUID
       if (!jugadorId && usuario_id) {
         const { data: jId } = await supabaseServerClient
           .from('jugadores_bingo')
@@ -739,7 +726,7 @@ app.post(['/api/recargas/aprobar', '/api/recargas/:id/aprobar'], async (req, res
         if (jId) jugadorId = jId.id;
       }
 
-      // D. Intentar por nombre de usuario con ilike
+      // D. Fallback por nombre de usuario con ilike
       if (!jugadorId && nombre_usuario) {
         const { data: j2 } = await supabaseServerClient
           .from('jugadores_bingo')
@@ -768,16 +755,7 @@ app.post(['/api/recargas/aprobar', '/api/recargas/:id/aprobar'], async (req, res
 
         console.log('[server.ts] SALDO ACREDITADO OK a:', jugadorId, 'Nuevo saldo:', nuevoSaldo);
       } else {
-        console.error('[server.ts] No se encontró jugador para acreditar', { idRecarga, referencia, cedula_pagador, usuario_id, monto_ves });
-      }
-
-      if (idRecarga) {
-        try {
-          await supabaseServerClient
-            .from('recharges')
-            .update({ status: 'approved', processed_at: fecha_procesado, processed_by: procesado_por })
-            .eq('id', idRecarga);
-        } catch {}
+        console.error('[server.ts] No se encontró jugador para acreditar', { idRecarga, referencia, correo, cedula_pagador, usuario_id, monto_ves });
       }
     }
 

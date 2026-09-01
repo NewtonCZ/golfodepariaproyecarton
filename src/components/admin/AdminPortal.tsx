@@ -93,12 +93,6 @@ export const AdminPortal: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => {
         fetchPendingRecharges();
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharges' }, () => {
-        fetchPendingRecharges();
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recharges' }, () => {
-        fetchPendingRecharges();
-      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'withdrawals' }, () => {
         fetchWithdrawals();
       })
