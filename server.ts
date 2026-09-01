@@ -416,6 +416,85 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], a
   }
 });
 
+// Almacén en memoria de configuración comercial en servidor
+let serverCommercialConfig: any = null;
+
+// Endpoint GET /api/config/comercial
+app.get(['/api/config/comercial', '/config/comercial'], async (req, res) => {
+  try {
+    if (supabaseServerClient) {
+      const { data: dbData1 } = await supabaseServerClient.from('config_comercial').select('*').limit(1).maybeSingle();
+      if (dbData1 && (dbData1.config || dbData1.adminBank)) {
+        serverCommercialConfig = dbData1.config || dbData1;
+        return res.status(200).json({ success: true, data: serverCommercialConfig });
+      }
+
+      const { data: dbData2 } = await supabaseServerClient.from('comercial').select('*').limit(1).maybeSingle();
+      if (dbData2 && (dbData2.config || dbData2.adminBank)) {
+        serverCommercialConfig = dbData2.config || dbData2;
+        return res.status(200).json({ success: true, data: serverCommercialConfig });
+      }
+    }
+  } catch (err) {
+    console.warn('[server.ts] Error reading config from DB:', err);
+  }
+
+  return res.status(200).json({ success: true, data: serverCommercialConfig || {} });
+});
+
+// Endpoint POST /api/config/comercial
+app.post(['/api/config/comercial', '/config/comercial'], async (req, res) => {
+  try {
+    const config = req.body;
+    serverCommercialConfig = config;
+
+    if (supabaseServerClient && config) {
+      try {
+        await supabaseServerClient.from('config_comercial').upsert({
+          id: 1,
+          config,
+          updated_at: new Date().toISOString(),
+        });
+        await supabaseServerClient.from('comercial').upsert({
+          id: 1,
+          config,
+        });
+      } catch (dbErr) {
+        console.warn('[server.ts] Error persisting config in Supabase:', dbErr);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Configuración comercial guardada con éxito',
+      data: config,
+    });
+  } catch (error: any) {
+    console.error('[Error in /api/config/comercial]:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Error al guardar configuración comercial' });
+  }
+});
+
+// Endpoint GET /api/players
+app.get(['/api/players', '/players'], async (req, res) => {
+  try {
+    if (supabaseServerClient) {
+      const { data, error } = await supabaseServerClient
+        .from('jugadores_bingo')
+        .select('*')
+        .order('fecha_registro', { ascending: false });
+
+      if (!error && data) {
+        return res.status(200).json({ success: true, data });
+      }
+    }
+  } catch (err) {
+    console.warn('[server.ts] Error reading players from DB:', err);
+  }
+
+  return res.status(200).json({ success: true, data: [] });
+});
+
 // Servir frontend en producción si se compila conjuntamente
 const distPath = path.join(process.cwd(), 'dist');
 app.use(express.static(distPath));

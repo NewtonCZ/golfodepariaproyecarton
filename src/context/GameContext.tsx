@@ -318,10 +318,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
   const fetchCommercialConfig = useCallback(async () => {
     try {
-      const { data } = await supabase.from('comercial').select('*').limit(1).maybeSingle();
-      if (data && (data as any).config) {
-        const cfg = (data as any).config;
-        setCommercialConfig(prev => ({...prev,...cfg, adminBank: {...prev.adminBank,...(cfg.adminBank || {}) }, cardPrices: {...prev.cardPrices,...(cfg.cardPrices || {}) }, prizeMultipliers: {...prev.prizeMultipliers,...(cfg.prizeMultipliers || {}) } }));
+      const { data: dbData1 } = await supabase.from('config_comercial').select('*').limit(1).maybeSingle();
+      if (dbData1 && (dbData1.config || dbData1.adminBank)) {
+        const cfg = dbData1.config || dbData1;
+        setCommercialConfig(prev => ({
+          ...prev,
+          ...cfg,
+          adminBank: { ...prev.adminBank, ...(cfg.adminBank || {}) },
+          cardPrices: { ...prev.cardPrices, ...(cfg.cardPrices || {}) },
+          prizeMultipliers: { ...prev.prizeMultipliers, ...(cfg.prizeMultipliers || {}) }
+        }));
+        return;
+      }
+
+      const { data: dbData2 } = await supabase.from('comercial').select('*').limit(1).maybeSingle();
+      if (dbData2 && (dbData2.config || dbData2.adminBank)) {
+        const cfg = dbData2.config || dbData2;
+        setCommercialConfig(prev => ({
+          ...prev,
+          ...cfg,
+          adminBank: { ...prev.adminBank, ...(cfg.adminBank || {}) },
+          cardPrices: { ...prev.cardPrices, ...(cfg.cardPrices || {}) },
+          prizeMultipliers: { ...prev.prizeMultipliers, ...(cfg.prizeMultipliers || {}) }
+        }));
       }
     } catch (err) { console.warn('[GameContext] fetchCommercialConfig:', err); }
   }, []);
@@ -1290,8 +1309,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {}
 
       try {
-        const { error } = await supabase.from('comercial').upsert({ id: 1, config: merged });
-        if (error) console.warn('[GameContext] Error saving commercial config in Supabase:', error);
+        const { error: err1 } = await supabase.from('config_comercial').upsert({
+          id: 1,
+          config: merged,
+          updated_at: new Date().toISOString(),
+        });
+        if (err1) console.warn('[GameContext] config_comercial note:', err1.message);
+
+        const { error: err2 } = await supabase.from('comercial').upsert({ id: 1, config: merged });
+        if (err2) console.warn('[GameContext] comercial note:', err2.message);
       } catch (err) {
         console.warn('[GameContext] Supabase commercial config save failed:', err);
       }

@@ -10,6 +10,7 @@
 import { CommercialConfig } from '../types';
 import { realtimeService, supabase } from './realtimeService';
 import { syncEngine } from './syncService';
+import { API_ENDPOINTS } from './apiConfig';
 
 const STORAGE_KEY = 'millionaire_lottery_v1_config';
 
@@ -39,7 +40,7 @@ export function getLocalCommercialConfig(): CommercialConfig | null {
 }
 
 /**
- * Saves commercial configuration to 'config/comercial' endpoint and local DB,
+ * Saves commercial configuration to 'config/comercial' endpoint and Supabase,
  * immediately broadcasting to all open tabs and active players.
  */
 export async function saveCommercialConfigToDb(config: CommercialConfig): Promise<{ success: boolean; data: CommercialConfig }> {
@@ -57,20 +58,42 @@ export async function saveCommercialConfigToDb(config: CommercialConfig): Promis
   realtimeService.emit('config/comercial', { config });
   realtimeService.emit('commercial_config_updated', { config });
 
-  // 4. Save to backend database API
+  // 4. Always persist directly to Supabase table config_comercial (and fallback table comercial)
   try {
-    const res = await fetch('/api/config/comercial', {
+    if (supabase) {
+      const { error: sbErr1 } = await supabase.from('config_comercial').upsert({
+        id: 1,
+        config: config,
+        updated_at: new Date().toISOString(),
+      });
+      if (sbErr1) {
+        console.warn('[configService] Aviso en config_comercial, guardando en tabla comercial:', sbErr1.message);
+      }
+      await supabase.from('comercial').upsert({
+        id: 1,
+        config: config,
+      });
+    }
+  } catch (sbErr) {
+    console.warn('[configService] Supabase config direct save note:', sbErr);
+  }
+
+  // 5. Save to backend API if available (handles 405 / sleeping Render gracefully)
+  try {
+    const endpoint = API_ENDPOINTS.CONFIG_COMERCIAL || 'https://golfodepariaproyecarton.onrender.com/api/config/comercial';
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     });
 
-    if (res.ok) {
+    const contentType = res.headers.get('content-type');
+    if (res.ok && contentType && contentType.includes('application/json')) {
       const json = await res.json();
       return { success: true, data: json.data || config };
     }
   } catch (err) {
-    console.warn('[configService] Remote DB save warning (local broadcast active):', err);
+    console.log('[configService] Backend durmiendo o no disponible, persistido en Supabase.');
   }
 
   return { success: true, data: config };
@@ -111,21 +134,53 @@ export function onSnapshot(
     emitSnapshot(initialLocal);
   }
 
-  // 2. Immediate async fetch from DB endpoint with no-cache
-  fetch('/api/config/comercial?_nocache=' + Date.now(), {
+  // 2. Fetch from backend endpoint with fallback to Supabase
+  const endpoint = API_ENDPOINTS.CONFIG_COMERCIAL || 'https://golfodepariaproyecarton.onrender.com/api/config/comercial';
+  fetch(`${endpoint}?_nocache=${Date.now()}`, {
     headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', Pragma: 'no-cache' },
   })
-    .then((res) => (res.ok ? res.json() : null))
+    .then(async (res) => {
+      const contentType = res.headers.get('content-type');
+      if (res.ok && contentType && contentType.includes('application/json')) {
+        return res.json();
+      }
+      throw new Error('Fallback to Supabase');
+    })
     .then((result) => {
-      if (result && result.data) {
+      if (result && (result.data || result.config)) {
+        const cfg = result.data || result.config;
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(result.data));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
         } catch (e) {}
-        emitSnapshot(result.data);
+        emitSnapshot(cfg);
       }
     })
-    .catch((err) => {
-      if (onError && !initialLocal) onError(err);
+    .catch(async () => {
+      // Fallback Supabase directo
+      try {
+        if (supabase) {
+          const { data: dbData1 } = await supabase.from('config_comercial').select('*').limit(1).maybeSingle();
+          if (dbData1 && (dbData1.config || dbData1.adminBank)) {
+            const resolved = dbData1.config || dbData1;
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(resolved));
+            } catch (e) {}
+            emitSnapshot(resolved);
+            return;
+          }
+
+          const { data: dbData2 } = await supabase.from('comercial').select('*').limit(1).maybeSingle();
+          if (dbData2 && (dbData2.config || dbData2.adminBank)) {
+            const resolved = dbData2.config || dbData2;
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(resolved));
+            } catch (e) {}
+            emitSnapshot(resolved);
+          }
+        }
+      } catch (err) {
+        if (onError && !initialLocal) onError(err);
+      }
     });
 
   // 3. Subscribe to Real-Time WebSocket events
