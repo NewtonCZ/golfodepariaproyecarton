@@ -13,6 +13,7 @@ import { timeSync } from '../services/timeSyncService';
 import { realtimeService } from '../services/realtimeService';
 import { saveJugador, getJugadores, JugadorBingo } from '../services/playerStorage';
 import { supabase } from '../services/supabaseClient';
+import { API_ENDPOINTS, getApiBaseUrl } from '../services/apiConfig';
 import { hashPassword, normalizeAdminRole, toDbRole } from '../utils/crypto';
 
 export { getJugadores, saveJugador };
@@ -62,7 +63,7 @@ interface GameContextType {
   currencyDisplay: 'VES' | 'USD'; setCurrencyDisplay: (curr: 'VES' | 'USD') => void;
   formatMoney: (amountVes: number, options?: { showBoth?: boolean }) => string;
   purchaseCards: (packCount: 2 | 4 | 6, roundId: string) => { success: boolean; message: string; cards?: MatrixCard[] };
-  submitRecharge: (data: any) => { success: boolean; message: string };
+  submitRecharge: (data: any) => Promise<{ success: boolean; message: string }>;
   approveRecharge: (transactionId: string) => { success: boolean; message: string };
   rejectRecharge: (transactionId: string, reason: string) => { success: boolean; message: string };
   submitWithdrawal: (data: any) => { success: boolean; message: string };
@@ -306,9 +307,114 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchPendingRecharges = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('recharges').select('*').order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) { setRecharges(data as any); try { localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(data)); } catch {} }
-    } catch (err) { console.warn('[GameContext] fetchPendingRecharges:', err); }
+      const allItems: RechargeTransaction[] = [];
+
+      // 1. Auditoría debe leer de Supabase directo de recargas_pago_movil
+      try {
+        if (supabase) {
+          const { data: rpmData, error: rpmError } = await supabase
+            .from('recargas_pago_movil')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (!rpmError && Array.isArray(rpmData) && rpmData.length > 0) {
+            const mappedRpm: RechargeTransaction[] = rpmData.map((item: any) => {
+              const rawStatus = (item.estatus || item.status || '').toLowerCase();
+              const status: 'pending' | 'approved' | 'rejected' =
+                rawStatus === 'aprobado' || rawStatus === 'approved'
+                  ? 'approved'
+                  : rawStatus === 'rechazado' || rawStatus === 'rejected'
+                  ? 'rejected'
+                  : 'pending';
+
+              return {
+                id: item.id ? String(item.id) : `rpm-${item.referencia || Date.now()}`,
+                userId: item.usuario_id || item.user_id || item.userId || '',
+                userName: item.nombre_usuario || item.user_name || item.userName || 'Jugador',
+                userPhone: item.telefono_pagador || item.user_phone || item.userPhone || '',
+                amountVes: Number(item.monto_ves ?? item.amount_ves ?? item.amountVes ?? item.monto) || 0,
+                payerPhone: item.telefono_pagador || item.payer_phone || item.payerPhone || '',
+                payerName: item.nombre_usuario || item.payer_name || item.payerName || '',
+                payerDocumentId: item.cedula_pagador || item.payer_document_id || item.payerDocumentId || '',
+                bankOrigin: item.banco_origen || item.bank_origin || item.bankOrigin || 'Banco de Venezuela',
+                referenceNumber: item.referencia || item.reference_number || item.referenceNumber || '',
+                voucherImageUrl: item.comprobante_url || item.voucher_url || item.voucherImageUrl || '',
+                status,
+                rejectionReason: item.motivo_rechazo || item.rejectionReason,
+                processedAt: item.processed_at || item.fecha_procesado,
+                processedBy: item.processed_by || item.procesado_por,
+                createdAt: item.created_at || new Date().toISOString(),
+              };
+            });
+            allItems.push(...mappedRpm);
+          }
+        }
+      } catch (e) {
+        console.warn('[GameContext] Error consultando recargas_pago_movil:', e);
+      }
+
+      // 2. Consultar también tabla recharges para compatibilidad total
+      try {
+        if (supabase) {
+          const { data: recData, error: recError } = await supabase
+            .from('recharges')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (!recError && Array.isArray(recData) && recData.length > 0) {
+            const mappedRec: RechargeTransaction[] = recData.map((item: any) => {
+              const rawStatus = (item.status || item.estatus || '').toLowerCase();
+              const status: 'pending' | 'approved' | 'rejected' =
+                rawStatus === 'approved' || rawStatus === 'aprobado'
+                  ? 'approved'
+                  : rawStatus === 'rejected' || rawStatus === 'rechazado'
+                  ? 'rejected'
+                  : 'pending';
+
+              return {
+                id: String(item.id),
+                userId: item.userId || item.user_id || item.usuario_id || '',
+                userName: item.userName || item.user_name || item.nombre_usuario || 'Jugador',
+                userPhone: item.userPhone || item.user_phone || item.telefono_pagador || '',
+                amountVes: Number(item.amountVes ?? item.amount_ves ?? item.monto_ves) || 0,
+                payerPhone: item.payerPhone || item.payer_phone || item.telefono_pagador || '',
+                payerName: item.payerName || item.payer_name || item.nombre_usuario || '',
+                payerDocumentId: item.payerDocumentId || item.payer_document_id || item.cedula_pagador || '',
+                bankOrigin: item.bankOrigin || item.bank_origin || item.banco_origen || 'Banco de Venezuela',
+                referenceNumber: item.referenceNumber || item.reference_number || item.referencia || '',
+                voucherImageUrl: item.voucherImageUrl || item.voucher_url || item.comprobante_url || '',
+                status,
+                rejectionReason: item.rejectionReason || item.motivo_rechazo,
+                processedAt: item.processedAt || item.processed_at,
+                processedBy: item.processedBy || item.processed_by,
+                createdAt: item.createdAt || item.created_at || new Date().toISOString(),
+              };
+            });
+
+            const existingIds = new Set(allItems.map((r) => r.id));
+            const existingRefs = new Set(allItems.map((r) => r.referenceNumber).filter(Boolean));
+
+            for (const r of mappedRec) {
+              if (!existingIds.has(r.id) && !existingRefs.has(r.referenceNumber)) {
+                allItems.push(r);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[GameContext] Error consultando recharges:', e);
+      }
+
+      if (allItems.length > 0) {
+        allItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setRecharges(allItems);
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(allItems));
+        } catch {}
+      }
+    } catch (err) {
+      console.warn('[GameContext] fetchPendingRecharges:', err);
+    }
   }, []);
   const fetchWithdrawals = useCallback(async () => {
     try {
@@ -500,6 +606,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let sbChannel: any = null;
     try {
       sbChannel = supabase.channel('supercarton_realtime_db')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => {
+          fetchPendingRecharges();
+        })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharges' }, (payload: any) => {
           if (payload?.new) {
             const item = payload.new as RechargeTransaction;
@@ -713,29 +822,90 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const submitRecharge = useCallback(
-    (data: any): { success: boolean; message: string } => {
-      const newRecharge: RechargeTransaction = {
+    async (data: any): Promise<{ success: boolean; message: string }> => {
+      const monto = Number(data.amountVes) || 0;
+      const referencia = (data.referenceNumber || '').trim();
+      const banco = data.bankOrigin || 'Banco de Venezuela';
+      const telefono = (data.payerPhone || currentUser.phone || '').trim();
+      const cedula = (data.payerDocumentId || '').trim();
+      const nombre = (data.payerName || currentUser.name || 'Jugador').trim();
+      const voucher = data.voucherImageUrl || '';
+      const createdAt = new Date().toISOString();
+
+      let newRecharge: RechargeTransaction = {
         id: `rch-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         userId: currentUser.id,
-        userName: currentUser.name,
-        userPhone: currentUser.phone,
-        amountVes: Number(data.amountVes) || 0,
-        payerPhone: data.payerPhone || '',
-        payerName: data.payerName || '',
-        payerDocumentId: data.payerDocumentId || '',
-        bankOrigin: data.bankOrigin || 'Banco de Venezuela',
-        referenceNumber: data.referenceNumber || '',
-        voucherImageUrl: data.voucherImageUrl || '',
+        userName: nombre,
+        userPhone: telefono,
+        amountVes: monto,
+        payerPhone: telefono,
+        payerName: nombre,
+        payerDocumentId: cedula,
+        bankOrigin: banco,
+        referenceNumber: referencia,
+        voucherImageUrl: voucher,
         status: 'pending',
-        createdAt: new Date().toISOString(),
+        createdAt,
       };
 
+      // 1. Guardado directo OBLIGATORIO a Supabase primero
+      let supabaseRecord: any = null;
+      try {
+        if (supabase) {
+          const { data: insertedData, error: dbError } = await supabase
+            .from('recargas_pago_movil')
+            .insert({
+              usuario_id: currentUser.id,
+              nombre_usuario: nombre,
+              monto_ves: monto,
+              referencia: referencia,
+              banco_origen: banco,
+              telefono_pagador: telefono,
+              cedula_pagador: cedula,
+              comprobante_url: voucher,
+              estatus: 'pendiente',
+              created_at: createdAt,
+            })
+            .select()
+            .maybeSingle();
+
+          if (dbError) {
+            console.warn('[GameContext] Supabase insert recargas_pago_movil warning:', dbError.message);
+          } else if (insertedData) {
+            supabaseRecord = insertedData;
+            if (insertedData.id) {
+              newRecharge.id = String(insertedData.id);
+            }
+          }
+
+          // Inserción complementaria en tabla recharges
+          try {
+            await supabase.from('recharges').insert([newRecharge]);
+          } catch {}
+        }
+      } catch (err) {
+        console.warn('[GameContext] Error en insert directo a Supabase:', err);
+      }
+
+      // Actualizar estado local para inmediatez visual en la UI
       setRecharges((prev) => [newRecharge, ...prev]);
       try {
-        supabase.from('recharges').insert([newRecharge]).then(({ error }) => {
-          if (error) console.warn('[GameContext] Supabase insert recharge error:', error);
-        });
+        const stored = localStorage.getItem(`${STORAGE_KEY}_recharges`);
+        const currentList = stored ? JSON.parse(stored) : [];
+        localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify([newRecharge, ...currentList]));
       } catch {}
+
+      // 2. Intento a Render solo como backup, sin romper si falla
+      try {
+        const backupPayload = supabaseRecord || newRecharge;
+        await fetch(`${getApiBaseUrl()}/api/recargas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(backupPayload),
+        });
+      } catch (e) {
+        console.warn('Render dormido, pero ya está en Supabase', e);
+      }
 
       try {
         syncEngine.broadcastRechargeStatus({
@@ -794,13 +964,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
 
       try {
-        supabase
-          .from('recharges')
-          .update({ status: 'approved', processed_at: processedAt, processed_by: processedBy })
-          .eq('id', transactionId)
-          .then(({ error }) => {
-            if (error) console.warn('[GameContext] Error updating recharge in Supabase:', error);
-          });
+        if (supabase) {
+          // Actualizar en recargas_pago_movil
+          supabase
+            .from('recargas_pago_movil')
+            .update({
+              estatus: 'aprobado',
+              procesado_por: processedBy,
+              fecha_procesado: processedAt,
+            })
+            .eq('referencia', target.referenceNumber)
+            .then(({ error }) => {
+              if (error) console.warn('[GameContext] Note recargas_pago_movil update:', error.message);
+            });
+
+          // Actualizar en recharges
+          supabase
+            .from('recharges')
+            .update({ status: 'approved', processed_at: processedAt, processed_by: processedBy })
+            .eq('id', transactionId)
+            .then(({ error }) => {
+              if (error) console.warn('[GameContext] Error updating recharge in Supabase:', error);
+            });
+        }
       } catch {}
 
       addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(target.amountVes)} aprobada para ${target.userName}`);
@@ -826,13 +1012,30 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
 
       try {
-        supabase
-          .from('recharges')
-          .update({ status: 'rejected', rejection_reason: reason, processed_at: processedAt, processed_by: processedBy })
-          .eq('id', transactionId)
-          .then(({ error }) => {
-            if (error) console.warn('[GameContext] Error rejecting recharge in Supabase:', error);
-          });
+        if (supabase) {
+          // Actualizar en recargas_pago_movil
+          supabase
+            .from('recargas_pago_movil')
+            .update({
+              estatus: 'rechazado',
+              motivo_rechazo: reason,
+              procesado_por: processedBy,
+              fecha_procesado: processedAt,
+            })
+            .eq('referencia', target.referenceNumber)
+            .then(({ error }) => {
+              if (error) console.warn('[GameContext] Note recargas_pago_movil reject:', error.message);
+            });
+
+          // Actualizar en recharges
+          supabase
+            .from('recharges')
+            .update({ status: 'rejected', rejection_reason: reason, processed_at: processedAt, processed_by: processedBy })
+            .eq('id', transactionId)
+            .then(({ error }) => {
+              if (error) console.warn('[GameContext] Error rejecting recharge in Supabase:', error);
+            });
+        }
       } catch {}
 
       addAuditLog('RECHAZAR_RECARGA', `Recarga ${transactionId} rechazada. Motivo: ${reason}`);

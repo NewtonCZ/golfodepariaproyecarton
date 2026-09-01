@@ -90,6 +90,9 @@ export const AdminPortal: React.FC = () => {
 
     const channel = supabase
       .channel('realtime-finanzas-admin')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => {
+        fetchPendingRecharges();
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharges' }, () => {
         fetchPendingRecharges();
       })

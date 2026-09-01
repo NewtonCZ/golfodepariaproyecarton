@@ -26,6 +26,7 @@ export const API_ENDPOINTS = {
   PLAYERS_LIST: `${getApiBaseUrl()}/api/players`,
   PLAYERS_CREATE: `${getApiBaseUrl()}/api/players`,
   CONFIG_COMERCIAL: `${getApiBaseUrl()}/api/config/comercial`,
+  RECARGAS: `${getApiBaseUrl()}/api/recargas`,
   // Fallback Supabase Edge Functions if Render backend is sleeping/starting up
   SUPABASE_SEND_OTP: 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/send-otp',
   SUPABASE_VERIFY_OTP: 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/verify-otp',

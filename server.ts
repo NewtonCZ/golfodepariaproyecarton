@@ -539,6 +539,108 @@ app.get(['/api/players', '/players'], async (req, res) => {
   return res.status(200).json({ success: true, data: [] });
 });
 
+// Endpoint GET /api/recargas
+app.get(['/api/recargas', '/recargas'], async (req, res) => {
+  try {
+    if (supabaseServerClient) {
+      const { data: rpmData, error: rpmError } = await supabaseServerClient
+        .from('recargas_pago_movil')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!rpmError && rpmData) {
+        return res.status(200).json({ success: true, data: rpmData });
+      }
+
+      const { data: recData, error: recError } = await supabaseServerClient
+        .from('recharges')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!recError && recData) {
+        return res.status(200).json({ success: true, data: recData });
+      }
+    }
+  } catch (err) {
+    console.warn('[server.ts] Error fetching recargas from Supabase:', err);
+  }
+  return res.status(200).json({ success: true, data: [] });
+});
+
+// Endpoint POST /api/recargas
+app.post(['/api/recargas', '/recargas'], async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const usuarioId = payload.usuario_id || payload.userId || payload.user_id || 'anon';
+    const nombreUsuario = payload.nombre_usuario || payload.userName || payload.payerName || 'Jugador';
+    const monto = Number(payload.monto_ves ?? payload.amountVes ?? payload.monto) || 0;
+    const referencia = String(payload.referencia || payload.referenceNumber || '').trim();
+    const bancoOrigen = String(payload.banco_origen || payload.bankOrigin || 'Banco de Venezuela');
+    const telefonoPagador = String(payload.telefono_pagador || payload.payerPhone || payload.userPhone || '');
+    const cedulaPagador = String(payload.cedula_pagador || payload.payerDocumentId || '');
+    const voucherUrl = String(payload.comprobante_url || payload.voucherImageUrl || payload.voucher_url || '');
+    const createdAt = payload.created_at || payload.createdAt || new Date().toISOString();
+
+    let insertedRecord = null;
+
+    if (supabaseServerClient) {
+      try {
+        const { data: dbData, error: dbError } = await supabaseServerClient
+          .from('recargas_pago_movil')
+          .insert({
+            usuario_id: usuarioId,
+            nombre_usuario: nombreUsuario,
+            monto_ves: monto,
+            referencia: referencia,
+            banco_origen: bancoOrigen,
+            telefono_pagador: telefonoPagador,
+            cedula_pagador: cedulaPagador,
+            comprobante_url: voucherUrl,
+            estatus: 'pendiente',
+            created_at: createdAt,
+          })
+          .select()
+          .maybeSingle();
+
+        if (dbError) {
+          console.warn('[server.ts] recargas_pago_movil insert warning:', dbError.message);
+        } else {
+          insertedRecord = dbData;
+        }
+
+        try {
+          await supabaseServerClient.from('recharges').insert({
+            id: `rch-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            userId: usuarioId,
+            userName: nombreUsuario,
+            userPhone: telefonoPagador,
+            amountVes: monto,
+            payerPhone: telefonoPagador,
+            payerName: nombreUsuario,
+            payerDocumentId: cedulaPagador,
+            bankOrigin: bancoOrigen,
+            referenceNumber: referencia,
+            voucherImageUrl: voucherUrl,
+            status: 'pending',
+            createdAt,
+          });
+        } catch {}
+      } catch (insertErr) {
+        console.warn('[server.ts] Supabase insert error:', insertErr);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Recarga registrada correctamente',
+      data: insertedRecord || payload,
+    });
+  } catch (error: any) {
+    console.error('[Error in /api/recargas]:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Error al procesar recarga' });
+  }
+});
+
 // Servir frontend en producción si se compila conjuntamente
 const distPath = path.join(process.cwd(), 'dist');
 app.use(express.static(distPath));
