@@ -23,6 +23,8 @@ export const API_ENDPOINTS = {
   HEALTH: `${getApiBaseUrl()}/health`,
   AUTH_SEND_RECOVERY: `${getApiBaseUrl()}/api/auth/send-recovery-code`,
   AUTH_VERIFY_RECOVERY: `${getApiBaseUrl()}/api/auth/verify-recovery-code`,
+  PLAYERS_LIST: `${getApiBaseUrl()}/api/players`,
+  PLAYERS_CREATE: `${getApiBaseUrl()}/api/players`,
   // Fallback Supabase Edge Functions if Render backend is sleeping/starting up
   SUPABASE_SEND_OTP: 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/send-otp',
   SUPABASE_VERIFY_OTP: 'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/verify-otp',
