@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getJugadores, JugadorBingo, deleteJugador, saveJugador } from '../../services/playerStorage';
+import { getJugadores, getJugadoresSync, JugadorBingo, deleteJugador, saveJugador } from '../../services/playerStorage';
 import { realtimeService } from '../../services/realtimeService';
 import {
   Users,
@@ -21,23 +21,26 @@ interface AdminPlayersViewProps {
 }
 
 export const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({ onBackToGame }) => {
-  const [jugadores, setJugadores] = useState<JugadorBingo[]>(() => getJugadores());
+  const [jugadores, setJugadores] = useState<JugadorBingo[]>(() => getJugadoresSync());
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   // Recarga en tiempo real cuando se registra un nuevo jugador
   const refreshList = async () => {
-    setJugadores(getJugadores());
-
-    // También consultar la API en segundo plano para sincronización entre dispositivos
+    setIsLoading(true);
     try {
+      const data = await getJugadores();
+      setJugadores(data);
+
+      // También consultar la API en segundo plano para sincronización entre dispositivos
       const res = await fetch(`/api/players?_nocache=${Date.now()}`);
       if (res.ok) {
         const result = await res.json();
         if (result && result.success && Array.isArray(result.data)) {
-          result.data.forEach((serverUser: any) => {
+          for (const serverUser of result.data) {
             const cleanDoc = (serverUser.documentId || serverUser.cedula || '').trim();
             if (cleanDoc) {
-              saveJugador({
+              await saveJugador({
                 id: serverUser.id,
                 nombre: serverUser.name || `${serverUser.firstName || ''} ${serverUser.lastName || ''}`.trim() || 'Jugador',
                 apellido: serverUser.lastName || '',
@@ -54,28 +57,34 @@ export const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({ onBackToGame
                 }),
               });
             }
-          });
-          setJugadores(getJugadores());
+          }
+          const updated = await getJugadores();
+          setJugadores(updated);
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[AdminPlayersView] Error en refreshList:', e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     refreshList();
 
-    const handleUpdate = () => {
-      setJugadores(getJugadores());
+    const handleUpdate = async () => {
+      const current = await getJugadores();
+      setJugadores(current);
     };
 
     window.addEventListener('jugadores_bingo_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
 
     // Escuchar WebSocket en tiempo real para nuevos registros
-    const unsubUser = realtimeService.on('user_registered', (data: any) => {
+    const unsubUser = realtimeService.on('user_registered', async (data: any) => {
       const u = data?.user || data;
       if (u) {
-        saveJugador({
+        await saveJugador({
           id: u.id || `usr-${Date.now()}`,
           nombre: u.name || `${u.firstName || ''} ${u.lastName || ''}`.trim() || 'Nuevo Jugador',
           apellido: u.lastName || '',
@@ -91,14 +100,15 @@ export const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({ onBackToGame
             minute: '2-digit',
           }),
         });
-        setJugadores(getJugadores());
+        const updated = await getJugadores();
+        setJugadores(updated);
       }
     });
 
-    const unsubPlayer = realtimeService.on('player_registered', (data: any) => {
+    const unsubPlayer = realtimeService.on('player_registered', async (data: any) => {
       const p = data?.player || data;
       if (p) {
-        saveJugador({
+        await saveJugador({
           id: p.id || `usr-${Date.now()}`,
           nombre: p.name || p.nombre || 'Nuevo Jugador',
           apellido: p.apellido || p.lastName || '',
@@ -114,15 +124,16 @@ export const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({ onBackToGame
             minute: '2-digit',
           }),
         });
-        setJugadores(getJugadores());
+        const updated = await getJugadores();
+        setJugadores(updated);
       }
     });
 
-    const unsubPostgres = realtimeService.on('postgres_changes', (payload: any) => {
-      if (payload?.table === 'users' || payload?.table === 'jugadores') {
+    const unsubPostgres = realtimeService.on('postgres_changes', async (payload: any) => {
+      if (payload?.table === 'users' || payload?.table === 'jugadores' || payload?.table === 'jugadores_bingo') {
         const rec = payload?.new || payload?.record;
         if (rec) {
-          saveJugador({
+          await saveJugador({
             id: rec.id || `usr-${Date.now()}`,
             nombre: rec.name || rec.nombre || 'Nuevo Jugador',
             apellido: rec.apellido || rec.lastName || '',
@@ -138,7 +149,8 @@ export const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({ onBackToGame
               minute: '2-digit',
             }),
           });
-          setJugadores(getJugadores());
+          const updated = await getJugadores();
+          setJugadores(updated);
         }
       }
     });
@@ -165,9 +177,9 @@ export const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({ onBackToGame
     );
   }, [jugadores, searchTerm]);
 
-  const handleDelete = (id: string, nombre: string) => {
+  const handleDelete = async (id: string, nombre: string) => {
     if (window.confirm(`¿Estás seguro de eliminar el registro de ${nombre}?`)) {
-      const updated = deleteJugador(id);
+      const updated = await deleteJugador(id);
       setJugadores(updated);
     }
   };
@@ -201,7 +213,7 @@ export const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({ onBackToGame
               </span>
             </div>
             <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-              Listado oficial persistido en <code className="font-mono text-amber-300 bg-slate-800 px-1.5 py-0.5 rounded">localStorage['jugadores_bingo']</code>
+              Listado oficial persistido en la base de datos <code className="font-mono text-amber-300 bg-slate-800 px-1.5 py-0.5 rounded">Supabase (jugadores_bingo)</code>
             </p>
           </div>
         </div>
