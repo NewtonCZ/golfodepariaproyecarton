@@ -88,6 +88,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   // Visibility toggles for password fields (Show/Hide with eye icon)
   const [showLoginPassword, setShowLoginPassword] = useState(false);
@@ -208,47 +209,106 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return;
     }
 
-    const cleanDoc = documentId.trim().toUpperCase();
-    const cleanPhone = phone.trim() || '0412-0000000';
-    const jugadorId = `jug-${Date.now()}`;
+    setIsRegistering(true);
 
-    // Guardar objeto {id, nombre, apellido, cedula, correo, telefono, fechaNacimiento} en localStorage con key 'jugadores_bingo'
-    const nuevoJugador: JugadorBingo = {
-      id: jugadorId,
-      nombre: firstName.trim(),
-      apellido: lastName.trim(),
-      cedula: cleanDoc,
-      correo: email.trim().toLowerCase(),
-      telefono: cleanPhone,
-      fechaNacimiento: birthDate,
-      fechaRegistro: new Date().toLocaleDateString('es-VE', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    };
-    saveJugador(nuevoJugador);
+    try {
+      const cleanDoc = documentId.trim().toUpperCase();
+      const cleanPhone = phone.trim() || '0412-0000000';
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanFirst = firstName.trim();
+      const cleanLast = lastName.trim();
+      const cleanPassword = regPassword.trim();
 
-    const res = registerUser({
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      documentId: cleanDoc,
-      email: email.trim().toLowerCase(),
-      phone: cleanPhone,
-      birthDate,
-      password: regPassword,
-    });
+      // 1. Registro oficial en Supabase Auth con mapeo correcto de credenciales
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: cleanPassword,
+        options: {
+          data: {
+            first_name: cleanFirst,
+            last_name: cleanLast,
+            name: `${cleanFirst} ${cleanLast}`,
+            cedula: cleanDoc,
+            document_id: cleanDoc,
+            phone: cleanPhone,
+            birth_date: birthDate,
+            role: 'Player',
+          },
+        },
+      });
 
-    if (res.success) {
-      setSuccessMsg(res.message);
+      if (authError) {
+        let customError = authError.message || 'Error al registrar el usuario en Supabase Auth.';
+        if (
+          customError.toLowerCase().includes('already registered') ||
+          customError.toLowerCase().includes('user already exists')
+        ) {
+          customError = 'Este correo electrónico ya se encuentra registrado. Por favor, inicia sesión.';
+        } else if (customError.toLowerCase().includes('password')) {
+          customError = 'La contraseña no cumple con los requisitos de seguridad de Supabase.';
+        }
+        setErrorMsg(customError);
+        setIsRegistering(false);
+        return;
+      }
+
+      // 2. Determinar ID asignado por Supabase Auth o identificador persistente
+      const authUserId = authData?.user?.id || `jug-${Date.now()}`;
+
+      // 3. Persistir registro en la base de datos Supabase (jugadores_bingo)
+      const nuevoJugador: JugadorBingo = {
+        id: authUserId,
+        nombre: cleanFirst,
+        apellido: cleanLast,
+        cedula: cleanDoc,
+        correo: cleanEmail,
+        telefono: cleanPhone,
+        fechaNacimiento: birthDate,
+        fechaRegistro: new Date().toLocaleDateString('es-VE', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      };
+      await saveJugador(nuevoJugador);
+
+      // 4. Sincronizar estado local en el contexto de juego
+      const res = registerUser({
+        id: authUserId,
+        firstName: cleanFirst,
+        lastName: cleanLast,
+        documentId: cleanDoc,
+        email: cleanEmail,
+        phone: cleanPhone,
+        birthDate,
+        password: cleanPassword,
+      });
+
+      // 5. Gestión del estado de éxito
+      const successMessage =
+        authData?.session
+          ? '¡Cuenta creada y autenticada exitosamente en Supabase!'
+          : authData?.user?.identities && authData.user.identities.length === 0
+          ? 'Este correo ya tiene una cuenta registrada. Por favor inicia sesión.'
+          : '¡Registro completado con éxito en Supabase! Puedes iniciar sesión.';
+
+      setSuccessMsg(res?.message || successMessage);
+
+      // Limpiar campos y cerrar modal tras feedback exitoso
       setTimeout(() => {
         onClose();
         setSuccessMsg(null);
+        setRegStep(1);
+        setRegPassword('');
+        setRegConfirmPassword('');
       }, 1600);
-    } else {
-      setErrorMsg(res.message);
+    } catch (err: any) {
+      console.error('[LoginModal] Error en handleRegisterSubmit:', err);
+      setErrorMsg(err?.message || 'Ocurrió un error inesperado durante el registro.');
+    } finally {
+      setIsRegistering(false);
     }
   };
 
@@ -1266,15 +1326,24 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               <button
                 type="button"
                 onClick={handleRegisterSubmit}
-                disabled={calculatedAge !== null && calculatedAge < 18}
+                disabled={(calculatedAge !== null && calculatedAge < 18) || isRegistering}
                 className={`flex-1 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer ${
-                  calculatedAge !== null && calculatedAge < 18
+                  (calculatedAge !== null && calculatedAge < 18) || isRegistering
                     ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                     : 'bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/20 active:scale-95'
                 }`}
               >
-                <UserPlus className="w-4 h-4 stroke-[2.5]" />
-                <span>Completar Registro (+18)</span>
+                {isRegistering ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Creando cuenta en Supabase...</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4 stroke-[2.5]" />
+                    <span>Completar Registro (+18)</span>
+                  </>
+                )}
               </button>
             )}
           </div>

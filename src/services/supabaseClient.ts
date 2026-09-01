@@ -133,6 +133,61 @@ export const supabase = {
       };
     },
 
+    async signUp(credentials: {
+      email: string;
+      password: string;
+      options?: {
+        data?: Record<string, any>;
+        emailRedirectTo?: string;
+      };
+    }): Promise<{
+      data: { user: User | any | null; session: Session | any | null };
+      error: any;
+    }> {
+      const cleanEmail = credentials.email.trim();
+      const cleanPassword = credentials.password.trim();
+
+      if (realSupabaseClient) {
+        try {
+          const res = await realSupabaseClient.auth.signUp({
+            email: cleanEmail,
+            password: cleanPassword,
+            options: credentials.options,
+          });
+          return res;
+        } catch (err: any) {
+          console.warn('[supabaseAuth] Exception calling Supabase signUp:', err);
+          return {
+            data: { user: null, session: null },
+            error: { message: err?.message || 'Error al comunicarse con el servicio de autenticación' },
+          };
+        }
+      }
+
+      // Offline / fallback mock user creation
+      const mockUser: any = {
+        id: `usr-${Date.now()}`,
+        email: cleanEmail,
+        role: 'authenticated',
+        aud: 'authenticated',
+        app_metadata: { provider: 'email', providers: ['email'] },
+        user_metadata: credentials.options?.data || {},
+        created_at: new Date().toISOString(),
+      };
+      const mockSession: any = {
+        access_token: `sb_tok_${Date.now()}`,
+        token_type: 'bearer',
+        user: mockUser,
+        expires_in: 3600 * 24 * 7,
+        expires_at: Math.floor(Date.now() / 1000) + 3600 * 24 * 7,
+      };
+
+      return {
+        data: { user: mockUser, session: mockSession },
+        error: null,
+      };
+    },
+
     async signOut(): Promise<{ error: any }> {
       if (realSupabaseClient) {
         try {
