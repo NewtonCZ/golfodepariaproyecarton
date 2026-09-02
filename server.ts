@@ -519,19 +519,20 @@ app.post(['/api/config/comercial', '/config/comercial'], async (req, res) => {
   }
 });
 
-// Endpoint GET /api/rounds - Recupera únicamente sorteos activos o programados (excluye FINISHED) y previene caché
+// Endpoint GET /api/rounds - Recupera únicamente los últimos sorteos activos o programados (máximo 6, excluye FINISHED) y previene caché
 app.get(['/api/rounds', '/rounds'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
 
   try {
-    const limit = Number(req.query.limit) || 10;
+    const requestedLimit = Number(req.query.limit);
+    const limit = !isNaN(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 6) : 6;
     if (supabaseServerClient) {
       const { data, error } = await supabaseServerClient
         .from('rounds')
         .select('*')
-        .in('status', ['open', 'scheduled', 'active', 'activo', 'OPEN', 'SCHEDULED', 'ACTIVO'])
+        .in('status', ['open', 'scheduled', 'active', 'activo', 'OPEN', 'SCHEDULED', 'ACTIVO', 'drawing', 'closed'])
         .neq('status', 'finished')
         .neq('status', 'FINISHED')
         .neq('status', 'finalizado')
@@ -540,10 +541,12 @@ app.get(['/api/rounds', '/rounds'], async (req, res) => {
         .limit(limit);
 
       if (!error && data) {
-        const activeOnly = data.filter((r: any) => {
-          const st = String(r.status || '').toLowerCase().trim();
-          return st !== 'finished' && st !== 'finalizado';
-        });
+        const activeOnly = data
+          .filter((r: any) => {
+            const st = String(r.status || '').toLowerCase().trim();
+            return st !== 'finished' && st !== 'finalizado';
+          })
+          .slice(0, 6);
         return res.status(200).json({ success: true, data: activeOnly });
       }
     }

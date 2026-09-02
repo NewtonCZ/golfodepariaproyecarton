@@ -1210,14 +1210,14 @@ export const AdminPortal: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
               <div>
                 <h3 className="font-black text-slate-900 text-base">
-                  Listado de Rondas y Monitor Financiero en Tiempo Real
+                  Listado de Rondas y Monitor Financiero en Tiempo Real (Máx. 6 Activos)
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Muestra la recaudación en tiempo real, el pozo de premios calculado y la ganancia de la casa por sorteo.
+                  Regla automática activa: Mantiene visibles los últimos 6 sorteos programados o en curso. Al crear o recibir nuevos sorteos, los excedentes antiguos son depurados automáticamente en la base de datos y en la interfaz.
                 </p>
               </div>
-              <span className="text-xs bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-xl">
-                {rounds.length} Sorteos Registrados
+              <span className="text-xs bg-indigo-50 border border-indigo-200 text-indigo-900 font-bold px-3 py-1 rounded-xl">
+                {rounds.length} / 6 Sorteos Activos
               </span>
             </div>
 

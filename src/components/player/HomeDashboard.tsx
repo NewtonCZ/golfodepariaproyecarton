@@ -51,26 +51,26 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'animal' | 'fruta' | 'objeto'>('all');
   const [selectedRoundTabId, setSelectedRoundTabId] = useState<string | null>(null);
 
-  // 15-second Polling interval: fetch('/api/rounds?status=open,scheduled&limit=3') and re-renders dynamically
+  // 15-second Polling interval: fetch('/api/rounds?status=open,scheduled&limit=6') and re-renders dynamically
   React.useEffect(() => {
-    fetchActiveRounds({ bypassCache: true, limit: 3 });
+    fetchActiveRounds({ bypassCache: true, limit: 6 });
 
     const pollingInterval = setInterval(() => {
-      fetchActiveRounds({ bypassCache: true, limit: 3 });
+      fetchActiveRounds({ bypassCache: true, limit: 6 });
     }, 15000);
 
     return () => clearInterval(pollingInterval);
   }, [fetchActiveRounds]);
 
-  // Compute the 3 sequential rounds ('open' or 'scheduled') sorted by starts_at ASC
+  // Compute active & scheduled sequential rounds (up to 6) sorted by starts_at ASC
   const displayRounds = React.useMemo(() => {
     if (upcomingRounds && upcomingRounds.length > 0) {
-      return upcomingRounds.slice(0, 3);
+      return upcomingRounds.slice(0, 6);
     }
     return rounds
       .filter((r) => {
         const st = String(r.status || '').toLowerCase();
-        return st === 'open' || st === 'scheduled';
+        return st === 'open' || st === 'scheduled' || st === 'active' || st === 'activo' || st === 'drawing';
       })
       .sort((a, b) => {
         const rawDateA = a?.starts_at || a?.openBetAt || a?.drawAt || a?.created_at;
@@ -80,7 +80,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         if (timeA !== timeB) return timeA - timeB;
         return ((a?.order || a?.roundNumber || 0) - (b?.order || b?.roundNumber || 0));
       })
-      .slice(0, 3);
+      .slice(0, 6);
   }, [upcomingRounds, rounds]);
 
   const activeDisplayRound = displayRounds.find((r) => r.id === selectedRoundTabId) || displayRounds[0] || activeRound;
@@ -127,7 +127,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </h2>
             </div>
             <p className="text-xs text-slate-400">
-              Participa en cualquiera de los próximos 3 sorteos consecutivos. Cada uno posee su propio pozo y cartones independientes.
+              Participa en cualquiera de los sorteos programados o en curso (hasta 6 activos). Cada uno posee su propio pozo y cartones independientes.
             </p>
           </div>
 

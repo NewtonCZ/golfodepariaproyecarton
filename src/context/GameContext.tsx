@@ -106,6 +106,8 @@ const INITIAL_USERS: AppUser[] = [
   { id: 'usr-1', name: 'Carlos machin', firstName: 'Carlos', lastName: 'Machin', email: 'carlosmachin@loteria.com', phone: '0414-1234567', documentId: 'V-26890123', birthDate: '1998-05-14', country: 'Venezuela', role: 'Player', status: 'active', availableBalance: 0, pendingBalance: 0, lockedBalance: 0, totalWonVes: 0, totalSpentVes: 0, createdAt: '2026-07-01T10:00:00Z', kycStatus: 'Aprobado', kycVerifiedAt: '2026-07-01T10:00:00Z', kycFrontUrl: 'cedula_machin_front.png', kycBackUrl: 'selfie_carlos.png' },
 ];
 
+export const MAX_ACTIVE_ROUNDS = 6;
+
 const INITIAL_ROUNDS: GameRound[] = [
   { id: 'round-102', roundNumber: 102, order: 1, title: 'Sorteo Estelar Tarde #102', openBetAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 45 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 48 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 45 * 60 * 1000).toISOString(), status: 'open', drawnFichas: [], totalCardsSold: 36, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 15000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
   { id: 'round-103', roundNumber: 103, order: 2, title: 'Gran Sorteo Nocturno #103', openBetAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 3.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 30, card_price: 30, prize_percentage: 75, jackpotVes: 25000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
@@ -135,7 +137,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (st === 'finished' || st === 'finalizado') return false;
           seen.add(r.id);
           return true;
-        });
+        })
+        .slice(0, MAX_ACTIVE_ROUNDS);
       try {
         localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(sanitized));
       } catch {}
@@ -591,20 +594,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   // CONSULTA FILTRADA DE SORTEOS: Solo recupera 'open'/'activo' o 'scheduled'/'SCHEDULED', excluyendo estrictamente 'finished'
+  // REGLA AUTOMÁTICA: Mantiene un máximo de 6 sorteos activos/programados, depurando automáticamente los excedentes
   const fetchActiveRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
     try {
       if (!supabase) return;
-      const limit = options?.limit || 10;
+      const queryLimit = options?.limit || 12;
       const { data: rawRounds, error } = await supabase
         .from('rounds')
         .select('*')
-        .in('status', ['open', 'scheduled', 'active', 'activo', 'OPEN', 'SCHEDULED', 'ACTIVO'])
+        .in('status', ['open', 'scheduled', 'active', 'activo', 'OPEN', 'SCHEDULED', 'ACTIVO', 'drawing', 'closed'])
         .neq('status', 'finished')
         .neq('status', 'FINISHED')
         .neq('status', 'finalizado')
         .neq('status', 'FINALIZADO')
         .order('starts_at', { ascending: true })
-        .limit(limit);
+        .limit(queryLimit);
 
       if (error) {
         console.warn('[GameContext] Supabase fetchActiveRounds error:', error);
@@ -614,7 +618,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .map(normalizeGameRound)
         .filter((r) => {
           const st = String(r.status || '').toLowerCase().trim();
-          return st === 'open' || st === 'scheduled' || st === 'active' || st === 'activo';
+          return st === 'open' || st === 'scheduled' || st === 'active' || st === 'activo' || st === 'drawing' || st === 'closed';
         });
 
       setRounds((prev) => {
@@ -625,8 +629,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (activeOnly.length === 0) {
-          try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(cleanPrev)); } catch {}
-          return cleanPrev;
+          const keptPrev = cleanPrev.slice(0, MAX_ACTIVE_ROUNDS);
+          try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(keptPrev)); } catch {}
+          return keptPrev;
         }
 
         const fetchedMap = new Map<string, GameRound>(activeOnly.map((r) => [r.id, r]));
@@ -640,18 +645,43 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const newServerRounds = activeOnly.filter((r) => !existingIds.has(r.id));
         const combined = [...newServerRounds, ...updated];
 
-        // Deduplicar y ordenar ascendentemente por fecha de inicio
-        const finalClean = Array.from(new Map(combined.map((r) => [r.id, r])).values())
+        // Deduplicar y ordenar ascendentemente por fecha de inicio / orden
+        const sorted = Array.from(new Map(combined.map((r) => [r.id, r])).values())
           .filter((r) => {
             const st = String(r.status || '').toLowerCase().trim();
             return st !== 'finished' && st !== 'finalizado';
           })
           .sort((a, b) => {
+            const isDrawingA = String(a.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+            const isDrawingB = String(b.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+            if (isDrawingA !== isDrawingB) return isDrawingA - isDrawingB;
+
             const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
             const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
             if (timeA !== timeB) return timeA - timeB;
             return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
           });
+
+        const finalClean = sorted.slice(0, MAX_ACTIVE_ROUNDS);
+        const excess = sorted.slice(MAX_ACTIVE_ROUNDS);
+
+        // Depurar de la base de datos Supabase cualquier sorteo excedente más allá del límite de 6
+        if (excess.length > 0 && supabase) {
+          const excessIds = excess.map((r) => r.id).filter(Boolean);
+          try {
+            supabase
+              .from('rounds')
+              .delete()
+              .in('id', excessIds)
+              .then(({ error: delErr }) => {
+                if (!delErr) {
+                  excessIds.forEach((id) => {
+                    try { syncEngine.broadcastRoundDeleted(id); } catch {}
+                  });
+                }
+              });
+          } catch {}
+        }
 
         try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(finalClean)); } catch {}
         return finalClean;
@@ -999,12 +1029,39 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const st = String(round.status || '').toLowerCase().trim();
             if (st !== 'finished' && st !== 'finalizado') {
               setRounds((prev) => {
-                const exists = prev.some((r) => r.id === round.id);
-                const updated = exists ? prev.map((r) => (r.id === round.id ? { ...r, ...round } : r)) : [round, ...prev];
-                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(updated)); } catch {}
-                return updated;
+                const clean = prev.filter((r) => {
+                  const s = String(r.status || '').toLowerCase().trim();
+                  return s !== 'finished' && s !== 'finalizado';
+                });
+                const exists = clean.some((r) => r.id === round.id);
+                const updated = exists ? clean.map((r) => (r.id === round.id ? { ...r, ...round } : r)) : [round, ...clean];
+                const sorted = updated.sort((a, b) => {
+                  const isDrawingA = String(a.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+                  const isDrawingB = String(b.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+                  if (isDrawingA !== isDrawingB) return isDrawingA - isDrawingB;
+
+                  const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
+                  const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
+                  if (timeA !== timeB) return timeA - timeB;
+                  return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+                });
+                const finalKept = sorted.slice(0, MAX_ACTIVE_ROUNDS);
+                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(finalKept)); } catch {}
+                return finalKept;
               });
             }
+          }
+          break;
+        }
+
+        case 'ROUND_DELETED': {
+          const { roundId } = event.payload || {};
+          if (roundId) {
+            setRounds((prev) => {
+              const filtered = prev.filter((r) => r.id !== roundId);
+              try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(filtered)); } catch {}
+              return filtered;
+            });
           }
           break;
         }
@@ -1113,6 +1170,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
+          if (payload?.eventType === 'DELETE' || payload?.event === 'DELETE' || (payload?.old && !payload?.new)) {
+            const deletedId = payload?.old?.id;
+            if (deletedId) {
+              setRounds((prev) => {
+                const filtered = prev.filter((r) => r.id !== deletedId);
+                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(filtered)); } catch {}
+                return filtered;
+              });
+            } else {
+              fetchActiveRounds({ bypassCache: true });
+            }
+            return;
+          }
+
           if (payload?.new) {
             const item = normalizeGameRound(payload.new);
             const st = String(item.status || '').toLowerCase().trim();
@@ -1137,8 +1208,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   const s = String(r.status || '').toLowerCase().trim();
                   return s !== 'finished' && s !== 'finalizado';
                 });
-                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(clean)); } catch {}
-                return clean;
+                const sorted = clean.sort((a, b) => {
+                  const isDrawingA = String(a.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+                  const isDrawingB = String(b.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+                  if (isDrawingA !== isDrawingB) return isDrawingA - isDrawingB;
+
+                  const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
+                  const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
+                  if (timeA !== timeB) return timeA - timeB;
+                  return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+                });
+                const finalKept = sorted.slice(0, MAX_ACTIVE_ROUNDS);
+                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(finalKept)); } catch {}
+                return finalKept;
               });
             }
           } else {
@@ -1179,8 +1261,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [rounds]);
 
   const upcomingRounds = useMemo(() => {
-    return rounds.filter(r => { const st = String(r.status || '').toLowerCase(); return st === 'open' || st === 'scheduled'; })
-     .sort((a, b) => { const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt); const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt); if (timeA!== timeB) return timeA - timeB; return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0); }).slice(0, 3);
+    return rounds
+      .filter((r) => {
+        const st = String(r.status || '').toLowerCase().trim();
+        return st === 'open' || st === 'scheduled' || st === 'active' || st === 'activo' || st === 'drawing';
+      })
+      .sort((a, b) => {
+        const isDrawingA = String(a.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+        const isDrawingB = String(b.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+        if (isDrawingA !== isDrawingB) return isDrawingA - isDrawingB;
+
+        const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
+        const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
+        if (timeA !== timeB) return timeA - timeB;
+        return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+      })
+      .slice(0, MAX_ACTIVE_ROUNDS);
   }, [rounds]);
 
   const activeRounds = upcomingRounds;
@@ -1914,7 +2010,50 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resultLocked: false,
       };
 
-      setRounds((prev) => [newRound, ...prev]);
+      setRounds((prev) => {
+        const clean = prev.filter((r) => {
+          const st = String(r.status || '').toLowerCase().trim();
+          return st !== 'finished' && st !== 'finalizado';
+        });
+
+        const combined = [newRound, ...clean];
+        const deduped = Array.from(new Map(combined.map((r) => [r.id, r])).values());
+
+        const sorted = deduped.sort((a, b) => {
+          const isDrawingA = String(a.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+          const isDrawingB = String(b.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+          if (isDrawingA !== isDrawingB) return isDrawingA - isDrawingB;
+
+          const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
+          const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
+          if (timeA !== timeB) return timeA - timeB;
+          return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+        });
+
+        const kept = sorted.slice(0, MAX_ACTIVE_ROUNDS);
+        const excess = sorted.slice(MAX_ACTIVE_ROUNDS);
+
+        // Depuración automática en tiempo real de sorteos antiguos que superen el límite de 6
+        if (excess.length > 0 && supabase) {
+          const excessIds = excess.map((r) => r.id).filter(Boolean);
+          try {
+            supabase
+              .from('rounds')
+              .delete()
+              .in('id', excessIds)
+              .then(({ error: delErr }) => {
+                if (!delErr) {
+                  excessIds.forEach((id) => {
+                    try { syncEngine.broadcastRoundDeleted(id); } catch {}
+                  });
+                }
+              });
+          } catch {}
+        }
+
+        try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(kept)); } catch {}
+        return kept;
+      });
       try {
         safeInsertRoundToSupabase(newRound).then((inserted) => {
           if (inserted?.id && inserted.id !== newRound.id) {
