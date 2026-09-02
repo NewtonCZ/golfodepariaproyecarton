@@ -8,6 +8,7 @@ import { generateRandomMatrix, generateCardCode, evaluateCardMatrix } from '../s
 import { soundService } from '../services/soundAndSpeech';
 import { ROLE_PERMISSIONS, RolePermissionConfig } from '../config/permissions';
 import { LotteryStorageService } from '../services/storageService';
+import { mobileCacheManager } from '../services/mobileCacheManager';
 import { syncEngine } from '../services/syncService';
 import { timeSync } from '../services/timeSyncService';
 import { realtimeService } from '../services/realtimeService';
@@ -712,7 +713,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } catch {}
         }
 
-        try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(finalClean)); } catch {}
+        mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, finalClean, 'high');
         return finalClean;
       });
 
@@ -754,9 +755,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const excessFinished = sorted.slice(MAX_FINISHED_ROUNDS_HISTORY);
 
       setFinishedRounds(keptFinished);
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_finished_rounds`, JSON.stringify(keptFinished));
-      } catch {}
+      mobileCacheManager.safeSetItem(`${STORAGE_KEY}_finished_rounds`, keptFinished, 'high');
 
       // Política de retención automática en Supabase: Purgar los sorteos finalizados que excedan los 6 más recientes
       if (excessFinished.length > 0 && supabase) {
@@ -997,11 +996,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const handleVis = () => {
       if (document.visibilityState === 'visible') {
+        mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED');
         fetchCommercialConfig();
         fetchActiveRounds({ bypassCache: true });
         fetchPendingRecharges();
         fetchWithdrawals();
         fetchJugadores();
+      } else if (document.visibilityState === 'hidden') {
+        mobileCacheManager.runSoftGarbageCollection();
       }
     };
     window.addEventListener('visibilitychange', handleVis);
@@ -1069,12 +1071,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         case 'CARDS_PURCHASED': {
-          const { cards: newPurchasedCards, roundId, totalCostVes, ledgerEntry } = event.payload || {};
+          const { cards: newPurchasedCards, roundId, totalCostVes, ledgerEntry, userId } = event.payload || {};
           if (newPurchasedCards && Array.isArray(newPurchasedCards)) {
+            // Invalida quirúrgicamente la caché de cartones y matrices
+            mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId, userId });
+
             setCards((prev) => {
               const existingIds = new Set(prev.map((c) => c.id));
               const fresh = newPurchasedCards.filter((c) => !existingIds.has(c.id));
-              return fresh.length > 0 ? [...fresh, ...prev] : prev;
+              const combined = fresh.length > 0 ? [...fresh, ...prev] : prev;
+              const quota = mobileCacheManager.getQuotaLimits();
+              const bounded = combined.slice(0, quota.maxCardsInMemory);
+              mobileCacheManager.safeSetItem(`${STORAGE_KEY}_cards`, bounded, 'critical');
+              return bounded;
             });
             setRounds((prev) =>
               prev.map((r) =>
@@ -1113,6 +1122,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case 'ROUND_CREATED': {
           const { round } = event.payload || {};
           if (round && round.id) {
+            mobileCacheManager.surgicalInvalidate('ROUND_CREATED', { roundId: round.id });
             const st = String(round.status || '').toLowerCase().trim();
             if (st !== 'finished' && st !== 'finalizado') {
               setRounds((prev) => {
@@ -1133,7 +1143,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
                 });
                 const finalKept = sorted.slice(0, MAX_ACTIVE_ROUNDS);
-                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(finalKept)); } catch {}
+                mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, finalKept, 'high');
                 return finalKept;
               });
             }
@@ -1144,9 +1154,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case 'ROUND_DELETED': {
           const { roundId } = event.payload || {};
           if (roundId) {
+            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId });
             setRounds((prev) => {
               const filtered = prev.filter((r) => r.id !== roundId);
-              try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(filtered)); } catch {}
+              mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, filtered, 'high');
               return filtered;
             });
           }
@@ -1157,14 +1168,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const { roundId, status } = event.payload || {};
           if (roundId && status) {
             const st = String(status || '').toLowerCase().trim();
+            mobileCacheManager.surgicalInvalidate(
+              st === 'finished' || st === 'finalizado' ? 'ROUND_FINISHED' : 'ROUND_STATUS_CHANGED',
+              { roundId }
+            );
             setRounds((prev) => {
               if (st === 'finished' || st === 'finalizado') {
                 const filtered = prev.filter((r) => r.id !== roundId);
-                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(filtered)); } catch {}
+                mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, filtered, 'high');
                 return filtered;
               }
               const updated = prev.map((r) => (r.id === roundId ? { ...r, status } : r));
-              try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(updated)); } catch {}
+              mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, updated, 'high');
               return updated;
             });
           }
@@ -1450,11 +1465,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       setLedger((prev) => [newLedger, ...prev]);
 
+      // Invalida quirúrgicamente la caché de cartones y matrices
+      mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId, userId: user.id });
+
       const allUpdatedCards = [...newCards, ...cards];
-      setCards(allUpdatedCards);
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_cards`, JSON.stringify(allUpdatedCards));
-      } catch {}
+      const quota = mobileCacheManager.getQuotaLimits();
+      const boundedCards = allUpdatedCards.slice(0, quota.maxCardsInMemory);
+      setCards(boundedCards);
+      mobileCacheManager.safeSetItem(`${STORAGE_KEY}_cards`, boundedCards, 'critical');
 
       setRounds((prev) =>
         prev.map((r) =>

@@ -1,4 +1,5 @@
 import { MatrixCard, WinningPatternResult, CommercialConfig } from '../types';
+import { mobileCacheManager } from './mobileCacheManager';
 
 /**
  * Generates 16 UNIQUE random ficha IDs between 1 and 72 for a 4x4 matrix
@@ -207,7 +208,13 @@ export function evaluateAllCards(
   let totalPrizesPaidVes = 0;
 
   const updatedCards = cards.map((card) => {
-    const evaluation = evaluateCardMatrix(card.matrix, drawnFichas, card.priceVes, config, isRoundFinished);
+    let evaluation = card.id ? mobileCacheManager.getCachedEvaluation(card.id, drawnFichas.length) : null;
+    if (!evaluation) {
+      evaluation = evaluateCardMatrix(card.matrix, drawnFichas, card.priceVes, config, isRoundFinished);
+      if (card.id) {
+        mobileCacheManager.setCachedEvaluation(card.id, drawnFichas.length, evaluation);
+      }
+    }
 
     if (evaluation.isWinner) {
       totalWinnersCount++;

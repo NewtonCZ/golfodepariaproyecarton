@@ -7,6 +7,8 @@
  * - Cache API (Service Worker / Browser Cache): For offline asset caching, sound effects, and lottery pool data
  */
 
+import { mobileCacheManager } from './mobileCacheManager';
+
 export interface PersistedSession {
   token: string;
   userId: string;
@@ -361,6 +363,30 @@ export class LotteryStorageService {
     } catch (e) {
       console.warn('Storage: Error clearing live draw state:', e);
     }
+  }
+
+  /**
+   * Quota-safe localStorage writer with prioritized mobile eviction
+   */
+  static safeSetItem(key: string, value: any, priority: 'critical' | 'high' | 'normal' | 'low' = 'normal'): boolean {
+    return mobileCacheManager.safeSetItem(key, value, priority);
+  }
+
+  /**
+   * Quota-safe and memoized localStorage reader
+   */
+  static safeGetItem<T = any>(key: string, fallback: T): T {
+    return mobileCacheManager.safeGetItem(key, fallback);
+  }
+
+  /**
+   * Surgically invalidate caches
+   */
+  static surgicalInvalidate(
+    reason: 'ROUND_STATUS_CHANGED' | 'CARDS_PURCHASED' | 'ROUND_FINISHED' | 'ROUND_CREATED' | 'BALANCE_UPDATED' | 'USER_LOGOUT',
+    payload?: { roundId?: string; userId?: string }
+  ): void {
+    mobileCacheManager.surgicalInvalidate(reason, payload);
   }
 
   /**
