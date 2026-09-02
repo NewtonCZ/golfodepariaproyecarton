@@ -1013,12 +1013,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!round) return { success: false, message: 'Sorteo no encontrado.' };
 
       const user = currentUser;
+      const unitPrice = round.card_price || round.cardPriceVes || round.card_price_ves || (commercialConfig.cardPrices?.pack2 ? commercialConfig.cardPrices.pack2 / 2 : 25);
       const effectivePrice =
-        packCount === 2
-          ? commercialConfig.cardPrices?.pack2 || 50
-          : packCount === 4
-          ? commercialConfig.cardPrices?.pack4 || 100
-          : commercialConfig.cardPrices?.pack6 || 150;
+        unitPrice * packCount;
 
       if (user.availableBalance < effectivePrice) {
         return { success: false, message: `Saldo insuficiente. Necesitas ${formatMoney(effectivePrice)}.` };
