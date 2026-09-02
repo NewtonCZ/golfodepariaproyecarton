@@ -557,6 +557,45 @@ app.get(['/api/rounds', '/rounds'], async (req, res) => {
   return res.status(200).json({ success: true, data: [] });
 });
 
+// Endpoint GET /api/rounds/finished - Historial de únicamente los últimos 6 sorteos finalizados más recientes con depuración automática de registros anteriores
+app.get(['/api/rounds/finished', '/rounds/finished'], async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  try {
+    if (supabaseServerClient) {
+      const { data, error } = await supabaseServerClient
+        .from('rounds')
+        .select('*')
+        .in('status', ['finished', 'FINISHED', 'finalizado', 'FINALIZADO'])
+        .order('ends_at', { ascending: false })
+        .limit(12);
+
+      if (!error && data) {
+        const finishedRounds = data.slice(0, 6);
+        const excessFinished = data.slice(6);
+
+        // Política de depuración automática en Supabase: eliminar registros antiguos que superen los 6
+        if (excessFinished.length > 0) {
+          const excessIds = excessFinished.map((r: any) => r.id).filter(Boolean);
+          supabaseServerClient
+            .from('rounds')
+            .delete()
+            .in('id', excessIds)
+            .then();
+        }
+
+        return res.status(200).json({ success: true, data: finishedRounds });
+      }
+    }
+  } catch (err) {
+    console.warn('[server.ts] Error fetching finished rounds from DB:', err);
+  }
+
+  return res.status(200).json({ success: true, data: [] });
+});
+
 // Endpoint GET /api/players
 app.get(['/api/players', '/players'], async (req, res) => {
   try {

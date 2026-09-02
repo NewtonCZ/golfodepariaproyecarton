@@ -33,6 +33,7 @@ const AppContent: React.FC = () => {
     activeTab,
     setActiveTab,
     selectedRoundId,
+    openLiveDraw,
     isBuyCardsOpen,
     openBuyCards,
     closeBuyCards,
@@ -76,7 +77,7 @@ const AppContent: React.FC = () => {
                 onOpenBuyCards={openBuyCards}
                 onOpenRecharge={openRecharge}
                 onOpenWithdraw={openWithdraw}
-                onOpenLiveDraw={() => setActiveTab('live-draw')}
+                onOpenLiveDraw={openLiveDraw}
                 onOpenMyCards={() => setActiveTab('my-cards')}
               />
             )}
@@ -87,6 +88,7 @@ const AppContent: React.FC = () => {
 
             {activeTab === 'live-draw' && (
               <LiveDrawViewer
+                selectedRoundId={selectedRoundId}
                 onOpenBuyCards={openBuyCards}
                 onOpenLogin={openLogin}
                 onOpenRecharge={openRecharge}
@@ -94,7 +96,7 @@ const AppContent: React.FC = () => {
               />
             )}
 
-            {activeTab === 'results' && <ResultsHistoryView />}
+            {activeTab === 'results' && <ResultsHistoryView onOpenLiveDraw={openLiveDraw} />}
 
             {activeTab === 'wallet' && (
               <WalletLedgerView

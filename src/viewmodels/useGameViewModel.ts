@@ -223,6 +223,11 @@ export function useGameViewModel() {
     setIsWithdrawOpen(false);
   }, []);
 
+  const openLiveDraw = useCallback((roundId?: string) => {
+    if (roundId) setSelectedRoundId(roundId);
+    setActiveTabState('live-draw');
+  }, []);
+
   const openLogin = useCallback((tab: 'login' | 'register' = 'login') => {
     setLoginModalTab(tab);
     setIsLoginModalOpen(true);
@@ -274,6 +279,8 @@ export function useGameViewModel() {
     activeTab,
     setActiveTab,
     selectedRoundId,
+    setSelectedRoundId,
+    openLiveDraw,
     isBuyCardsOpen,
     openBuyCards,
     closeBuyCards,

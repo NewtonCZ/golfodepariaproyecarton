@@ -63,7 +63,7 @@ interface GameContextType {
   deleteSystemCredential: (id: string) => Promise<{ success: boolean; message: string }>;
   users: AppUser[]; viewMode: 'player' | 'admin'; setViewMode: (mode: 'player' | 'admin') => void;
   activeRound: GameRound | null; activeRounds: GameRound[]; upcomingRounds: GameRound[];
-  rounds: GameRound[]; cards: MatrixCard[]; userCards: MatrixCard[];
+  rounds: GameRound[]; finishedRounds: GameRound[]; cards: MatrixCard[]; userCards: MatrixCard[];
   recharges: RechargeTransaction[]; withdrawals: WithdrawalTransaction[];
   ledger: WalletLedgerEntry[]; auditLogs: AuditLogEntry[]; commercialConfig: CommercialConfig;
   currencyDisplay: 'VES' | 'USD'; setCurrencyDisplay: (curr: 'VES' | 'USD') => void;
@@ -88,6 +88,7 @@ interface GameContextType {
   updateUserStatus: (userId: string, status: 'active' | 'suspended' | 'banned', reason?: string) => { success: boolean; message: string };
   isRealtimeSyncConnected: boolean; lastSyncTimestamp: number;
   fetchActiveRounds: (options?: { bypassCache?: boolean; limit?: number }) => Promise<void>;
+  fetchFinishedRounds: (options?: { bypassCache?: boolean; limit?: number }) => Promise<void>;
   fetchPendingRecharges: () => Promise<void>; fetchWithdrawals: () => Promise<void>;
   archiveCard: (cardId: string) => void; unarchiveCard: (cardId: string) => void; archiveCardsBatch: (cardIds: string[]) => void;
 }
@@ -107,6 +108,7 @@ const INITIAL_USERS: AppUser[] = [
 ];
 
 export const MAX_ACTIVE_ROUNDS = 6;
+export const MAX_FINISHED_ROUNDS_HISTORY = 6;
 
 const INITIAL_ROUNDS: GameRound[] = [
   { id: 'round-102', roundNumber: 102, order: 1, title: 'Sorteo Estelar Tarde #102', openBetAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 45 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 48 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 45 * 60 * 1000).toISOString(), status: 'open', drawnFichas: [], totalCardsSold: 36, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 15000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
@@ -133,7 +135,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .filter((r) => {
           if (!r.id || seen.has(r.id)) return false;
           const st = String(r.status || '').toLowerCase().trim();
-          // Excluir automáticamente cualquier sorteo terminado o finalizado de la caché inicial
+          // Excluir automáticamente cualquier sorteo terminado o finalizado de la lista de activos
           if (st === 'finished' || st === 'finalizado') return false;
           seen.add(r.id);
           return true;
@@ -145,6 +147,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return sanitized.length > 0 ? sanitized : INITIAL_ROUNDS;
     } catch {
       return INITIAL_ROUNDS;
+    }
+  });
+
+  const [finishedRounds, setFinishedRounds] = useState<GameRound[]>(() => {
+    try {
+      const s = localStorage.getItem(`${STORAGE_KEY}_finished_rounds`);
+      const p: GameRound[] = s ? JSON.parse(s) : [];
+      const seen = new Set<string>();
+      const sanitized = p
+        .map((r) => {
+          const safeId = r.id || `round-${r.roundNumber || r.round_number || 100}`;
+          return { ...r, id: String(safeId) };
+        })
+        .filter((r) => {
+          if (!r.id || seen.has(r.id)) return false;
+          const st = String(r.status || '').toLowerCase().trim();
+          if (st !== 'finished' && st !== 'finalizado') return false;
+          seen.add(r.id);
+          return true;
+        })
+        .slice(0, MAX_FINISHED_ROUNDS_HISTORY);
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_finished_rounds`, JSON.stringify(sanitized));
+      } catch {}
+      return sanitized;
+    } catch {
+      return [];
     }
   });
   const [cards, setCards] = useState<MatrixCard[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_cards`); return s? JSON.parse(s) : []; } catch { return []; } });
@@ -686,8 +715,66 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(finalClean)); } catch {}
         return finalClean;
       });
+
+      // Sincronizar también el historial de sorteos finalizados (máximo 6)
+      fetchFinishedRounds({ bypassCache: options?.bypassCache });
     } catch (err) {
       console.warn('[GameContext] fetchActiveRounds exception:', err);
+    }
+  }, []);
+
+  // CONSULTA Y RETENCIÓN DE SORTEOS FINALIZADOS: Mantiene únicamente los últimos 6 sorteos más recientes
+  // y depura/elimina automáticamente de la base de datos Supabase los registros anteriores para evitar saturación
+  const fetchFinishedRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
+    try {
+      if (!supabase) return;
+      const queryLimit = options?.limit || 12;
+      const { data: rawFinished, error } = await supabase
+        .from('rounds')
+        .select('*')
+        .in('status', ['finished', 'FINISHED', 'finalizado', 'FINALIZADO'])
+        .order('ends_at', { ascending: false })
+        .limit(queryLimit);
+
+      if (error) {
+        console.warn('[GameContext] Supabase fetchFinishedRounds error:', error);
+      }
+
+      const normalized: GameRound[] = (rawFinished || []).map(normalizeGameRound);
+
+      // Ordenar por fecha de culminación más reciente descendente
+      const sorted = normalized.sort((a, b) => {
+        const timeA = timeSync.parseIsoToEpochMs(a.resultSubmittedAt || a.ends_at || a.drawAt || a.updatedAt || 0);
+        const timeB = timeSync.parseIsoToEpochMs(b.resultSubmittedAt || b.ends_at || b.drawAt || b.updatedAt || 0);
+        if (timeA !== timeB) return timeB - timeA;
+        return (b.roundNumber || 0) - (a.roundNumber || 0);
+      });
+
+      const keptFinished = sorted.slice(0, MAX_FINISHED_ROUNDS_HISTORY);
+      const excessFinished = sorted.slice(MAX_FINISHED_ROUNDS_HISTORY);
+
+      setFinishedRounds(keptFinished);
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_finished_rounds`, JSON.stringify(keptFinished));
+      } catch {}
+
+      // Política de retención automática en Supabase: Purgar los sorteos finalizados que excedan los 6 más recientes
+      if (excessFinished.length > 0 && supabase) {
+        const excessIds = excessFinished.map((r) => r.id).filter(Boolean);
+        try {
+          supabase
+            .from('rounds')
+            .delete()
+            .in('id', excessIds)
+            .then(({ error: delErr }) => {
+              if (delErr) {
+                console.warn('[GameContext] Error depurando sorteos finalizados antiguos en Supabase:', delErr);
+              }
+            });
+        } catch {}
+      }
+    } catch (err) {
+      console.warn('[GameContext] fetchFinishedRounds exception:', err);
     }
   }, []);
 
@@ -2210,11 +2297,46 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resultSubmittedAt: new Date().toISOString(),
       };
 
-      const updatedRounds = rounds.map((r) => (r.id === roundId ? updatedRound : r));
-      setRounds(updatedRounds);
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(updatedRounds));
-      } catch {}
+      // Remover de los sorteos activos (el panel solo muestra abiertos o programados)
+      setRounds((prev) => {
+        const filtered = prev.filter((r) => r.id !== roundId);
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(filtered));
+        } catch {}
+        return filtered;
+      });
+
+      // Agregar a finishedRounds reteniendo un historial visible de únicamente los últimos 6 sorteos
+      setFinishedRounds((prev) => {
+        const filtered = prev.filter((r) => r.id !== roundId);
+        const combined = [updatedRound, ...filtered];
+        const sorted = combined.sort((a, b) => {
+          const timeA = timeSync.parseIsoToEpochMs(a.resultSubmittedAt || a.ends_at || a.drawAt || 0);
+          const timeB = timeSync.parseIsoToEpochMs(b.resultSubmittedAt || b.ends_at || b.drawAt || 0);
+          if (timeA !== timeB) return timeB - timeA;
+          return (b.roundNumber || 0) - (a.roundNumber || 0);
+        });
+
+        const kept = sorted.slice(0, MAX_FINISHED_ROUNDS_HISTORY);
+        const excess = sorted.slice(MAX_FINISHED_ROUNDS_HISTORY);
+
+        // Depurar de Supabase registros de sorteos finalizados anteriores que excedan el límite de 6
+        if (excess.length > 0 && supabase) {
+          const excessIds = excess.map((r) => r.id).filter(Boolean);
+          try {
+            supabase
+              .from('rounds')
+              .delete()
+              .in('id', excessIds)
+              .then();
+          } catch {}
+        }
+
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_finished_rounds`, JSON.stringify(kept));
+        } catch {}
+        return kept;
+      });
 
       // 4. Actualizar en Supabase si está disponible
       try {
@@ -2571,13 +2693,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     currentUser, currentRole, setCurrentRole, operatorRole, setOperatorRole, isAuthenticated, sessionToken, loggedUsername, permissions, activeCredential,
     login, logout, requestPasswordRecovery, verifyRecoveryCode, resetPasswordWithCode, registerUser, updateUserKyc, verifyCurrentAccount,
     systemCredentials, fetchSystemCredentials, createSystemCredential, updateSystemCredential, deleteSystemCredential,
-    users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards, recharges, withdrawals, ledger, auditLogs, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
+    users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, finishedRounds, cards, userCards, recharges, withdrawals, ledger, auditLogs, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
     purchaseCards, submitRecharge, approveRecharge, rejectRecharge,
     submitWithdrawal, completeWithdrawal, rejectWithdrawal,
     createRound, updateRoundConfig, setRoundStatus, submitRoundResult,
     updateCommercialConfig, fetchCommercialConfig, resetToInitialData,
     liveDrawingRound, isLiveDrawing, liveDrawnFichas, startLiveDrawSimulation, stopLiveDrawSimulation,
-    quickAddBalance, adjustUserBalance, updateUserStatus, isRealtimeSyncConnected, lastSyncTimestamp, fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals,
+    quickAddBalance, adjustUserBalance, updateUserStatus, isRealtimeSyncConnected, lastSyncTimestamp, fetchActiveRounds, fetchFinishedRounds, fetchPendingRecharges, fetchWithdrawals,
     archiveCard, unarchiveCard, archiveCardsBatch,
   };
 
