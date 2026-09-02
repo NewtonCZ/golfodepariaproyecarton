@@ -107,10 +107,9 @@ const INITIAL_USERS: AppUser[] = [
 ];
 
 const INITIAL_ROUNDS: GameRound[] = [
-  { id: 'round-101', roundNumber: 101, order: 1, title: 'Sorteo Mediodía #101', openBetAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), status: 'finished', drawnFichas: [1,5,12,19,23,26,28,30,31,35,40,44,49,51,52,55,59,60,62,65,66,67,70,2,8,14,27,33,42,53,58,69], totalCardsSold: 48, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 12500, winningCardsCount: 6, totalPrizesPaidVes: 2150, resultLocked: true, resultSubmittedBy: 'Carlos Admin', resultSubmittedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-  { id: 'round-102', roundNumber: 102, order: 2, title: 'Sorteo Estelar Tarde #102', openBetAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 45 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 48 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 45 * 60 * 1000).toISOString(), status: 'open', drawnFichas: [], totalCardsSold: 36, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 15000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
-  { id: 'round-103', roundNumber: 103, order: 3, title: 'Gran Sorteo Nocturno #103', openBetAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 3.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 30, card_price: 30, prize_percentage: 75, jackpotVes: 25000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
-  { id: 'round-104', roundNumber: 104, order: 4, title: 'Sorteo Madrugada Millonario #104', openBetAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 6.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 20, card_price: 20, prize_percentage: 80, jackpotVes: 20000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
+  { id: 'round-102', roundNumber: 102, order: 1, title: 'Sorteo Estelar Tarde #102', openBetAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 45 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 48 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 45 * 60 * 1000).toISOString(), status: 'open', drawnFichas: [], totalCardsSold: 36, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 15000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
+  { id: 'round-103', roundNumber: 103, order: 2, title: 'Gran Sorteo Nocturno #103', openBetAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 3.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 30, card_price: 30, prize_percentage: 75, jackpotVes: 25000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
+  { id: 'round-104', roundNumber: 104, order: 3, title: 'Sorteo Madrugada Millonario #104', openBetAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 6.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 20, card_price: 20, prize_percentage: 80, jackpotVes: 20000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
 ];
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -124,16 +123,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const s = localStorage.getItem(`${STORAGE_KEY}_rounds`);
       const p: GameRound[] = s ? JSON.parse(s) : INITIAL_ROUNDS;
       const seen = new Set<string>();
-      return p
+      const sanitized = p
         .map((r) => {
-          const safeId = r.id || `round-${r.roundNumber || r.round_number || 101}`;
+          const safeId = r.id || `round-${r.roundNumber || r.round_number || 102}`;
           return { ...r, id: String(safeId) };
         })
         .filter((r) => {
           if (!r.id || seen.has(r.id)) return false;
+          const st = String(r.status || '').toLowerCase().trim();
+          // Excluir automáticamente cualquier sorteo terminado o finalizado de la caché inicial
+          if (st === 'finished' || st === 'finalizado') return false;
           seen.add(r.id);
           return true;
         });
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(sanitized));
+      } catch {}
+      return sanitized.length > 0 ? sanitized : INITIAL_ROUNDS;
     } catch {
       return INITIAL_ROUNDS;
     }
@@ -584,29 +590,75 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     created_at: w.createdAt,
   });
 
-  // FIX CRITICO DE ROUNDS
+  // CONSULTA FILTRADA DE SORTEOS: Solo recupera 'open'/'activo' o 'scheduled'/'SCHEDULED', excluyendo estrictamente 'finished'
   const fetchActiveRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
     try {
-      const limit = options?.limit || 3;
-      const { data: rawRounds, error } = await supabase.from('rounds').select('*').in('status', ['open', 'scheduled']).order('starts_at', { ascending: true }).limit(limit);
-      if (error) throw error;
-      if (!rawRounds || rawRounds.length === 0) return;
-      const fetchedRounds: GameRound[] = (rawRounds || []).map(normalizeGameRound);
-      setRounds(prev => {
-        const fetchedMap = new Map<string, GameRound>(fetchedRounds.map((r) => [r.id, r]));
-        const updated = prev.map(r => {
+      if (!supabase) return;
+      const limit = options?.limit || 10;
+      const { data: rawRounds, error } = await supabase
+        .from('rounds')
+        .select('*')
+        .in('status', ['open', 'scheduled', 'active', 'activo', 'OPEN', 'SCHEDULED', 'ACTIVO'])
+        .neq('status', 'finished')
+        .neq('status', 'FINISHED')
+        .neq('status', 'finalizado')
+        .neq('status', 'FINALIZADO')
+        .order('starts_at', { ascending: true })
+        .limit(limit);
+
+      if (error) {
+        console.warn('[GameContext] Supabase fetchActiveRounds error:', error);
+      }
+
+      const activeOnly: GameRound[] = (rawRounds || [])
+        .map(normalizeGameRound)
+        .filter((r) => {
+          const st = String(r.status || '').toLowerCase().trim();
+          return st === 'open' || st === 'scheduled' || st === 'active' || st === 'activo';
+        });
+
+      setRounds((prev) => {
+        // Filtrar y purgar sorteos finalizados o antiguos de la memoria local
+        const cleanPrev = prev.filter((r) => {
+          const st = String(r.status || '').toLowerCase().trim();
+          return st !== 'finished' && st !== 'finalizado';
+        });
+
+        if (activeOnly.length === 0) {
+          try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(cleanPrev)); } catch {}
+          return cleanPrev;
+        }
+
+        const fetchedMap = new Map<string, GameRound>(activeOnly.map((r) => [r.id, r]));
+        const updated = cleanPrev.map((r) => {
           const serverR = fetchedMap.get(r.id);
-          if (serverR) return {...r, ...serverR, drawnFichas: r.drawnFichas && r.drawnFichas.length > 0 ? r.drawnFichas : serverR.drawnFichas || [] };
+          if (serverR) return { ...r, ...serverR, drawnFichas: r.drawnFichas && r.drawnFichas.length > 0 ? r.drawnFichas : serverR.drawnFichas || [] };
           return r;
         });
-        const existingIds = new Set(prev.map(r => r.id));
-        const newServerRounds = fetchedRounds.filter(r =>!existingIds.has(r.id));
-        const combined = [...newServerRounds,...updated];
-        const deduped = Array.from(new Map(combined.map(r => [r.id, r])).values());
-        try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(deduped)); } catch {}
-        return deduped;
+
+        const existingIds = new Set(cleanPrev.map((r) => r.id));
+        const newServerRounds = activeOnly.filter((r) => !existingIds.has(r.id));
+        const combined = [...newServerRounds, ...updated];
+
+        // Deduplicar y ordenar ascendentemente por fecha de inicio
+        const finalClean = Array.from(new Map(combined.map((r) => [r.id, r])).values())
+          .filter((r) => {
+            const st = String(r.status || '').toLowerCase().trim();
+            return st !== 'finished' && st !== 'finalizado';
+          })
+          .sort((a, b) => {
+            const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
+            const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
+            if (timeA !== timeB) return timeA - timeB;
+            return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+          });
+
+        try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(finalClean)); } catch {}
+        return finalClean;
       });
-    } catch (err) { console.warn('[GameContext] fetchActiveRounds:', err); }
+    } catch (err) {
+      console.warn('[GameContext] fetchActiveRounds exception:', err);
+    }
   }, []);
 
   const fetchPendingRecharges = useCallback(async () => {
@@ -944,10 +996,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case 'ROUND_CREATED': {
           const { round } = event.payload || {};
           if (round && round.id) {
-            setRounds((prev) => {
-              const exists = prev.some((r) => r.id === round.id);
-              return exists ? prev.map((r) => (r.id === round.id ? { ...r, ...round } : r)) : [round, ...prev];
-            });
+            const st = String(round.status || '').toLowerCase().trim();
+            if (st !== 'finished' && st !== 'finalizado') {
+              setRounds((prev) => {
+                const exists = prev.some((r) => r.id === round.id);
+                const updated = exists ? prev.map((r) => (r.id === round.id ? { ...r, ...round } : r)) : [round, ...prev];
+                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(updated)); } catch {}
+                return updated;
+              });
+            }
           }
           break;
         }
@@ -955,7 +1012,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case 'ROUND_STATUS_CHANGED': {
           const { roundId, status } = event.payload || {};
           if (roundId && status) {
-            setRounds((prev) => prev.map((r) => (r.id === roundId ? { ...r, status } : r)));
+            const st = String(status || '').toLowerCase().trim();
+            setRounds((prev) => {
+              if (st === 'finished' || st === 'finalizado') {
+                const filtered = prev.filter((r) => r.id !== roundId);
+                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(filtered)); } catch {}
+                return filtered;
+              }
+              const updated = prev.map((r) => (r.id === roundId ? { ...r, status } : r));
+              try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(updated)); } catch {}
+              return updated;
+            });
           }
           break;
         }
@@ -1048,16 +1115,34 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
           if (payload?.new) {
             const item = normalizeGameRound(payload.new);
-            setRounds((prev) => {
-              const exists = prev.some((r) => r.id === item.id || (r.roundNumber && r.roundNumber === item.roundNumber));
-              return exists
-                ? prev.map((r) =>
-                    r.id === item.id || (r.roundNumber && r.roundNumber === item.roundNumber)
-                      ? { ...r, ...item }
-                      : r
-                  )
-                : [item, ...prev];
-            });
+            const st = String(item.status || '').toLowerCase().trim();
+            if (st === 'finished' || st === 'finalizado') {
+              // Si el sorteo pasa a finalizado, se remueve inmediatamente de la lista y del almacenamiento local
+              setRounds((prev) => {
+                const filtered = prev.filter((r) => r.id !== item.id && r.roundNumber !== item.roundNumber);
+                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(filtered)); } catch {}
+                return filtered;
+              });
+            } else {
+              setRounds((prev) => {
+                const exists = prev.some((r) => r.id === item.id || (r.roundNumber && r.roundNumber === item.roundNumber));
+                const updated = exists
+                  ? prev.map((r) =>
+                      r.id === item.id || (r.roundNumber && r.roundNumber === item.roundNumber)
+                        ? { ...r, ...item }
+                        : r
+                    )
+                  : [item, ...prev];
+                const clean = updated.filter((r) => {
+                  const s = String(r.status || '').toLowerCase().trim();
+                  return s !== 'finished' && s !== 'finalizado';
+                });
+                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(clean)); } catch {}
+                return clean;
+              });
+            }
+          } else {
+            fetchActiveRounds({ bypassCache: true });
           }
         })
         .subscribe();

@@ -519,6 +519,41 @@ app.post(['/api/config/comercial', '/config/comercial'], async (req, res) => {
   }
 });
 
+// Endpoint GET /api/rounds - Recupera únicamente sorteos activos o programados (excluye FINISHED) y previene caché
+app.get(['/api/rounds', '/rounds'], async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  try {
+    const limit = Number(req.query.limit) || 10;
+    if (supabaseServerClient) {
+      const { data, error } = await supabaseServerClient
+        .from('rounds')
+        .select('*')
+        .in('status', ['open', 'scheduled', 'active', 'activo', 'OPEN', 'SCHEDULED', 'ACTIVO'])
+        .neq('status', 'finished')
+        .neq('status', 'FINISHED')
+        .neq('status', 'finalizado')
+        .neq('status', 'FINALIZADO')
+        .order('starts_at', { ascending: true })
+        .limit(limit);
+
+      if (!error && data) {
+        const activeOnly = data.filter((r: any) => {
+          const st = String(r.status || '').toLowerCase().trim();
+          return st !== 'finished' && st !== 'finalizado';
+        });
+        return res.status(200).json({ success: true, data: activeOnly });
+      }
+    }
+  } catch (err) {
+    console.warn('[server.ts] Error reading active rounds from DB:', err);
+  }
+
+  return res.status(200).json({ success: true, data: [] });
+});
+
 // Endpoint GET /api/players
 app.get(['/api/players', '/players'], async (req, res) => {
   try {
