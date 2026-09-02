@@ -6,11 +6,13 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 1. TABLA: rounds (crear si no existe y agregar columnas sin alterar datos existentes)
 CREATE TABLE IF NOT EXISTS public.rounds (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     title TEXT,
     status TEXT DEFAULT 'scheduled',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.rounds ALTER COLUMN id TYPE TEXT;
 
 ALTER TABLE public.rounds ADD COLUMN IF NOT EXISTS "order" INTEGER DEFAULT 1;
 ALTER TABLE public.rounds ADD COLUMN IF NOT EXISTS "roundNumber" INTEGER DEFAULT 1;
