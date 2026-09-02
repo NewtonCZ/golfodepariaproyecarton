@@ -15,11 +15,17 @@ import { saveJugador, getJugadores, JugadorBingo } from '../services/playerStora
 import { supabase } from '../services/supabaseClient';
 import { API_ENDPOINTS, getApiBaseUrl } from '../services/apiConfig';
 import { hashPassword, normalizeAdminRole, toDbRole } from '../utils/crypto';
+import { v4 as uuidv4 } from 'uuid';
 
 export { getJugadores, saveJugador };
 export type { JugadorBingo };
 export type AdminRole = 'Super Admin' | 'Operador Financiero' | 'Auditor';
 export type UserRole = AdminRole | 'Player';
+
+export const isValidUuid = (str: string | undefined | null): boolean => {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
+};
 
 export interface SystemCredential {
   id: string; username: string; password?: string; role: AdminRole;
@@ -101,10 +107,10 @@ const INITIAL_USERS: AppUser[] = [
 ];
 
 const INITIAL_ROUNDS: GameRound[] = [
-  { id: 'round-101', roundNumber: 101, order: 1, title: 'Sorteo Mediodía #101', openBetAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), status: 'finished', drawnFichas: [1,5,12,19,23,26,28,30,31,35,40,44,49,51,52,55,59,60,62,65,66,67,70,2,8,14,27,33,42,53,58,69], totalCardsSold: 48, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 12500, winningCardsCount: 6, totalPrizesPaidVes: 2150, resultLocked: true, resultSubmittedBy: 'Carlos Admin', resultSubmittedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-  { id: 'round-102', roundNumber: 102, order: 2, title: 'Sorteo Estelar Tarde #102', openBetAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 45 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 48 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 45 * 60 * 1000).toISOString(), status: 'open', drawnFichas: [], totalCardsSold: 36, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 15000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
-  { id: 'round-103', roundNumber: 103, order: 3, title: 'Gran Sorteo Nocturno #103', openBetAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 3.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 30, card_price: 30, prize_percentage: 75, jackpotVes: 25000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
-  { id: 'round-104', roundNumber: 104, order: 4, title: 'Sorteo Madrugada Millonario #104', openBetAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 6.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 20, card_price: 20, prize_percentage: 80, jackpotVes: 20000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
+  { id: '10100000-0000-4000-8000-000000000101', roundNumber: 101, order: 1, title: 'Sorteo Mediodía #101', openBetAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), status: 'finished', drawnFichas: [1,5,12,19,23,26,28,30,31,35,40,44,49,51,52,55,59,60,62,65,66,67,70,2,8,14,27,33,42,53,58,69], totalCardsSold: 48, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 12500, winningCardsCount: 6, totalPrizesPaidVes: 2150, resultLocked: true, resultSubmittedBy: 'Carlos Admin', resultSubmittedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
+  { id: '10200000-0000-4000-8000-000000000102', roundNumber: 102, order: 2, title: 'Sorteo Estelar Tarde #102', openBetAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 45 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 48 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 45 * 60 * 1000).toISOString(), status: 'open', drawnFichas: [], totalCardsSold: 36, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 15000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
+  { id: '10300000-0000-4000-8000-000000000103', roundNumber: 103, order: 3, title: 'Gran Sorteo Nocturno #103', openBetAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 3.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 30, card_price: 30, prize_percentage: 75, jackpotVes: 25000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
+  { id: '10400000-0000-4000-8000-000000000104', roundNumber: 104, order: 4, title: 'Sorteo Madrugada Millonario #104', openBetAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 6.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 20, card_price: 20, prize_percentage: 80, jackpotVes: 20000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
 ];
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -113,7 +119,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // --- STATES (tu código original preservado) ---
   const [users, setUsers] = useState<AppUser[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_users`); return s? JSON.parse(s) : INITIAL_USERS; } catch { return INITIAL_USERS; } });
   const [systemCredentials, setSystemCredentials] = useState<SystemCredential[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_system_credentials`); return s? JSON.parse(s) : []; } catch { return []; } });
-  const [rounds, setRounds] = useState<GameRound[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_rounds`); const p: GameRound[] = s? JSON.parse(s) : INITIAL_ROUNDS; const seen = new Set<string>(); return p.filter(r => { if (!r.id || seen.has(r.id)) return false; seen.add(r.id); return true; }); } catch { return INITIAL_ROUNDS; } });
+  const [rounds, setRounds] = useState<GameRound[]>(() => {
+    try {
+      const s = localStorage.getItem(`${STORAGE_KEY}_rounds`);
+      const p: GameRound[] = s ? JSON.parse(s) : INITIAL_ROUNDS;
+      const seen = new Set<string>();
+      return p
+        .map((r) => {
+          let safeId = r.id;
+          if (!safeId || !isValidUuid(safeId)) {
+            const num = r.roundNumber || r.round_number || 101;
+            safeId = `00000000-0000-4000-8000-${String(num).padStart(12, '0')}`;
+          }
+          return { ...r, id: safeId };
+        })
+        .filter((r) => {
+          if (!r.id || seen.has(r.id)) return false;
+          seen.add(r.id);
+          return true;
+        });
+    } catch {
+      return INITIAL_ROUNDS;
+    }
+  });
   const [cards, setCards] = useState<MatrixCard[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_cards`); return s? JSON.parse(s) : []; } catch { return []; } });
   const [recharges, setRecharges] = useState<RechargeTransaction[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_recharges`); return s? JSON.parse(s) : []; } catch { return []; } });
   const [withdrawals, setWithdrawals] = useState<WithdrawalTransaction[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_withdrawals`); return s? JSON.parse(s) : []; } catch { return []; } });
@@ -304,8 +332,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const prizesPaid = raw.totalPrizesPaidVes ?? raw.total_prizes_paid_ves ?? 0;
     const locked = raw.resultLocked ?? raw.result_locked ?? false;
 
+    let finalId = raw.id ? String(raw.id) : '';
+    if (!isValidUuid(finalId)) {
+      finalId = `00000000-0000-4000-8000-${String(roundNum).padStart(12, '0')}`;
+    }
+
     return {
-      id: String(raw.id || `round-${roundNum}`),
+      id: finalId,
       roundNumber: Number(roundNum),
       round_number: Number(roundNum),
       order: Number(raw.order ?? 1),
@@ -392,11 +425,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const subAt = round.result_submitted_at ?? round.resultSubmittedAt;
     if (subAt !== undefined) payload.result_submitted_at = subAt;
 
-    if (round.id) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(round.id));
-      if (isUuid) {
-        payload.id = round.id;
-      }
+    if (round.id && isValidUuid(round.id)) {
+      payload.id = round.id;
     }
 
     return payload;
@@ -405,6 +435,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const safeInsertRoundToSupabase = async (roundData: GameRound): Promise<any> => {
     if (!supabase) return null;
     const payload = formatRoundForSupabase(roundData);
+    if (!payload.id || !isValidUuid(payload.id)) {
+      delete payload.id;
+    }
     let currentPayload = { ...payload };
 
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -450,15 +483,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     for (let attempt = 0; attempt < 8; attempt++) {
       try {
         let query = supabase.from('rounds').update(currentPayload);
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(roundId);
-        if (isUuid) {
+        if (isValidUuid(roundId)) {
           query = query.eq('id', roundId);
         } else {
           const roundNumMatch = roundId.match(/\d+/);
-          if (roundNumMatch) {
-            query = query.or(`id.eq.${roundId},round_number.eq.${Number(roundNumMatch[0])}`);
+          const roundNum = roundData.round_number ?? roundData.roundNumber ?? (roundNumMatch ? Number(roundNumMatch[0]) : null);
+          if (roundNum) {
+            query = query.eq('round_number', Number(roundNum));
+          } else if (roundData.title) {
+            query = query.eq('title', roundData.title);
           } else {
-            query = query.eq('id', roundId);
+            query = query.eq('round_number', 1);
           }
         }
 
@@ -1643,9 +1678,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const price = cardPriceVes || commercialConfig.singleCardPriceVes || 25;
       const prizePct = prizePercentage || 70;
+      const newRoundId = uuidv4();
 
       const newRound: GameRound = {
-        id: `round-${newRoundNumber}`,
+        id: newRoundId,
         roundNumber: newRoundNumber,
         order: order || rounds.length + 1,
         title: title || `Sorteo #${newRoundNumber}`,

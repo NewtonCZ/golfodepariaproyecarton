@@ -26,6 +26,7 @@
     "nodemailer": "^9.0.6",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "uuid": "^14.0.2",
     "vite": "^6.2.3",
     "ws": "^8.21.3"
   },
@@ -36,6 +37,7 @@
     "@types/nodemailer": "^8.0.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@types/uuid": "^11.0.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
