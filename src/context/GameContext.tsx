@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   AppUser, GameRound, RoundStatus, MatrixCard, RechargeTransaction,
-  WithdrawalTransaction, WalletLedgerEntry, AuditLogEntry, CommercialConfig, Ficha,
+  WithdrawalTransaction, WalletLedgerEntry, LedgerEntryType, AuditLogEntry, CommercialConfig, Ficha,
 } from '../types';
 import { FICHAS_POOL, getFichaById } from '../data/fichasPool';
 import { generateRandomMatrix, generateCardCode, evaluateCardMatrix } from '../services/cardEngine';
@@ -514,6 +514,44 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     total_prize_ves: card.totalPrizeVes || 0,
   });
 
+  const normalizeWithdrawal = (raw: any): WithdrawalTransaction => {
+    return {
+      id: String(raw.id || `wth-${Date.now()}`),
+      userId: String(raw.userId || raw.user_id || raw.usuario_id || ''),
+      userName: String(raw.userName || raw.user_name || raw.nombre_usuario || 'Jugador'),
+      userPhone: raw.userPhone || raw.user_phone || raw.telefono || '',
+      amountVes: Number(raw.amountVes ?? raw.amount_ves ?? raw.monto_ves ?? raw.monto ?? 0),
+      channel: raw.channel || raw.canal || 'pago_movil',
+      bankDest: raw.bankDest || raw.bank_dest || raw.banco_destino || 'Banco de Venezuela',
+      phoneOrAccount: raw.phoneOrAccount || raw.phone_or_account || raw.telefono_o_cuenta || '',
+      documentId: raw.documentId || raw.document_id || raw.cedula || '',
+      titularName: raw.titularName || raw.titular_name || raw.nombre_titular || raw.userName || raw.user_name || 'Titular',
+      accountType: raw.accountType || raw.account_type || raw.tipo_cuenta || 'corriente',
+      status: (raw.status || raw.estatus || 'pending').toLowerCase() as any,
+      rejectionReason: raw.rejectionReason || raw.rejection_reason || raw.motivo_rechazo || '',
+      processedAt: raw.processedAt || raw.processed_at || raw.fecha_procesado || '',
+      processedBy: raw.processedBy || raw.processed_by || raw.procesado_por || '',
+      createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
+    };
+  };
+
+  const normalizeLedgerEntry = (raw: any): WalletLedgerEntry => {
+    return {
+      id: String(raw.id || `led-${Date.now()}`),
+      userId: String(raw.userId || raw.user_id || ''),
+      userName: String(raw.userName || raw.user_name || 'Jugador'),
+      type: (raw.type || raw.tipo || 'recharge') as LedgerEntryType,
+      amountVes: Number(raw.amountVes ?? raw.amount_ves ?? raw.monto_ves ?? 0),
+      balanceBefore: Number(raw.balanceBefore ?? raw.balance_before ?? 0),
+      balanceAfter: Number(raw.balanceAfter ?? raw.balance_after ?? 0),
+      balanceAfterVes: Number(raw.balanceAfterVes ?? raw.balance_after_ves ?? raw.balanceAfter ?? raw.balance_after ?? 0),
+      description: raw.description || raw.descripcion || '',
+      referenceId: raw.referenceId || raw.reference_id || '',
+      status: raw.status || raw.estatus || 'COMPLETED',
+      createdAt: raw.createdAt || raw.created_at || new Date().toISOString(),
+    };
+  };
+
   const formatLedgerForSupabase = (entry: WalletLedgerEntry): Record<string, any> => ({
     id: entry.id,
     user_id: entry.userId,
@@ -638,12 +676,39 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('[GameContext] fetchPendingRecharges:', err);
     }
   }, []);
+
   const fetchWithdrawals = useCallback(async () => {
     try {
+      if (!supabase) return;
       const { data, error } = await supabase.from('withdrawals').select('*').order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) { setWithdrawals(data as any); try { localStorage.setItem(`${STORAGE_KEY}_withdrawals`, JSON.stringify(data)); } catch {} }
-    } catch (err) { console.warn('[GameContext] fetchWithdrawals:', err); }
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const mapped = data.map(normalizeWithdrawal);
+        setWithdrawals(mapped);
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_withdrawals`, JSON.stringify(mapped));
+        } catch {}
+      }
+    } catch (err) {
+      console.warn('[GameContext] fetchWithdrawals:', err);
+    }
   }, []);
+
+  const fetchLedger = useCallback(async () => {
+    try {
+      if (!supabase) return;
+      const { data, error } = await supabase.from('ledger').select('*').order('created_at', { ascending: false }).limit(200);
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const mapped = data.map(normalizeLedgerEntry);
+        setLedger(mapped);
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_ledger`, JSON.stringify(mapped));
+        } catch {}
+      }
+    } catch (err) {
+      console.warn('[GameContext] fetchLedger:', err);
+    }
+  }, []);
+
   const fetchJugadores = useCallback(async () => {
     try {
       if (supabase) {
@@ -917,8 +982,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Supabase Realtime channel subscription for postgres changes
     let sbChannel: any = null;
     try {
+      fetchPendingRecharges();
+      fetchWithdrawals();
+      fetchLedger();
+      fetchJugadores();
+      fetchActiveRounds();
+
       sbChannel = supabase.channel('supercarton_realtime_db')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => {
+          fetchPendingRecharges();
+          fetchJugadores();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'recharges' }, () => {
           fetchPendingRecharges();
           fetchJugadores();
         })
@@ -948,10 +1023,26 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCards((prev) => (prev.some((c) => c.id === item.id) ? prev : [item, ...prev]));
           }
         })
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'withdrawals' }, (payload: any) => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawals' }, (payload: any) => {
           if (payload?.new) {
-            const item = payload.new as WithdrawalTransaction;
-            setWithdrawals((prev) => (prev.some((w) => w.id === item.id) ? prev : [item, ...prev]));
+            const item = normalizeWithdrawal(payload.new);
+            setWithdrawals((prev) => {
+              const exists = prev.some((w) => w.id === item.id);
+              return exists ? prev.map((w) => (w.id === item.id ? { ...w, ...item } : w)) : [item, ...prev];
+            });
+          } else {
+            fetchWithdrawals();
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ledger' }, (payload: any) => {
+          if (payload?.new) {
+            const item = normalizeLedgerEntry(payload.new);
+            setLedger((prev) => {
+              const exists = prev.some((l) => l.id === item.id);
+              return exists ? prev.map((l) => (l.id === item.id ? { ...l, ...item } : l)) : [item, ...prev];
+            });
+          } else {
+            fetchLedger();
           }
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
@@ -1545,9 +1636,34 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const processedAt = new Date().toISOString();
       const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
 
+      const updatedWithdrawal: WithdrawalTransaction = {
+        ...target,
+        status: 'completed',
+        processedAt,
+        processedBy,
+      };
+
       setWithdrawals((prev) =>
-        prev.map((w) => (w.id === transactionId ? { ...w, status: 'completed', processedAt, processedBy } : w))
+        prev.map((w) => (w.id === transactionId ? updatedWithdrawal : w))
       );
+
+      const targetUser = users.find((u) => u.id === target.userId);
+      const userBal = targetUser?.availableBalance ?? 0;
+
+      const ledgerCompletedEntry: WalletLedgerEntry = {
+        id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        userId: target.userId,
+        userName: target.userName,
+        type: 'withdrawal_completed',
+        amountVes: -target.amountVes,
+        balanceBefore: userBal,
+        balanceAfter: userBal,
+        description: `Retiro liquidado y transferido (${target.channel === 'pago_movil' ? 'Pago Móvil' : 'Transferencia'})`,
+        referenceId: target.id,
+        createdAt: processedAt,
+      };
+
+      setLedger((l) => [ledgerCompletedEntry, ...l]);
 
       setUsers((prev) =>
         prev.map((u) =>
@@ -1565,12 +1681,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .then(({ error }) => {
             if (error) console.warn('[GameContext] Supabase update withdrawal error:', error);
           });
+
+        supabase.from('ledger').insert([formatLedgerForSupabase(ledgerCompletedEntry)]).then();
+      } catch {}
+
+      try {
+        syncEngine.broadcastWithdrawalStatus({
+          transactionId,
+          status: 'completed',
+          userId: target.userId,
+          withdrawal: updatedWithdrawal,
+        });
       } catch {}
 
       addAuditLog('COMPLETAR_RETIRO', `Retiro ${transactionId} de ${formatMoney(target.amountVes)} completado para ${target.userName}`);
-      return { success: true, message: 'Retiro marcado como completado y transferido.' };
+      return { success: true, message: 'Retiro marcado como completado y transferido exitosamente.' };
     },
-    [withdrawals, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
+    [withdrawals, users, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
   );
 
   const rejectWithdrawal = useCallback(
@@ -1581,9 +1708,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const processedAt = new Date().toISOString();
       const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
 
+      const updatedWithdrawal: WithdrawalTransaction = {
+        ...target,
+        status: 'rejected',
+        rejectionReason: reason,
+        processedAt,
+        processedBy,
+      };
+
       setWithdrawals((prev) =>
-        prev.map((w) => (w.id === transactionId ? { ...w, status: 'rejected', rejectionReason: reason, processedAt, processedBy } : w))
+        prev.map((w) => (w.id === transactionId ? updatedWithdrawal : w))
       );
+
+      let createdRefundLedger: WalletLedgerEntry | null = null;
 
       // Devolver saldo al usuario
       setUsers((prev) =>
@@ -1592,21 +1729,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const balBefore = u.availableBalance;
             const balAfter = balBefore + target.amountVes;
 
-            setLedger((l) => [
-              {
-                id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-                userId: u.id,
-                userName: u.name,
-                type: 'withdrawal_refund',
-                amountVes: target.amountVes,
-                balanceBefore: balBefore,
-                balanceAfter: balAfter,
-                description: `Reembolso por retiro rechazado (${reason})`,
-                referenceId: target.id,
-                createdAt: processedAt,
-              },
-              ...l,
-            ]);
+            createdRefundLedger = {
+              id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+              userId: u.id,
+              userName: u.name,
+              type: 'withdrawal_refund',
+              amountVes: target.amountVes,
+              balanceBefore: balBefore,
+              balanceAfter: balAfter,
+              description: `Reembolso por retiro rechazado (${reason})`,
+              referenceId: target.id,
+              createdAt: processedAt,
+            };
+
+            setLedger((l) => [createdRefundLedger!, ...l]);
 
             return {
               ...u,
@@ -1627,6 +1763,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (error) console.warn('[GameContext] Supabase reject withdrawal error:', error);
           });
 
+        if (createdRefundLedger) {
+          supabase.from('ledger').insert([formatLedgerForSupabase(createdRefundLedger)]).then();
+        }
+
         const userToRefund = users.find((u) => u.id === target.userId);
         if (userToRefund) {
           const balAfterRefund = userToRefund.availableBalance + target.amountVes;
@@ -1640,10 +1780,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch {}
 
+      try {
+        syncEngine.broadcastWithdrawalStatus({
+          transactionId,
+          status: 'rejected',
+          userId: target.userId,
+          withdrawal: updatedWithdrawal,
+        });
+      } catch {}
+
       addAuditLog('RECHAZAR_RETIRO', `Retiro ${transactionId} rechazado. Motivo: ${reason}`);
-      return { success: true, message: 'Retiro rechazado y saldo reintegrado al usuario.' };
+      return { success: true, message: 'Retiro rechazado y saldo reintegrado al usuario inmediatamente.' };
     },
-    [withdrawals, loggedUsername, activeCredential, operatorRole, addAuditLog]
+    [withdrawals, users, loggedUsername, activeCredential, operatorRole, addAuditLog]
   );
 
   const createRound = useCallback(
