@@ -133,33 +133,86 @@ export const AdminPortal: React.FC = () => {
 
   // Result submission
   // =========================================================================
-  // REGLA DE LIMPIEZA AUTOMÁTICA Y OPTIMIZACIÓN DE ESTADO (FRONTEND EXCLUSIVO)
+  // REGLA DE LIMPIEZA AUTOMÁTICA Y ARCHIVADO DE SORTEOS FINALIZADOS
   // Módulo de Gestión de Sorteos - Listado de Rondas y Monitor Financiero en Tiempo Real
   //
-  // Mantiene y renderiza estrictamente un máximo de 6 a 7 sorteos (los más recientes,
-  // activos o programados). Al superar este límite, los registros más antiguos se
-  // descartan automáticamente del estado local y del DOM para optimizar RAM.
+  // Mantiene y renderiza estrictamente un máximo de seis (6) o siete (7) sorteos visibles.
+  // Los sorteos finalizados o antiguos que superen este límite son archivados automáticamente
+  // de la vista activa de la tabla para optimizar el rendimiento y la limpieza del DOM.
   //
   // GARANTÍA ESTRICTA: NO borra ni altera ningún registro histórico en Supabase.
   // =========================================================================
   const [roundsWindowLimit, setRoundsWindowLimit] = useState<6 | 7>(7);
-  const [monitoredRoundsWindow, setMonitoredRoundsWindow] = useState<GameRound[]>([]);
+  const [roundsTableViewMode, setRoundsTableViewMode] = useState<'active_monitor' | 'archived'>('active_monitor');
 
-  useEffect(() => {
-    const activeOrScheduled = rounds.filter((r) => {
+  // Separación inteligente de sorteos para la tabla de monitoreo
+  const { monitoredRounds, archivedRounds } = useMemo(() => {
+    const activeList: GameRound[] = [];
+    const finishedList: GameRound[] = [];
+
+    rounds.forEach((r) => {
       const st = String(r.status || '').toLowerCase();
-      return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay' || st === 'closed';
+      if (st === 'live' || st === 'drawing' || st === 'replay' || st === 'open' || st === 'scheduled') {
+        activeList.push(r);
+      } else {
+        finishedList.push(r);
+      }
     });
 
-    const sorted = [...activeOrScheduled].sort((a, b) => {
+    // Ordenar activos por prioridad operativa:
+    // 1) live / drawing / replay (en curso en este instante)
+    // 2) open (abierto a apuestas)
+    // 3) scheduled (programados ordenados cronológicamente)
+    activeList.sort((a, b) => {
+      const getPriority = (status: string) => {
+        const s = String(status || '').toLowerCase();
+        if (s === 'live' || s === 'drawing' || s === 'replay') return 1;
+        if (s === 'open') return 2;
+        if (s === 'scheduled') return 3;
+        return 4;
+      };
+      const prioA = getPriority(a.status);
+      const prioB = getPriority(b.status);
+      if (prioA !== prioB) return prioA - prioB;
+
       const timeA = new Date(a.starts_at || a.openBetAt || a.drawAt || a.created_at || 0).getTime();
       const timeB = new Date(b.starts_at || b.openBetAt || b.drawAt || b.created_at || 0).getTime();
       if (timeA !== timeB) return timeA - timeB;
       return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
     });
 
-    // Poda automática en memoria local del cliente: máximo 6 a 7 sorteos
-    setMonitoredRoundsWindow(sorted.slice(0, roundsWindowLimit));
+    // Ordenar finalizados por fecha descendente (más recientes primero)
+    finishedList.sort((a, b) => {
+      const timeA = new Date(a.drawAt || a.ends_at || a.starts_at || a.created_at || 0).getTime();
+      const timeB = new Date(b.drawAt || b.ends_at || b.starts_at || b.created_at || 0).getTime();
+      return timeB - timeA;
+    });
+
+    // Construir la ventana visible del monitor:
+    // Máximo 6 o 7 sorteos visibles en el monitor activo.
+    const visible: GameRound[] = [];
+    const archived: GameRound[] = [];
+
+    // Prioridad 1: Sorteos activos/programados hasta el límite
+    for (const r of activeList) {
+      if (visible.length < roundsWindowLimit) {
+        visible.push(r);
+      } else {
+        archived.push(r);
+      }
+    }
+
+    // Prioridad 2: Si quedan cupos dentro de los 6-7, incluir los finalizados más recientes
+    for (const r of finishedList) {
+      if (visible.length < roundsWindowLimit) {
+        visible.push(r);
+      } else {
+        // Los sorteos finalizados que superan el límite son archivados automáticamente de la vista
+        archived.push(r);
+      }
+    }
+
+    return { monitoredRounds: visible, archivedRounds: archived };
   }, [rounds, roundsWindowLimit]);
 
   // Próximo orden calculado globalmente para garantizar que la creación y publicación no se altere
@@ -168,7 +221,8 @@ export const AdminPortal: React.FC = () => {
     return maxOrder + 1;
   }, [rounds]);
 
-  const visibleActiveRounds = monitoredRoundsWindow;
+  const visibleActiveRounds = monitoredRounds;
+  const currentTableRounds = roundsTableViewMode === 'active_monitor' ? monitoredRounds : archivedRounds;
 
   const [selectedRoundForResult, setSelectedRoundForResult] = useState<string>(
     rounds.find((r) => r.status === 'open' || r.status === 'closed')?.id || rounds[0]?.id || ''
@@ -1136,23 +1190,55 @@ export const AdminPortal: React.FC = () => {
               <div>
                 <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
                   <span>Listado de Rondas y Monitor Financiero en Tiempo Real</span>
-                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     RAM Optimizada
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Muestra la recaudación en tiempo real, pozo calculado y ganancia de la casa. Registros históricos resguardados en Supabase.
+                  Muestra la recaudación en vivo, el pozo de premios calculado y la ganancia de la casa. Los sorteos finalizados que superan el límite se archivan automáticamente de esta tabla garantizando la integridad de Supabase.
                 </p>
               </div>
 
-              {/* Controles de ventana de estado local (6 a 7 sorteos) */}
+              {/* Controles de ventana de estado local y pestañas de vista */}
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold px-3 py-1 rounded-xl flex items-center gap-1.5 shadow-xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Límite DOM: Máx. {roundsWindowLimit}</span>
-                </span>
+                {/* Selector de modo de vista: Monitor Activo vs Archivados */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setRoundsTableViewMode('active_monitor')}
+                    className={`px-3 py-1.5 rounded-lg transition-all text-xs font-bold cursor-pointer flex items-center gap-1.5 ${
+                      roundsTableViewMode === 'active_monitor'
+                        ? 'bg-indigo-950 text-amber-300 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>⚡ Monitor Activo</span>
+                    <span className="text-[10px] bg-amber-400/20 text-amber-200 px-1.5 py-0.2 rounded-md">
+                      {monitoredRounds.length}/{roundsWindowLimit}
+                    </span>
+                  </button>
 
-                <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-bold border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setRoundsTableViewMode('archived')}
+                    className={`px-3 py-1.5 rounded-lg transition-all text-xs font-bold cursor-pointer flex items-center gap-1.5 ${
+                      roundsTableViewMode === 'archived'
+                        ? 'bg-indigo-950 text-amber-300 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title="Ver sorteos finalizados archivados automáticamente fuera del monitor"
+                  >
+                    <span>📦 Archivados</span>
+                    <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-md font-mono">
+                      {archivedRounds.length}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Selector de límite (6 o 7 sorteos visibles) */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold border border-slate-200">
+                  <span className="text-[10px] text-slate-400 uppercase font-black px-1.5 hidden sm:inline">Límite:</span>
                   <button
                     type="button"
                     onClick={() => setRoundsWindowLimit(6)}
@@ -1161,9 +1247,9 @@ export const AdminPortal: React.FC = () => {
                         ? 'bg-white text-indigo-950 shadow-xs'
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
-                    title="Renderizar máximo 6 sorteos en el DOM"
+                    title="Mantener exactamente 6 sorteos en la vista activa"
                   >
-                    6 Sorteos
+                    6 Máx
                   </button>
                   <button
                     type="button"
@@ -1173,17 +1259,51 @@ export const AdminPortal: React.FC = () => {
                         ? 'bg-white text-indigo-950 shadow-xs'
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
-                    title="Renderizar máximo 7 sorteos en el DOM"
+                    title="Mantener exactamente 7 sorteos en la vista activa"
                   >
-                    7 Sorteos
+                    7 Máx
                   </button>
                 </div>
-
-                <span className="text-xs bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-xl">
-                  {monitoredRoundsWindow.length} / {roundsWindowLimit} Sorteos Visibles
-                </span>
               </div>
             </div>
+
+            {/* Banner de estado cuando se visualiza el Archivo Histórico */}
+            {roundsTableViewMode === 'archived' && (
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-slate-700 font-medium">
+                  <span className="text-base">📦</span>
+                  <span>
+                    <strong>Archivo Histórico:</strong> Mostrando {archivedRounds.length} sorteos finalizados que excedieron el límite del monitor activo. Todos los datos están 100% resguardados en Supabase.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRoundsTableViewMode('active_monitor')}
+                  className="px-3 py-1 bg-indigo-950 text-amber-300 hover:bg-indigo-900 font-bold rounded-xl text-xs transition-colors cursor-pointer shrink-0 self-start sm:self-auto"
+                >
+                  ← Volver al Monitor Activo ({monitoredRounds.length})
+                </button>
+              </div>
+            )}
+
+            {/* Banner de optimización cuando se visualiza el Monitor Activo */}
+            {roundsTableViewMode === 'active_monitor' && archivedRounds.length > 0 && (
+              <div className="bg-emerald-50/60 border border-emerald-200/80 px-4 py-2 rounded-2xl flex items-center justify-between gap-2 text-xs text-emerald-900 font-medium">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">⚡</span>
+                  <span>
+                    <strong>Limpieza Automática Activa:</strong> La vista se mantiene limpia con los {monitoredRounds.length} sorteos más prioritarios. Hay <strong>{archivedRounds.length}</strong> sorteos finalizados resguardados en el archivo.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRoundsTableViewMode('archived')}
+                  className="text-emerald-800 hover:text-emerald-950 underline font-bold text-[11px] cursor-pointer"
+                >
+                  Ver {archivedRounds.length} archivados →
+                </button>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -1202,14 +1322,16 @@ export const AdminPortal: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {monitoredRoundsWindow.length === 0 && (
+                  {currentTableRounds.length === 0 && (
                     <tr>
                       <td colSpan={10} className="py-8 text-center text-slate-400 font-medium">
-                        No hay sorteos programados o activos en la ventana local de visualización.
+                        {roundsTableViewMode === 'active_monitor'
+                          ? 'No hay sorteos programados o activos en la ventana local de visualización.'
+                          : 'No hay sorteos archivados. Todos los sorteos actuales caben en el Monitor Activo.'}
                       </td>
                     </tr>
                   )}
-                  {monitoredRoundsWindow.map((round) => {
+                  {currentTableRounds.map((round) => {
                     const statusLower = String(round.status || '').toLowerCase();
                     const isStarted = statusLower !== 'scheduled';
                     const effectivePrice =
@@ -1245,20 +1367,27 @@ export const AdminPortal: React.FC = () => {
                         </td>
 
                         <td className="py-3">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase inline-flex items-center gap-1 ${
-                              statusLower === 'open'
-                                ? 'bg-emerald-100 text-emerald-800 animate-pulse'
-                                : statusLower === 'scheduled'
-                                ? 'bg-indigo-100 text-indigo-900'
-                                : statusLower === 'closed'
-                                ? 'bg-amber-100 text-amber-900'
-                                : 'bg-slate-200 text-slate-700'
-                            }`}
-                          >
-                            {statusLower === 'open' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                            {round.status}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase inline-flex items-center gap-1 ${
+                                statusLower === 'open'
+                                  ? 'bg-emerald-100 text-emerald-800 animate-pulse'
+                                  : statusLower === 'scheduled'
+                                  ? 'bg-indigo-100 text-indigo-900'
+                                  : statusLower === 'closed'
+                                  ? 'bg-amber-100 text-amber-900'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {statusLower === 'open' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                              {round.status}
+                            </span>
+                            {roundsTableViewMode === 'archived' && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                📦 Archivado
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td className="py-3 text-slate-500">
