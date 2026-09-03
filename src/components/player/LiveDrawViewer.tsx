@@ -37,7 +37,6 @@ import {
 import { Ficha, GameRound } from '../../types';
 
 interface LiveDrawViewerProps {
-  selectedRoundId?: string;
   onOpenBuyCards?: () => void;
   onOpenLogin?: (tab?: 'login' | 'register') => void;
   onOpenRecharge?: () => void;
@@ -45,7 +44,6 @@ interface LiveDrawViewerProps {
 }
 
 export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
-  selectedRoundId,
   onOpenBuyCards,
   onOpenLogin,
   onOpenRecharge,
@@ -53,7 +51,6 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
 }) => {
   const {
     rounds,
-    finishedRounds,
     activeRound,
     userCards,
     currentUser,
@@ -81,21 +78,12 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   }, []);
 
   // Determine the target round to display:
-  // 0. Specific round if selectedRoundId is provided
-  // 1. If a round is actively drawing or marked live
+  // 1. If a round is actively drawing or marked live:
   // 2. If no drawing round, check if there's a finished round <= 7 minutes ago
   // 3. Else check open round or activeRound
   const targetRound: GameRound | null = useMemo(() => {
-    // 0. Requested specific round (e.g. from Results Replay click)
-    if (selectedRoundId) {
-      const foundInFinished = (finishedRounds || []).find((r) => r.id === selectedRoundId);
-      if (foundInFinished) return foundInFinished;
-      const foundInRounds = (rounds || []).find((r) => r.id === selectedRoundId);
-      if (foundInRounds) return foundInRounds;
-    }
-
     // 1. Live drawing round
-    const liveRound = (rounds || []).find(
+    const liveRound = rounds.find(
       (r) =>
         String(r.status).toLowerCase() === 'drawing' ||
         String(r.status).toLowerCase() === 'en_vivo' ||
@@ -103,31 +91,27 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     );
     if (liveRound) return liveRound;
 
-    // 2. Finished round within 7 minutes (from finishedRounds or rounds)
-    const allFinishedPool = [...(finishedRounds || []), ...(rounds || []).filter((r) => {
-      const st = String(r.status || '').toLowerCase().trim();
-      return st === 'finished' || st === 'finalizado';
-    })];
-
-    const sortedFinished = allFinishedPool
+    // 2. Finished round within 7 minutes
+    const finishedRounds = rounds
       .filter(
         (r) =>
+          (String(r.status).toLowerCase() === 'finished' ||
+            String(r.status).toLowerCase() === 'completado') &&
           Array.isArray(r.drawnFichas) &&
           r.drawnFichas.length > 0
       )
       .sort((a, b) => {
-        const timeA = new Date(a.resultSubmittedAt || a.updatedAt || a.drawAt || a.ends_at || 0).getTime();
-        const timeB = new Date(b.resultSubmittedAt || b.updatedAt || b.drawAt || b.ends_at || 0).getTime();
+        const timeA = new Date(a.resultSubmittedAt || a.updatedAt || a.drawAt || 0).getTime();
+        const timeB = new Date(b.resultSubmittedAt || b.updatedAt || b.drawAt || 0).getTime();
         return timeB - timeA;
       });
 
-    if (sortedFinished.length > 0) {
-      const latestFinished = sortedFinished[0];
+    if (finishedRounds.length > 0) {
+      const latestFinished = finishedRounds[0];
       const finishTimeMs = new Date(
         latestFinished.resultSubmittedAt ||
           latestFinished.updatedAt ||
           latestFinished.drawAt ||
-          latestFinished.ends_at ||
           nowTimestamp
       ).getTime();
       const diffMinutes = (nowTimestamp - finishTimeMs) / (1000 * 60);
@@ -137,12 +121,12 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     }
 
     // 3. Open round
-    const openRound = (rounds || []).find((r) => String(r.status).toLowerCase() === 'open');
+    const openRound = rounds.find((r) => String(r.status).toLowerCase() === 'open');
     if (openRound) return openRound;
 
     // 4. Default to activeRound or first round
-    return activeRound || (rounds && rounds[0]) || null;
-  }, [selectedRoundId, finishedRounds, rounds, activeRound, isLiveDrawing, nowTimestamp]);
+    return activeRound || rounds[0] || null;
+  }, [rounds, activeRound, isLiveDrawing, nowTimestamp]);
 
   // Round status flags & 7-Minute calculation
   const isTargetFinished = Boolean(

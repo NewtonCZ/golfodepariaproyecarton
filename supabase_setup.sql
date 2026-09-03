@@ -6,18 +6,15 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 1. TABLA: rounds (crear si no existe y agregar columnas sin alterar datos existentes)
 CREATE TABLE IF NOT EXISTS public.rounds (
-    id TEXT PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT,
     status TEXT DEFAULT 'scheduled',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.rounds ALTER COLUMN id TYPE TEXT;
-
 ALTER TABLE public.rounds ADD COLUMN IF NOT EXISTS "order" INTEGER DEFAULT 1;
 ALTER TABLE public.rounds ADD COLUMN IF NOT EXISTS "roundNumber" INTEGER DEFAULT 1;
 ALTER TABLE public.rounds ADD COLUMN IF NOT EXISTS "round_number" INTEGER DEFAULT 1;
-ALTER TABLE public.rounds ADD COLUMN IF NOT EXISTS "card_price" NUMERIC DEFAULT 50.00;
 ALTER TABLE public.rounds ADD COLUMN IF NOT EXISTS "cardPriceVes" NUMERIC DEFAULT 50.00;
 ALTER TABLE public.rounds ADD COLUMN IF NOT EXISTS "card_price_ves" NUMERIC DEFAULT 50.00;
 ALTER TABLE public.rounds ADD COLUMN IF NOT EXISTS "cardPriceUsd" NUMERIC DEFAULT 1.00;
@@ -93,7 +90,7 @@ CREATE TABLE IF NOT EXISTS public.cards (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. TABLA: recharges y recargas_pago_movil
+-- 5. TABLA: recharges (user_id como TEXT plano, SIN REFERENCES)
 CREATE TABLE IF NOT EXISTS public.recharges (
     id TEXT PRIMARY KEY,
     user_id TEXT,
@@ -113,25 +110,7 @@ CREATE TABLE IF NOT EXISTS public.recharges (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS public.recargas_pago_movil (
-    id TEXT PRIMARY KEY,
-    usuario_id TEXT,
-    nombre_usuario TEXT,
-    correo TEXT,
-    telefono_pagador TEXT,
-    cedula_pagador TEXT,
-    monto_ves NUMERIC(12, 2) NOT NULL,
-    referencia TEXT,
-    banco_origen TEXT,
-    comprobante_url TEXT,
-    estatus TEXT DEFAULT 'pending',
-    motivo_rechazo TEXT,
-    fecha_procesado TEXT,
-    procesado_por TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 6. TABLA: withdrawals y solicitudes_retiro (Rastreo integral de retiros y balances)
+-- 6. TABLA: withdrawals (user_id como TEXT plano, SIN REFERENCES)
 CREATE TABLE IF NOT EXISTS public.withdrawals (
     id TEXT PRIMARY KEY,
     user_id TEXT,
@@ -151,54 +130,6 @@ CREATE TABLE IF NOT EXISTS public.withdrawals (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.withdrawals ALTER COLUMN id TYPE TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS user_id TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "userId" TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS user_name TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "userName" TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS user_phone TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "userPhone" TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS amount_ves NUMERIC(12, 2) DEFAULT 0.00;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "amountVes" NUMERIC(12, 2) DEFAULT 0.00;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'pago_movil';
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS bank_dest TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "bankDest" TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS phone_or_account TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "phoneOrAccount" TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS document_id TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "documentId" TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS titular_name TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "titularName" TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS account_type TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "accountType" TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "rejectionReason" TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS processed_at TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "processedAt" TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS processed_by TEXT;
-ALTER TABLE public.withdrawals ADD COLUMN IF NOT EXISTS "processedBy" TEXT;
-
-CREATE TABLE IF NOT EXISTS public.solicitudes_retiro (
-    id TEXT PRIMARY KEY,
-    usuario_id TEXT,
-    nombre_usuario TEXT,
-    correo TEXT,
-    telefono TEXT,
-    cedula TEXT,
-    monto_ves NUMERIC(12, 2) NOT NULL,
-    canal TEXT DEFAULT 'pago_movil',
-    banco_destino TEXT,
-    telefono_o_cuenta TEXT,
-    nombre_titular TEXT,
-    tipo_cuenta TEXT,
-    estatus TEXT DEFAULT 'pending',
-    motivo_rechazo TEXT,
-    fecha_procesado TEXT,
-    procesado_por TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- 7. TABLA: comercial
 CREATE TABLE IF NOT EXISTS public.comercial (
     id INTEGER PRIMARY KEY DEFAULT 1,
@@ -213,7 +144,7 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- 8. TABLA: ledger y movimientos de saldo (Historial inmutable de auditoría de balance)
+-- 8. TABLA: ledger (user_id como TEXT plano, SIN REFERENCES)
 CREATE TABLE IF NOT EXISTS public.ledger (
     id TEXT PRIMARY KEY,
     user_id TEXT,
@@ -227,38 +158,7 @@ CREATE TABLE IF NOT EXISTS public.ledger (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.ledger ALTER COLUMN id TYPE TEXT;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS user_id TEXT;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS "userId" TEXT;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS user_name TEXT;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS "userName" TEXT;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS type TEXT;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS amount_ves NUMERIC(12, 2) DEFAULT 0.00;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS "amountVes" NUMERIC(12, 2) DEFAULT 0.00;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS balance_before NUMERIC(14, 2) DEFAULT 0.00;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS "balanceBefore" NUMERIC(14, 2) DEFAULT 0.00;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS balance_after NUMERIC(14, 2) DEFAULT 0.00;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS "balanceAfter" NUMERIC(14, 2) DEFAULT 0.00;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS description TEXT;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS reference_id TEXT;
-ALTER TABLE public.ledger ADD COLUMN IF NOT EXISTS "referenceId" TEXT;
-
--- 9. TABLA: jugadores_bingo
-CREATE TABLE IF NOT EXISTS public.jugadores_bingo (
-    id TEXT PRIMARY KEY,
-    nombre TEXT NOT NULL,
-    correo TEXT UNIQUE,
-    telefono TEXT,
-    cedula TEXT,
-    saldo NUMERIC(14, 2) DEFAULT 0.00,
-    saldo_bloqueado NUMERIC(14, 2) DEFAULT 0.00,
-    rol TEXT DEFAULT 'Player',
-    estatus TEXT DEFAULT 'active',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 10. TABLAS ADICIONALES: audit_logs, support_tickets, reclamos
+-- 9. TABLAS ADICIONALES: audit_logs, support_tickets, reclamos
 CREATE TABLE IF NOT EXISTS public.audit_logs (
     id TEXT PRIMARY KEY,
     timestamp TIMESTAMPTZ DEFAULT NOW(),
@@ -295,32 +195,25 @@ CREATE TABLE IF NOT EXISTS public.reclamos (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 11. HABILITAR REALTIME EN PUBLICACIONES
+-- 10. HABILITAR REALTIME EN PUBLICACIONES
 DO $$
 BEGIN
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.recharges; EXCEPTION WHEN duplicate_object THEN END;
-    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.recargas_pago_movil; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.cards; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.withdrawals; EXCEPTION WHEN duplicate_object THEN END;
-    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.solicitudes_retiro; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.rounds; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.comercial; EXCEPTION WHEN duplicate_object THEN END;
-    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.ledger; EXCEPTION WHEN duplicate_object THEN END;
-    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.jugadores_bingo; EXCEPTION WHEN duplicate_object THEN END;
 END $$;
 
--- 12. HABILITAR RLS Y POLÍTICAS PERMISIVAS
+-- 11. HABILITAR RLS Y POLÍTICAS PERMISIVAS
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rounds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recharges ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.recargas_pago_movil ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.withdrawals ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.solicitudes_retiro ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.comercial ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ledger ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.jugadores_bingo ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reclamos ENABLE ROW LEVEL SECURITY;
@@ -329,7 +222,7 @@ DO $$
 DECLARE
     tbl text;
 BEGIN
-    FOR tbl IN SELECT unnest(ARRAY['users', 'admin_users', 'rounds', 'cards', 'recharges', 'recargas_pago_movil', 'withdrawals', 'solicitudes_retiro', 'comercial', 'ledger', 'jugadores_bingo', 'audit_logs', 'support_tickets', 'reclamos'])
+    FOR tbl IN SELECT unnest(ARRAY['users', 'admin_users', 'rounds', 'cards', 'recharges', 'withdrawals', 'comercial', 'ledger', 'audit_logs', 'support_tickets', 'reclamos'])
     LOOP
         EXECUTE format('DROP POLICY IF EXISTS allow_all_%I ON public.%I', tbl, tbl);
         EXECUTE format('CREATE POLICY allow_all_%I ON public.%I FOR ALL TO public USING (true) WITH CHECK (true)', tbl, tbl);

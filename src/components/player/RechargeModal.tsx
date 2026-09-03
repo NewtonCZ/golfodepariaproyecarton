@@ -113,7 +113,7 @@ export const RechargeModal: React.FC<RechargeModalProps> = ({ isOpen, onClose })
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -129,7 +129,7 @@ export const RechargeModal: React.FC<RechargeModalProps> = ({ isOpen, onClose })
     setIsSubmitting(true);
 
     try {
-      const result = await submitRecharge({
+      const result = submitRecharge({
         amountVes: Number(amountVes),
         payerPhone: payerPhone.trim(),
         payerName: payerName.trim(),

@@ -10,7 +10,6 @@
 import { CommercialConfig } from '../types';
 import { realtimeService, supabase } from './realtimeService';
 import { syncEngine } from './syncService';
-import { API_ENDPOINTS } from './apiConfig';
 
 const STORAGE_KEY = 'millionaire_lottery_v1_config';
 
@@ -40,7 +39,7 @@ export function getLocalCommercialConfig(): CommercialConfig | null {
 }
 
 /**
- * Saves commercial configuration to 'config/comercial' endpoint and Supabase,
+ * Saves commercial configuration to 'config/comercial' endpoint and local DB,
  * immediately broadcasting to all open tabs and active players.
  */
 export async function saveCommercialConfigToDb(config: CommercialConfig): Promise<{ success: boolean; data: CommercialConfig }> {
@@ -58,58 +57,20 @@ export async function saveCommercialConfigToDb(config: CommercialConfig): Promis
   realtimeService.emit('config/comercial', { config });
   realtimeService.emit('commercial_config_updated', { config });
 
-  // 4. Always persist directly to Supabase table config_comercial with FLAT schema
+  // 4. Save to backend database API
   try {
-    if (supabase) {
-      const bank: any = config.adminBank || {};
-      const bancoNombre = bank.bankName || config.bankName || config.banco_nombre || 'BANCO DE VENEZUELA';
-      const telefonoPagoMovil = bank.phone || config.phone || config.telefono_pago_movil || '0424-8653039';
-      const rifTitular = bank.rif || config.rif || config.rif_titular || 'J-50769027-0';
-      const razonSocial = bank.holderName || config.holderName || config.razon_social || 'INVERSIONES GOLFO DE PARIA C.A.';
-      const precioBase = Number(
-        config.precio_carton_base ??
-        config.precio_carton_base_ves ??
-        config.singleCardPriceVes ??
-        (config.cardPrices?.pack2 ? config.cardPrices.pack2 / 2 : 25)
-      ) || 25;
-
-      const { error: sbErr1 } = await supabase.from('config_comercial').upsert(
-        {
-          id: 1,
-          banco_nombre: bancoNombre,
-          telefono_pago_movil: telefonoPagoMovil,
-          rif_titular: rifTitular,
-          razon_social: razonSocial,
-          precio_carton_base: precioBase,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
-
-      if (sbErr1) {
-        console.warn('[configService] Aviso en config_comercial:', sbErr1.message);
-      }
-    }
-  } catch (sbErr) {
-    console.warn('[configService] Supabase config direct save note:', sbErr);
-  }
-
-  // 5. Save to backend API if available (handles 405 / sleeping Render gracefully)
-  try {
-    const endpoint = API_ENDPOINTS.CONFIG_COMERCIAL || 'https://golfodepariaproyecarton.onrender.com/api/config/comercial';
-    const res = await fetch(endpoint, {
+    const res = await fetch('/api/config/comercial', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     });
 
-    const contentType = res.headers.get('content-type');
-    if (res.ok && contentType && contentType.includes('application/json')) {
+    if (res.ok) {
       const json = await res.json();
       return { success: true, data: json.data || config };
     }
   } catch (err) {
-    console.log('[configService] Backend durmiendo o no disponible, persistido en Supabase.');
+    console.warn('[configService] Remote DB save warning (local broadcast active):', err);
   }
 
   return { success: true, data: config };
@@ -150,79 +111,21 @@ export function onSnapshot(
     emitSnapshot(initialLocal);
   }
 
-  // 2. Fetch from backend endpoint with fallback to Supabase
-  const endpoint = API_ENDPOINTS.CONFIG_COMERCIAL || 'https://golfodepariaproyecarton.onrender.com/api/config/comercial';
-  fetch(`${endpoint}?_nocache=${Date.now()}`, {
+  // 2. Immediate async fetch from DB endpoint with no-cache
+  fetch('/api/config/comercial?_nocache=' + Date.now(), {
     headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', Pragma: 'no-cache' },
   })
-    .then(async (res) => {
-      const contentType = res.headers.get('content-type');
-      if (res.ok && contentType && contentType.includes('application/json')) {
-        return res.json();
-      }
-      throw new Error('Fallback to Supabase');
-    })
+    .then((res) => (res.ok ? res.json() : null))
     .then((result) => {
-      if (result && (result.data || result.config)) {
-        const cfg = result.data || result.config;
+      if (result && result.data) {
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(result.data));
         } catch (e) {}
-        emitSnapshot(cfg);
+        emitSnapshot(result.data);
       }
     })
-    .catch(async () => {
-      // Fallback Supabase directo
-      try {
-        if (supabase) {
-          const { data: dbData1 } = await supabase
-            .from('config_comercial')
-            .select('*')
-            .eq('id', 1)
-            .maybeSingle();
-
-          if (dbData1) {
-            const basePrice = Number(dbData1.precio_carton_base) || 25;
-            const mapped: CommercialConfig = {
-              adminBank: {
-                bankName: dbData1.banco_nombre || 'BANCO DE VENEZUELA',
-                phone: dbData1.telefono_pago_movil || '0424-8653039',
-                rif: dbData1.rif_titular || 'J-50769027-0',
-                holderName: dbData1.razon_social || 'INVERSIONES GOLFO DE PARIA C.A.',
-                type: 'Pago Móvil',
-              },
-              bankName: dbData1.banco_nombre,
-              phone: dbData1.telefono_pago_movil,
-              rif: dbData1.rif_titular,
-              holderName: dbData1.razon_social,
-              precio_carton_base_ves: basePrice,
-              singleCardPriceVes: basePrice,
-              exchangeRateVesUsd: 1,
-              cardPrices: {
-                pack2: basePrice * 2,
-                pack4: basePrice * 4,
-                pack6: basePrice * 6,
-              },
-              prizeMultipliers: {
-                fullCard: 50,
-                fourCorners: 10,
-                lineHorizontal: 5,
-                lineVertical: 5,
-                diagonal: 8,
-                lineDiagonal: 8,
-              },
-            };
-
-            try {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
-            } catch (e) {}
-            emitSnapshot(mapped);
-            return;
-          }
-        }
-      } catch (err) {
-        if (onError && !initialLocal) onError(err);
-      }
+    .catch((err) => {
+      if (onError && !initialLocal) onError(err);
     });
 
   // 3. Subscribe to Real-Time WebSocket events

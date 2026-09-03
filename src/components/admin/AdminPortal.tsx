@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext';
 import { supabase } from '../../services/realtimeService';
 import { saveCommercialConfigToDb } from '../../services/configService';
-import { AuditoriaRecargas } from './AuditoriaRecargas';
 import { FICHAS_POOL, getFichaById } from '../../data/fichasPool';
 import { FichaBadge } from '../common/FichaBadge';
 import { OperatorManagementView } from './OperatorManagementView';
@@ -91,7 +90,10 @@ export const AdminPortal: React.FC = () => {
 
     const channel = supabase
       .channel('realtime-finanzas-admin')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharges' }, () => {
+        fetchPendingRecharges();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recharges' }, () => {
         fetchPendingRecharges();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'withdrawals' }, () => {
@@ -118,26 +120,6 @@ export const AdminPortal: React.FC = () => {
   const [rechargeRejectReason, setRechargeRejectReason] = useState('Comprobante no coincide con extracto bancario.');
   const [rejectWithdrawalId, setRejectWithdrawalId] = useState<string | null>(null);
   const [withdrawalRejectReason, setWithdrawalRejectReason] = useState('Datos de cuenta inválidos o no corresponden al titular.');
-
-  // Helper para resolver el usuario real de la plataforma vinculado a la recarga
-  const resolveRechargeUser = useCallback(
-    (rec: RechargeTransaction | null) => {
-      if (!rec) return null;
-      const cleanCedula = (rec.payerDocumentId || '').replace(/\D/g, '');
-      const cleanPhone = (rec.userPhone || rec.payerPhone || '').replace(/\D/g, '');
-      const targetEmail = (rec.correo || rec.email || '').toLowerCase().trim();
-
-      return users.find((u) => {
-        if (rec.userId && u.id === rec.userId) return true;
-        if (targetEmail && u.email?.toLowerCase().trim() === targetEmail) return true;
-        if (cleanCedula && u.documentId && u.documentId.replace(/\D/g, '') === cleanCedula) return true;
-        if (cleanPhone && cleanPhone.length >= 7 && u.phone && u.phone.replace(/\D/g, '').includes(cleanPhone.slice(-7))) return true;
-        if (rec.userName && u.name && u.name.toLowerCase().trim() === rec.userName.toLowerCase().trim()) return true;
-        return false;
-      }) || null;
-    },
-    [users]
-  );
 
   // Create round form
   const [newRoundTitle, setNewRoundTitle] = useState('');
@@ -329,40 +311,27 @@ export const AdminPortal: React.FC = () => {
 
     setIsSigningResult(true);
     try {
-      let isValid = false;
-      let failMessage = 'Código incorrecto o vencido.';
+      let response = await fetch(API_ENDPOINTS.VERIFY_OTP, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code: trimmedOtp, email: 'niutoncaraballo3@gmail.com' }),
+      }).catch(() => null);
 
-      if (trimmedOtp === '123456' || (commercialConfig?.twoFactorOtpDemo && trimmedOtp === commercialConfig.twoFactorOtpDemo)) {
-        isValid = true;
-      } else {
-        let response = await fetch(API_ENDPOINTS.VERIFY_OTP, {
+      if (!response || !response.ok) {
+        response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: getSupabaseFunctionHeaders(),
           body: JSON.stringify({ code: trimmedOtp, email: 'niutoncaraballo3@gmail.com' }),
-        }).catch(() => null);
-
-        if (!response || !response.ok) {
-          response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
-            method: 'POST',
-            headers: getSupabaseFunctionHeaders(),
-            body: JSON.stringify({ code: trimmedOtp, email: 'niutoncaraballo3@gmail.com' }),
-          }).catch((err) => {
-            console.warn('[Supabase Fallback Verify Error]:', err);
-            return null;
-          });
-        }
-
-        const data = await response?.json().catch(() => ({}));
-        if (data && data.valid === true) {
-          isValid = true;
-        } else {
-          failMessage = data?.message || 'Código incorrecto o vencido.';
-        }
+        }).catch((err) => {
+          console.warn('[Supabase Fallback Verify Error]:', err);
+          return null;
+        });
       }
 
-      if (isValid) {
+      const data = await response?.json().catch(() => ({}));
+      if (data && data.valid === true) {
         const result = submitRoundResult(selectedRoundForResult, selectedResultFichas, trimmedOtp);
         if (result.success) {
           setResultSubmitMessage({ success: true, text: result.message });
@@ -376,7 +345,7 @@ export const AdminPortal: React.FC = () => {
       } else {
         setOtpModalFeedback({
           type: 'error',
-          text: failMessage,
+          text: data?.message || 'Código incorrecto o vencido.',
         });
       }
     } catch (err: any) {
@@ -721,7 +690,249 @@ export const AdminPortal: React.FC = () => {
       {/* TAB 2: AUDITORÍA DE PAGO MÓVIL (RECHARGES) */}
       {/* ======================================================== */}
       {activeTab === 'recharges' && (
-        <AuditoriaRecargas />
+        <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-slate-900 text-base">
+                  Cola de Auditoría y Verificación de Recargas Pago Móvil
+                </h3>
+                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+                  Módulo Financiero
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Verifica el registro, revisa los datos del comprobante, confirma el ingreso del dinero en la cuenta bancaria y aprueba la acreditación.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-amber-900 bg-amber-100 border border-amber-300 px-3 py-1 rounded-xl flex items-center gap-1.5 animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                {pendingRechargesCount} pendientes de verificación
+              </span>
+            </div>
+          </div>
+
+          {/* Search and Filters Bar */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                value={rechargeSearchTerm}
+                onChange={(e) => setRechargeSearchTerm(e.target.value)}
+                placeholder="Buscar por referencia, nombre de usuario, pagador, cédula o banco..."
+                className="w-full bg-white border border-slate-200 focus:border-amber-500 pl-10 pr-4 py-2 rounded-xl text-xs font-medium text-slate-900 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+              <button
+                type="button"
+                onClick={() => setRechargeFilterStatus('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                  rechargeFilterStatus === 'all'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                }`}
+              >
+                Todos ({recharges.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setRechargeFilterStatus('pending')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                  rechargeFilterStatus === 'pending'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'bg-white text-amber-700 hover:bg-amber-50 border border-slate-200'
+                }`}
+              >
+                Pendientes ({recharges.filter((r) => r.status === 'pending').length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setRechargeFilterStatus('approved')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                  rechargeFilterStatus === 'approved'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-white text-emerald-700 hover:bg-emerald-50 border border-slate-200'
+                }`}
+              >
+                Aprobados ({recharges.filter((r) => r.status === 'approved').length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setRechargeFilterStatus('rejected')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                  rechargeFilterStatus === 'rejected'
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'bg-white text-rose-700 hover:bg-rose-50 border border-slate-200'
+                }`}
+              >
+                Rechazados ({recharges.filter((r) => r.status === 'rejected').length})
+              </button>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                  <th className="pb-2.5">Comprobante</th>
+                  <th className="pb-2.5">Usuario Registrado</th>
+                  <th className="pb-2.5">Pagador / C.I.</th>
+                  <th className="pb-2.5">Banco y Referencia</th>
+                  <th className="pb-2.5">Monto (VES)</th>
+                  <th className="pb-2.5">Fecha y Auditoría</th>
+                  <th className="pb-2.5">Estatus</th>
+                  <th className="pb-2.5 text-right">Acción Operativa</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(() => {
+                  const filteredList = recharges.filter((rec) => {
+                    const matchesStatus =
+                      rechargeFilterStatus === 'all' || rec.status === rechargeFilterStatus;
+                    const searchLower = rechargeSearchTerm.toLowerCase();
+                    const matchesSearch =
+                      !rechargeSearchTerm ||
+                      rec.referenceNumber.toLowerCase().includes(searchLower) ||
+                      rec.userName.toLowerCase().includes(searchLower) ||
+                      (rec.payerName && rec.payerName.toLowerCase().includes(searchLower)) ||
+                      (rec.payerDocumentId && rec.payerDocumentId.toLowerCase().includes(searchLower)) ||
+                      (rec.bankOrigin && rec.bankOrigin.toLowerCase().includes(searchLower)) ||
+                      rec.userPhone.includes(searchLower);
+                    return matchesStatus && matchesSearch;
+                  });
+
+                  if (filteredList.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={8} className="py-10 text-center text-slate-400">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <Clock className="w-8 h-8 text-slate-300" />
+                            <p className="font-bold text-sm text-slate-600">No hay recargas en esta vista</p>
+                            <p className="text-xs text-slate-400">
+                              {rechargeSearchTerm ? 'No se encontraron resultados para la búsqueda actual.' : 'Todas las solicitudes han sido atendidas o no hay registros pendientes.'}
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filteredList.map((rec) => (
+                    <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3">
+                        <div className="relative group">
+                          <img
+                            src={rec.voucherImageUrl}
+                            alt="Comprobante"
+                            onClick={() => setSelectedVoucherForModal(rec.voucherImageUrl)}
+                            className="w-12 h-12 object-cover rounded-xl border border-slate-300 cursor-pointer group-hover:scale-105 transition-transform shadow-xs"
+                            title="Clic para ampliar comprobante"
+                          />
+                          <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center pointer-events-none transition-opacity">
+                            <Eye className="w-4 h-4 text-white" />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 font-semibold text-slate-900">
+                        <div className="font-bold text-slate-900">{rec.userName}</div>
+                        <div className="text-[10px] text-slate-500 font-mono">{rec.userPhone}</div>
+                      </td>
+                      <td className="py-3 text-slate-700">
+                        <div className="font-medium text-slate-900">{rec.payerName || rec.userName}</div>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          {rec.payerDocumentId ? `CI: ${rec.payerDocumentId}` : 'No especificada'}
+                        </div>
+                      </td>
+                      <td className="py-3">
+                        <div className="font-bold text-slate-800">{rec.bankOrigin}</div>
+                        <div className="font-mono text-indigo-900 font-bold bg-indigo-50 px-1.5 py-0.5 rounded inline-block text-[11px]">
+                          Ref: {rec.referenceNumber}
+                        </div>
+                        {rec.updatedAt && (
+                          <div className="text-[9px] text-amber-700 font-semibold mt-0.5">
+                            (Actualizada por usuario)
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 font-mono font-black text-sm text-emerald-600">
+                        {formatMoney(rec.amountVes)}
+                      </td>
+                      <td className="py-3 text-slate-500 text-[11px]">
+                        <div>{rec?.createdAt ? new Date(rec.createdAt).toLocaleDateString('es-VE') : ''}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {rec?.createdAt ? new Date(rec.createdAt).toLocaleTimeString('es-VE') : ''}
+                        </div>
+                      </td>
+                      <td className="py-3">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase inline-flex items-center gap-1 ${
+                            rec.status === 'approved'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : rec.status === 'pending'
+                              ? 'bg-amber-100 text-amber-900 animate-pulse'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {rec.status === 'approved' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                          {rec.status === 'pending' && <Clock className="w-3 h-3 text-amber-600" />}
+                          {rec.status === 'rejected' && <XCircle className="w-3 h-3 text-rose-600" />}
+                          {rec.status === 'approved'
+                            ? 'Aprobado'
+                            : rec.status === 'pending'
+                            ? 'Pendiente'
+                            : 'Rechazado'}
+                        </span>
+                        {rec.confirmedBankArrival && (
+                          <span className="block text-[9px] font-extrabold text-emerald-700 mt-0.5">
+                            ✓ Ingreso Confirmado
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 text-right">
+                        {rec.status === 'pending' ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setSelectedRechargeForReview(rec);
+                                setConfirmBankArrivalChecked(false);
+                              }}
+                              className="bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 font-black text-[11px] px-3 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              <span>Revisar y Confirmar</span>
+                            </button>
+                            <button
+                              onClick={() => setRejectRechargeId(rec.id)}
+                              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] px-2 py-1.5 rounded-lg transition-all"
+                            >
+                              Rechazar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-500 font-medium block">
+                              {rec.processedBy || 'Operador'}
+                            </span>
+                            {rec?.processedAt && (
+                              <span className="text-[9px] text-slate-400 font-mono">
+                                {new Date(rec.processedAt).toLocaleString('es-VE')}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ));
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* ======================================================== */}
@@ -989,14 +1200,14 @@ export const AdminPortal: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
               <div>
                 <h3 className="font-black text-slate-900 text-base">
-                  Listado de Rondas y Monitor Financiero en Tiempo Real (Máx. 6 Activos)
+                  Listado de Rondas y Monitor Financiero en Tiempo Real
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Regla automática activa: Mantiene visibles los últimos 6 sorteos programados o en curso. Al crear o recibir nuevos sorteos, los excedentes antiguos son depurados automáticamente en la base de datos y en la interfaz.
+                  Muestra la recaudación en tiempo real, el pozo de premios calculado y la ganancia de la casa por sorteo.
                 </p>
               </div>
-              <span className="text-xs bg-indigo-50 border border-indigo-200 text-indigo-900 font-bold px-3 py-1 rounded-xl">
-                {rounds.length} / 6 Sorteos Activos
+              <span className="text-xs bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-xl">
+                {rounds.length} Sorteos Registrados
               </span>
             </div>
 
@@ -1768,26 +1979,9 @@ export const AdminPortal: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 block">Usuario en Plataforma:</span>
-                    {(() => {
-                      const regUser = resolveRechargeUser(selectedRechargeForReview);
-                      return (
-                        <div>
-                          <span className="font-bold text-indigo-900 block">
-                            {regUser?.name || selectedRechargeForReview.userName}
-                          </span>
-                          {regUser?.email && (
-                            <span className="text-[10px] text-slate-500 block font-mono">
-                              {regUser.email}
-                            </span>
-                          )}
-                          {regUser && (
-                            <span className="text-[10px] text-emerald-700 font-bold block mt-0.5">
-                              Saldo actual: {formatMoney(regUser.availableBalance)}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
+                    <span className="font-bold text-indigo-900">
+                      {selectedRechargeForReview.userName}
+                    </span>
                   </div>
                 </div>
 
@@ -1866,8 +2060,8 @@ export const AdminPortal: React.FC = () => {
               <button
                 type="button"
                 disabled={!confirmBankArrivalChecked}
-                onClick={async () => {
-                  const res = await approveRecharge(selectedRechargeForReview.id);
+                onClick={() => {
+                  const res = approveRecharge(selectedRechargeForReview.id);
                   if (res.success) {
                     setSelectedRechargeForReview(null);
                   }
@@ -1940,8 +2134,8 @@ export const AdminPortal: React.FC = () => {
                 Cancelar
               </button>
               <button
-                onClick={async () => {
-                  await rejectRecharge(rejectRechargeId, rechargeRejectReason);
+                onClick={() => {
+                  rejectRecharge(rejectRechargeId, rechargeRejectReason);
                   setRejectRechargeId(null);
                 }}
                 className="w-1/2 py-2 bg-rose-600 text-white font-bold rounded-xl text-xs"

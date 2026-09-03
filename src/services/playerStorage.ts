@@ -6,7 +6,6 @@
  */
 
 import { supabase } from './supabaseClient';
-import { mobileCacheManager } from './mobileCacheManager';
 
 export interface JugadorBingo {
   id: string;
@@ -73,9 +72,8 @@ export async function getJugadores(): Promise<JugadorBingo[]> {
 
       if (!error && Array.isArray(data) && data.length > 0) {
         const formatted = data.map(mapToJugadorBingo);
-        const maxUsers = mobileCacheManager.isLowMemoryDevice() ? 50 : 200;
-        cachedJugadores = formatted.slice(0, maxUsers);
-        return cachedJugadores;
+        cachedJugadores = formatted;
+        return formatted;
       }
 
       // 2. Si la tabla alternativa 'jugadores' existe y tiene datos
@@ -86,9 +84,8 @@ export async function getJugadores(): Promise<JugadorBingo[]> {
 
       if (!errorAlt && Array.isArray(dataAlt) && dataAlt.length > 0) {
         const formatted = dataAlt.map(mapToJugadorBingo);
-        const maxUsers = mobileCacheManager.isLowMemoryDevice() ? 50 : 200;
-        cachedJugadores = formatted.slice(0, maxUsers);
-        return cachedJugadores;
+        cachedJugadores = formatted;
+        return formatted;
       }
 
       if (error && error.code !== 'PGRST116') {

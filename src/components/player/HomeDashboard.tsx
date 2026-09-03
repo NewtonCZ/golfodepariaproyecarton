@@ -25,7 +25,7 @@ interface HomeDashboardProps {
   onOpenBuyCards: (roundId?: string) => void;
   onOpenRecharge: () => void;
   onOpenWithdraw: () => void;
-  onOpenLiveDraw: (roundId?: string) => void;
+  onOpenLiveDraw: () => void;
   onOpenMyCards: () => void;
 }
 
@@ -40,48 +40,37 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     activeRound,
     upcomingRounds,
     rounds,
-    finishedRounds,
     currentUser,
     userCards,
     formatMoney,
     commercialConfig,
     fetchActiveRounds,
-    fetchFinishedRounds,
   } = useGame();
 
   const [showFichasPoolModal, setShowFichasPoolModal] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'animal' | 'fruta' | 'objeto'>('all');
   const [selectedRoundTabId, setSelectedRoundTabId] = useState<string | null>(null);
-  const [nowTimestamp, setNowTimestamp] = useState(Date.now());
 
-  // Update now timestamp every 5 seconds for replay countdown accuracy
+  // 15-second Polling interval: fetch('/api/rounds?status=open,scheduled&limit=3') and re-renders dynamically
   React.useEffect(() => {
-    const timer = setInterval(() => setNowTimestamp(Date.now()), 5000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // 15-second Polling interval: fetch('/api/rounds?status=open,scheduled&limit=6') and finished rounds history
-  React.useEffect(() => {
-    fetchActiveRounds({ bypassCache: true, limit: 6 });
-    fetchFinishedRounds({ bypassCache: true, limit: 6 });
+    fetchActiveRounds({ bypassCache: true, limit: 3 });
 
     const pollingInterval = setInterval(() => {
-      fetchActiveRounds({ bypassCache: true, limit: 6 });
-      fetchFinishedRounds({ bypassCache: true, limit: 6 });
+      fetchActiveRounds({ bypassCache: true, limit: 3 });
     }, 15000);
 
     return () => clearInterval(pollingInterval);
-  }, [fetchActiveRounds, fetchFinishedRounds]);
+  }, [fetchActiveRounds]);
 
-  // Compute active & scheduled sequential rounds (up to 6) sorted by starts_at ASC
+  // Compute the 3 sequential rounds ('open' or 'scheduled') sorted by starts_at ASC
   const displayRounds = React.useMemo(() => {
     if (upcomingRounds && upcomingRounds.length > 0) {
-      return upcomingRounds.slice(0, 6);
+      return upcomingRounds.slice(0, 3);
     }
     return rounds
       .filter((r) => {
         const st = String(r.status || '').toLowerCase();
-        return st === 'open' || st === 'scheduled' || st === 'active' || st === 'activo' || st === 'drawing';
+        return st === 'open' || st === 'scheduled';
       })
       .sort((a, b) => {
         const rawDateA = a?.starts_at || a?.openBetAt || a?.drawAt || a?.created_at;
@@ -91,7 +80,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         if (timeA !== timeB) return timeA - timeB;
         return ((a?.order || a?.roundNumber || 0) - (b?.order || b?.roundNumber || 0));
       })
-      .slice(0, 6);
+      .slice(0, 3);
   }, [upcomingRounds, rounds]);
 
   const activeDisplayRound = displayRounds.find((r) => r.id === selectedRoundTabId) || displayRounds[0] || activeRound;
@@ -138,13 +127,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </h2>
             </div>
             <p className="text-xs text-slate-400">
-              Participa en cualquiera de los sorteos programados o en curso (hasta 6 activos). Cada uno posee su propio pozo y cartones independientes.
+              Participa en cualquiera de los próximos 3 sorteos consecutivos. Cada uno posee su propio pozo y cartones independientes.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => onOpenLiveDraw()}
+              onClick={onOpenLiveDraw}
               className="inline-flex items-center gap-2 bg-rose-600/20 text-rose-300 border border-rose-500/40 hover:bg-rose-600/30 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer"
             >
               <Radio className="w-4 h-4 text-rose-400 animate-pulse" />
@@ -469,139 +458,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </div>
         )}
       </section>
-
-      {/* SECTION: Historial de Resultados Oficiales (Últimos 6 Sorteos Finalizados) con Acceso a Repetición de 7 Minutos */}
-      {finishedRounds && finishedRounds.length > 0 && (
-        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-800">
-            <div>
-              <div className="flex items-center gap-2">
-                <Trophy className="w-5 h-5 text-amber-400" />
-                <h2 className="text-lg sm:text-xl font-black text-white">
-                  Historial de Resultados Oficiales
-                </h2>
-                <span className="bg-indigo-950 text-indigo-300 border border-indigo-700/80 font-black text-[10px] px-2.5 py-0.5 rounded-full">
-                  Últimos {Math.min(finishedRounds.length, 6)} Sorteos
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">
-                Resultados certificados y repetición en video-sala disponible durante los primeros 7 minutos post-sorteo.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {finishedRounds.slice(0, 6).map((r) => {
-              const finishTimeMs = new Date(r.resultSubmittedAt || r.updatedAt || r.drawAt || r.ends_at || 0).getTime();
-              const diffSec = finishTimeMs > 0 ? Math.max(0, (nowTimestamp - finishTimeMs) / 1000) : 999999;
-              const isWithin7Min = diffSec <= 420;
-              const remainingSec = isWithin7Min ? Math.max(0, Math.floor(420 - diffSec)) : 0;
-              const remainingMinStr = `${Math.floor(remainingSec / 60)}:${(remainingSec % 60).toString().padStart(2, '0')}`;
-
-              const userHasCardsInRound = userCards.some((c) => c.roundId === r.id);
-              const isKycApproved = currentUser?.kycStatus === 'Aprobado' && currentUser?.status === 'active';
-              const canWatchReplay = isWithin7Min && userHasCardsInRound && isKycApproved;
-
-              return (
-                <div
-                  key={r.id}
-                  className={`rounded-2xl p-4 sm:p-5 border transition-all flex flex-col justify-between ${
-                    isWithin7Min
-                      ? 'bg-gradient-to-b from-indigo-950/90 to-slate-900 border-amber-400/60 shadow-lg shadow-amber-950/20'
-                      : 'bg-slate-950 border-slate-800'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="text-xs font-black text-amber-400">
-                        Sorteo #{r.roundNumber || r.order || 'Oficial'}
-                      </span>
-                      {isWithin7Min ? (
-                        <span className="inline-flex items-center gap-1.5 bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[10px] font-black px-2.5 py-0.5 rounded-full animate-pulse">
-                          <Radio className="w-3 h-3 text-amber-400" />
-                          <span>Repetición ({remainingMinStr})</span>
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold text-slate-500 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-full">
-                          Concluido
-                        </span>
-                      )}
-                    </div>
-
-                    <h3 className="text-sm font-bold text-white line-clamp-1 mb-3">
-                      {r.title || `Sorteo Estelar #${r.roundNumber}`}
-                    </h3>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs mb-4">
-                      <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
-                        <span className="text-[10px] text-slate-400 block font-medium">Premios Repartidos</span>
-                        <span className="text-xs font-black text-emerald-400">
-                          {formatMoney(r.totalPrizesPaidVes || 0)}
-                        </span>
-                      </div>
-                      <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
-                        <span className="text-[10px] text-slate-400 block font-medium">Cartones Ganadores</span>
-                        <span className="text-xs font-black text-amber-400">
-                          {r.winningCardsCount || 0} ganadores
-                        </span>
-                      </div>
-                    </div>
-
-                    {Array.isArray(r.drawnFichas) && r.drawnFichas.length > 0 && (
-                      <div className="mb-4">
-                        <span className="text-[10px] text-slate-400 block mb-1 font-semibold">
-                          Fichas Certificadas ({r.drawnFichas.length}):
-                        </span>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {r.drawnFichas.slice(0, 8).map((fId) => (
-                            <span
-                              key={fId}
-                              className="w-7 h-7 rounded-lg bg-indigo-950 border border-indigo-800 text-white font-black text-xs flex items-center justify-center shadow-xs"
-                            >
-                              {fId}
-                            </span>
-                          ))}
-                          {r.drawnFichas.length > 8 && (
-                            <span className="text-[11px] font-bold text-slate-400">
-                              +{r.drawnFichas.length - 8} más
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-800/60">
-                    {isWithin7Min ? (
-                      <button
-                        type="button"
-                        onClick={() => onOpenLiveDraw(r.id)}
-                        className={`w-full flex items-center justify-center gap-2 font-black text-xs py-2.5 px-4 rounded-xl shadow-md transition-all cursor-pointer ${
-                          canWatchReplay
-                            ? 'bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-indigo-950'
-                            : 'bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 border border-indigo-700'
-                        }`}
-                      >
-                        <Radio className="w-4 h-4 animate-pulse" />
-                        <span>Ver Repetición en Sala ({remainingMinStr})</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onOpenLiveDraw(r.id)}
-                        className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-xs py-2 px-3 rounded-xl border border-slate-800 transition-all cursor-pointer"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Ver Resumen Oficial</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       {/* Compliance & Responsible Gaming Bar */}
       <div className="bg-slate-950/60 rounded-2xl p-4 text-slate-400 text-xs flex flex-col sm:flex-row items-center justify-between gap-3 border border-slate-800">

@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { getJugadores, getJugadoresSync, JugadorBingo, deleteJugador, saveJugador } from '../../services/playerStorage';
 import { realtimeService } from '../../services/realtimeService';
-import { API_ENDPOINTS } from '../../services/apiConfig';
-import { supabase } from '../../services/supabaseClient';
 import {
   Users,
   Search,
@@ -27,68 +25,45 @@ export const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({ onBackToGame
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Recarga blindada: consulta Render con API_ENDPOINTS.PLAYERS_LIST y fallback seguro a Supabase si Render está dormido
+  // Recarga en tiempo real cuando se registra un nuevo jugador
   const refreshList = async () => {
     setIsLoading(true);
     try {
-      const endpoint = API_ENDPOINTS.PLAYERS_LIST || 'https://golfodepariaproyecarton.onrender.com/api/players';
-      const res = await fetch(`${endpoint}?_nocache=${Date.now()}`);
+      const data = await getJugadores();
+      setJugadores(data);
 
-      // Si Render devuelve HTML (<!doctype html>) porque está despertando o la ruta no existe
-      const contentType = res.headers.get('content-type');
-      if (!res.ok || !contentType || !contentType.includes('application/json')) {
-        console.warn('Backend en Render dormido o respuesta no-JSON, usando Supabase directo...');
-        throw new Error('fallback-to-supabase');
-      }
-
-      const result = await res.json();
-      const playersList = Array.isArray(result) ? result : result.data;
-      if (Array.isArray(playersList) && playersList.length > 0) {
-        for (const serverUser of playersList) {
-          const cleanDoc = (serverUser.documentId || serverUser.cedula || '').trim();
-          if (cleanDoc) {
-            await saveJugador({
-              id: serverUser.id,
-              nombre: serverUser.name || `${serverUser.firstName || ''} ${serverUser.lastName || ''}`.trim() || 'Jugador',
-              apellido: serverUser.lastName || '',
-              cedula: cleanDoc,
-              correo: serverUser.email || serverUser.correo || '',
-              telefono: serverUser.phone || serverUser.telefono || '0412-0000000',
-              fechaNacimiento: serverUser.birthDate || serverUser.fechaNacimiento || '',
-              fechaRegistro: serverUser.fechaRegistro || new Date(serverUser.createdAt || Date.now()).toLocaleDateString('es-VE', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-              }),
-            });
+      // También consultar la API en segundo plano para sincronización entre dispositivos
+      const res = await fetch(`/api/players?_nocache=${Date.now()}`);
+      if (res.ok) {
+        const result = await res.json();
+        if (result && result.success && Array.isArray(result.data)) {
+          for (const serverUser of result.data) {
+            const cleanDoc = (serverUser.documentId || serverUser.cedula || '').trim();
+            if (cleanDoc) {
+              await saveJugador({
+                id: serverUser.id,
+                nombre: serverUser.name || `${serverUser.firstName || ''} ${serverUser.lastName || ''}`.trim() || 'Jugador',
+                apellido: serverUser.lastName || '',
+                cedula: cleanDoc,
+                correo: serverUser.email || serverUser.correo || '',
+                telefono: serverUser.phone || serverUser.telefono || '0412-0000000',
+                fechaNacimiento: serverUser.birthDate || serverUser.fechaNacimiento || '',
+                fechaRegistro: serverUser.fechaRegistro || new Date(serverUser.createdAt || Date.now()).toLocaleDateString('es-VE', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+              });
+            }
           }
+          const updated = await getJugadores();
+          setJugadores(updated);
         }
       }
-
-      const updated = await getJugadores();
-      setJugadores(updated);
-    } catch (err) {
-      // Fallback que siempre funciona con Supabase directamente
-      console.log('Usando fallback Supabase para jugadores...');
-      try {
-        const directList = await getJugadores();
-        if (directList && directList.length > 0) {
-          setJugadores(directList);
-        } else {
-          const { data, error } = await supabase
-            .from('jugadores_bingo')
-            .select('*')
-            .order('fecha_registro', { ascending: false });
-
-          if (!error && Array.isArray(data)) {
-            setJugadores(data as any);
-          }
-        }
-      } catch (sbErr) {
-        console.error('[AdminPlayersView] Error en fallback Supabase:', sbErr);
-      }
+    } catch (e) {
+      console.warn('[AdminPlayersView] Error en refreshList:', e);
     } finally {
       setIsLoading(false);
     }
