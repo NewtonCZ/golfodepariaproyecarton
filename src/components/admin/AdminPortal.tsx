@@ -5,6 +5,7 @@ import { saveCommercialConfigToDb } from '../../services/configService';
 import { FICHAS_POOL, getFichaById } from '../../data/fichasPool';
 import { FichaBadge } from '../common/FichaBadge';
 import { OperatorManagementView } from './OperatorManagementView';
+import { SorteoForm } from './SorteoForm';
 import { ROLE_PERMISSIONS, AdminTab } from '../../config/permissions';
 import {
   LayoutDashboard,
@@ -122,15 +123,6 @@ export const AdminPortal: React.FC = () => {
   const [rechargeRejectReason, setRechargeRejectReason] = useState('Comprobante no coincide con extracto bancario.');
   const [rejectWithdrawalId, setRejectWithdrawalId] = useState<string | null>(null);
   const [withdrawalRejectReason, setWithdrawalRejectReason] = useState('Datos de cuenta inválidos o no corresponden al titular.');
-
-  // Create round form
-  const [newRoundTitle, setNewRoundTitle] = useState('');
-  const [newRoundDrawTime, setNewRoundDrawTime] = useState(
-    new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16)
-  );
-  const [newRoundPrizePercentage, setNewRoundPrizePercentage] = useState(70);
-  const [newRoundManualPrize, setNewRoundManualPrize] = useState<number | ''>('');
-  const [newRoundOrder, setNewRoundOrder] = useState<number>(rounds.length + 1);
 
   // Editable round configurations map: { [roundId]: { card_price: number, prize_percentage: number } }
   const [editingRoundConfigs, setEditingRoundConfigs] = useState<{
@@ -1083,117 +1075,8 @@ export const AdminPortal: React.FC = () => {
       {/* ======================================================== */}
       {activeTab === 'rounds' && (
         <div className="space-y-6">
-          {/* Create New Round Form */}
-          <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-lg border border-slate-200">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="font-black text-slate-900 text-base">
-                  Programar Nuevo Sorteo Secuencial 4×4
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Define el orden, fecha/hora, precio por cartón y el % de recaudación destinado a premios.
-                </p>
-              </div>
-              <span className="text-xs bg-indigo-50 text-indigo-900 border border-indigo-200 px-3 py-1 rounded-xl font-bold">
-                Gestión Dinámica de Precios
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
-              <div className="lg:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Título del Sorteo *
-                </label>
-                <input
-                  type="text"
-                  value={newRoundTitle}
-                  onChange={(e) => setNewRoundTitle(e.target.value)}
-                  placeholder="Ej. Sorteo Noche Especial #104"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Fecha y Hora de Inicio *
-                </label>
-                <input
-                  type="datetime-local"
-                  value={newRoundDrawTime}
-                  onChange={(e) => setNewRoundDrawTime(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Monto del Premio (Bs.) *
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  placeholder="Ej. 150000"
-                  value={newRoundManualPrize}
-                  onChange={(e) => setNewRoundManualPrize(e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  % a Premio (Pozo) *
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="10"
-                    max="95"
-                    step="1"
-                    value={newRoundPrizePercentage}
-                    onChange={(e) => setNewRoundPrizePercentage(Math.min(95, Math.max(10, Number(e.target.value))))}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 pr-7 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500"
-                  />
-                  <span className="absolute right-2.5 top-2 text-xs font-bold text-slate-400">%</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              <div className="text-xs text-slate-600 font-medium">
-                {newRoundManualPrize !== '' && Number(newRoundManualPrize) > 0 ? (
-                  <span>
-                    Premio Fijo Manual: <strong className="text-indigo-950 font-mono">{formatMoney(Number(newRoundManualPrize))}</strong> establecido para este sorteo.
-                  </span>
-                ) : (
-                  <span>
-                    Cálculo de Premio Automático: <strong>Cartones Vendidos × Precio × ({newRoundPrizePercentage}%)</strong>. Margen de casa:{' '}
-                    <strong className="text-emerald-700">{100 - newRoundPrizePercentage}%</strong>.
-                  </span>
-                )}
-              </div>
-
-              <button
-                onClick={() => {
-                  createRound(
-                    newRoundTitle,
-                    newRoundDrawTime,
-                    undefined,
-                    newRoundPrizePercentage,
-                    newRoundOrder,
-                    newRoundManualPrize !== '' ? Number(newRoundManualPrize) : undefined
-                  );
-                  setNewRoundTitle('');
-                  setNewRoundManualPrize('');
-                  setNewRoundOrder(rounds.length + 2);
-                }}
-                className="w-full sm:w-auto bg-indigo-950 hover:bg-indigo-900 text-amber-300 font-black text-xs px-5 py-2.5 rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all shrink-0"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Crear y Publicar Ronda</span>
-              </button>
-            </div>
-          </div>
+          {/* Create New Round Form (SorteoForm) */}
+          <SorteoForm nextOrder={rounds.length + 1} />
 
           {/* Feedback Toast */}
           {savedRoundFeedback && (
@@ -1298,6 +1181,7 @@ export const AdminPortal: React.FC = () => {
                             const raw = round?.starts_at || round?.openBetAt || round?.drawAt || round?.created_at;
                             const d = raw ? new Date(raw) : null;
                             return !d || isNaN(d.getTime()) ? 'Próximamente' : d.toLocaleString('es-VE', {
+                              timeZone: 'America/Caracas',
                               month: 'numeric',
                               day: 'numeric',
                               hour: '2-digit',

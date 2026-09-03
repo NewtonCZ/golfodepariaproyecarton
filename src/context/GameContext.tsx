@@ -69,7 +69,7 @@ interface GameContextType {
   submitWithdrawal: (data: any) => { success: boolean; message: string };
   completeWithdrawal: (transactionId: string) => { success: boolean; message: string };
   rejectWithdrawal: (transactionId: string, reason: string) => { success: boolean; message: string };
-  createRound: (title: string, drawAt: string, cardPriceVes?: number, prizePercentage?: number, order?: number, manualJackpotVes?: number) => void;
+  createRound: (title: string, drawAt: string, cardPriceVes?: number, prizePercentage?: number, order?: number, manualJackpotVes?: number, customTimes?: { start_at?: string; close_bet_at?: string }) => void;
   updateRoundConfig: (roundId: string, data: any) => { success: boolean; message: string };
   setRoundStatus: (roundId: string, status: GameRound['status']) => void;
   submitRoundResult: (roundId: string, drawnFichas: number[], otpCode: string) => { success: boolean; message: string; winnersCount?: number; totalPaidVes?: number };
@@ -1375,12 +1375,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const createRound = useCallback(
-    async (title: string, drawAt: string, cardPriceVes?: number, prizePercentage?: number, order?: number, manualJackpotVes?: number) => {
+    async (
+      title: string,
+      drawAt: string,
+      cardPriceVes?: number,
+      prizePercentage?: number,
+      order?: number,
+      manualJackpotVes?: number,
+      customTimes?: { start_at?: string; close_bet_at?: string }
+    ) => {
       const maxNum = rounds.reduce((max, r) => Math.max(max, r.roundNumber || 0), 100);
       const newRoundNumber = maxNum + 1;
-      const drawDate = new Date(drawAt);
-      const openDate = new Date(drawDate.getTime() - 60 * 60 * 1000);
-      const closeDate = new Date(drawDate.getTime() - 3 * 60 * 1000);
+
+      // 2- Interpretar hora Caracas si viene de datetime-local
+      let fechaCaracas: Date;
+      if (
+        typeof drawAt === 'string' &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(drawAt) &&
+        !drawAt.includes('Z') &&
+        !drawAt.includes('+') &&
+        !drawAt.includes('-04:00')
+      ) {
+        fechaCaracas = new Date(drawAt.slice(0, 16) + ':00-04:00');
+      } else {
+        fechaCaracas = new Date(drawAt);
+      }
+
+      const start_at = customTimes?.start_at || fechaCaracas.toISOString();
+      const close_bet_at = customTimes?.close_bet_at || new Date(fechaCaracas.getTime() - 5 * 60000).toISOString();
+      const openDate = new Date(fechaCaracas.getTime() - 60 * 60 * 1000);
 
       const price = cardPriceVes || commercialConfig.singleCardPriceVes || 25;
       const prizePct = prizePercentage || 70;
@@ -1394,10 +1417,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         order: order || rounds.length + 1,
         title: title || `Sorteo #${newRoundNumber}`,
         openBetAt: openDate.toISOString(),
-        closeBetAt: closeDate.toISOString(),
-        drawAt: drawDate.toISOString(),
-        starts_at: openDate.toISOString(),
-        ends_at: closeDate.toISOString(),
+        closeBetAt: close_bet_at,
+        drawAt: start_at,
+        starts_at: start_at,
+        ends_at: close_bet_at,
         status: 'scheduled',
         drawnFichas: [],
         totalCardsSold: 0,
@@ -1431,11 +1454,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         winning_cards_count: 0,
         total_prizes_paid_ves: 0,
         result_locked: false,
-        starts_at: openDate.toISOString(),
-        ends_at: closeDate.toISOString(),
-        draw_at: drawDate.toISOString(),
+        starts_at: start_at,
+        ends_at: close_bet_at,
+        draw_at: start_at,
         open_bet_at: openDate.toISOString(),
-        close_bet_at: closeDate.toISOString(),
+        close_bet_at: close_bet_at,
         created_at: new Date().toISOString(),
       };
 
