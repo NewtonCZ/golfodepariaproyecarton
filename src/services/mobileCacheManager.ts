@@ -348,27 +348,80 @@ class MobileCacheManager {
     priority: 'critical' | 'high' | 'normal' | 'low' = 'normal'
   ): boolean {
     if (!this.isClient) return false;
+    // Always store the full fidelity object in RAM memory cache first
+    this.memoryCache.set(key, { data: value, timestamp: Date.now(), version: this.versionCounter });
+
     try {
-      const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+      const sanitized = this.sanitizeValueForStorage(key, value);
+      const serialized = typeof sanitized === 'string' ? sanitized : JSON.stringify(sanitized);
       localStorage.setItem(key, serialized);
-      // Update memory cache
-      this.memoryCache.set(key, { data: value, timestamp: Date.now(), version: this.versionCounter });
       return true;
     } catch (e: any) {
-      if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.code === 1014) {
-        console.warn('[MobileCacheManager] Storage quota exceeded. Evicting low-priority caches...');
+      if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.code === 1014 || e?.number === -2147024882) {
+        console.warn('[MobileCacheManager] Storage quota exceeded. Evicting low-priority caches to store:', key);
         this.evictLowPriorityStorage();
         try {
-          const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+          const compact = this.sanitizeValueForStorage(key, value, true);
+          const serialized = typeof compact === 'string' ? compact : JSON.stringify(compact);
           localStorage.setItem(key, serialized);
           return true;
         } catch {
-          console.error('[MobileCacheManager] Failed to write critical item even after storage eviction:', key);
-          return false;
+          this.evictAggressiveStorage();
+          try {
+            const minimal = this.sanitizeValueForStorage(key, value, true);
+            const serialized = typeof minimal === 'string' ? minimal : JSON.stringify(minimal);
+            localStorage.setItem(key, serialized);
+            return true;
+          } catch {
+            // Full item is safely preserved in this.memoryCache
+            console.warn('[MobileCacheManager] Storage quota full. Retaining item safely in RAM memory cache:', key);
+            return false;
+          }
         }
       }
       return false;
     }
+  }
+
+  /**
+   * Strips bloated fields (such as base64 images or oversized arrays) before saving to localStorage.
+   * Note: The full uncompressed data is always preserved in memoryCache for active UI display.
+   */
+  private sanitizeValueForStorage(key: string, value: any, isAggressive: boolean = false): any {
+    if (!value) return value;
+
+    if (key.includes('recharges') && Array.isArray(value)) {
+      const maxItems = isAggressive ? 15 : 35;
+      return value.slice(0, maxItems).map((r: any) => {
+        if (!r || typeof r !== 'object') return r;
+        const copy = { ...r };
+        // Strip heavy base64 data URLs from localStorage (memoryCache maintains the full image)
+        if (
+          typeof copy.voucherImageUrl === 'string' &&
+          (copy.voucherImageUrl.startsWith('data:') || copy.voucherImageUrl.length > 256)
+        ) {
+          copy.voucherImageUrl = '';
+        }
+        return copy;
+      });
+    }
+
+    if (key.includes('cards') && Array.isArray(value)) {
+      const maxCards = isAggressive ? 30 : this.isMobile() ? 60 : 100;
+      return value.slice(0, maxCards);
+    }
+
+    if (key.includes('ledger') && Array.isArray(value)) {
+      const maxLedger = isAggressive ? 15 : 30;
+      return value.slice(0, maxLedger);
+    }
+
+    if (key.includes('audit') && Array.isArray(value)) {
+      const maxAudit = isAggressive ? 10 : 20;
+      return value.slice(0, maxAudit);
+    }
+
+    return value;
   }
 
   /**
@@ -402,6 +455,8 @@ class MobileCacheManager {
       'supermillonario_pwd_recovery_tokens_v1',
       'supermillonario_cross_tab_sync_trigger_v2',
       'lucky_fichas_db_v1_ledger',
+      'Millioneire_Destiny_Lottery_v1_ledger',
+      'tusupercarton_support_tickets',
     ];
 
     lowPriorityKeys.forEach((k) => {
@@ -410,6 +465,43 @@ class MobileCacheManager {
         this.memoryCache.delete(k);
       } catch {}
     });
+
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.includes('audit') || k.includes('sync_trigger') || k.includes('attempts') || k.includes('recovery'))) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch {}
+  }
+
+  /**
+   * Aggressive storage eviction when quota is severely constrained
+   */
+  private evictAggressiveStorage(): void {
+    if (!this.isClient) return;
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (
+          k &&
+          (k.includes('ledger') ||
+            k.includes('audit') ||
+            k.includes('tickets') ||
+            k.includes('sync') ||
+            k.includes('_cards'))
+        ) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach((k) => {
+        try {
+          localStorage.removeItem(k);
+        } catch {}
+      });
+    } catch {}
   }
 
   /**

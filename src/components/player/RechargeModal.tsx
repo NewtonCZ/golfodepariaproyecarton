@@ -107,7 +107,41 @@ export const RechargeModal: React.FC<RechargeModalProps> = ({ isOpen, onClose })
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setVoucherUrl(reader.result as string);
+        const rawResult = reader.result as string;
+        try {
+          const img = new Image();
+          img.onload = () => {
+            const maxDim = 800;
+            let width = img.width;
+            let height = img.height;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              const compressed = canvas.toDataURL('image/jpeg', 0.75);
+              setVoucherUrl(compressed);
+              return;
+            }
+            setVoucherUrl(rawResult);
+          };
+          img.onerror = () => {
+            setVoucherUrl(rawResult);
+          };
+          img.src = rawResult;
+        } catch {
+          setVoucherUrl(rawResult);
+        }
       };
       reader.readAsDataURL(file);
     }

@@ -111,15 +111,19 @@ const GameContext = createContext<GameContextType | undefined>(undefined);
 
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // --- STATES (tu código original preservado) ---
-  const [users, setUsers] = useState<AppUser[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_users`); return s? JSON.parse(s) : INITIAL_USERS; } catch { return INITIAL_USERS; } });
-  const [systemCredentials, setSystemCredentials] = useState<SystemCredential[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_system_credentials`); return s? JSON.parse(s) : []; } catch { return []; } });
-  const [rounds, setRounds] = useState<GameRound[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_rounds`); const p: GameRound[] = s? JSON.parse(s) : INITIAL_ROUNDS; const seen = new Set<string>(); return p.filter(r => { if (!r.id || seen.has(r.id)) return false; seen.add(r.id); return true; }); } catch { return INITIAL_ROUNDS; } });
-  const [cards, setCards] = useState<MatrixCard[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_cards`); return s? JSON.parse(s) : []; } catch { return []; } });
-  const [recharges, setRecharges] = useState<RechargeTransaction[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_recharges`); return s? JSON.parse(s) : []; } catch { return []; } });
-  const [withdrawals, setWithdrawals] = useState<WithdrawalTransaction[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_withdrawals`); return s? JSON.parse(s) : []; } catch { return []; } });
-  const [ledger, setLedger] = useState<WalletLedgerEntry[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_ledger`); return s? JSON.parse(s) : []; } catch { return []; } });
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_audit`); return s? JSON.parse(s) : []; } catch { return []; } });
-  const [commercialConfig, setCommercialConfig] = useState<CommercialConfig>(() => { try { const s = localStorage.getItem(`${STORAGE_KEY}_config`); return s? JSON.parse(s) : DEFAULT_CONFIG; } catch { return DEFAULT_CONFIG; } });
+  const [users, setUsers] = useState<AppUser[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_users`, INITIAL_USERS));
+  const [systemCredentials, setSystemCredentials] = useState<SystemCredential[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_system_credentials`, []));
+  const [rounds, setRounds] = useState<GameRound[]>(() => {
+    const p: GameRound[] = mobileCacheManager.safeGetItem(`${STORAGE_KEY}_rounds`, INITIAL_ROUNDS);
+    const seen = new Set<string>();
+    return p.filter(r => { if (!r.id || seen.has(r.id)) return false; seen.add(r.id); return true; });
+  });
+  const [cards, setCards] = useState<MatrixCard[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_cards`, []));
+  const [recharges, setRecharges] = useState<RechargeTransaction[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_recharges`, []));
+  const [withdrawals, setWithdrawals] = useState<WithdrawalTransaction[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_withdrawals`, []));
+  const [ledger, setLedger] = useState<WalletLedgerEntry[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_ledger`, []));
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_audit`, []));
+  const [commercialConfig, setCommercialConfig] = useState<CommercialConfig>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_config`, DEFAULT_CONFIG));
   const [liveDrawingRound, setLiveDrawingRound] = useState<GameRound | null>(null);
   const [isLiveDrawing, setIsLiveDrawing] = useState<boolean>(false);
   const [liveDrawnFichas, setLiveDrawnFichas] = useState<Ficha[]>([]);
@@ -448,7 +452,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
         });
         setRecharges(normalized as any);
-        try { localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(normalized)); } catch {}
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_recharges`, normalized, 'normal');
         return;
       }
 
@@ -474,14 +478,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           processedBy: r.processed_by || r.processedBy || '',
         }));
         setRecharges(normalized as any);
-        try { localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(normalized)); } catch {}
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_recharges`, normalized, 'normal');
       }
     } catch (err) { console.warn('[GameContext] fetchPendingRecharges:', err); }
   }, []);
   const fetchWithdrawals = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('withdrawals').select('*').order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) { setWithdrawals(data as any); try { localStorage.setItem(`${STORAGE_KEY}_withdrawals`, JSON.stringify(data)); } catch {} }
+      if (!error && data && data.length > 0) {
+        setWithdrawals(data as any);
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_withdrawals`, data, 'normal');
+      }
     } catch (err) { console.warn('[GameContext] fetchWithdrawals:', err); }
   }, []);
   const fetchCommercialConfig = useCallback(async () => {
