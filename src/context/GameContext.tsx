@@ -14,6 +14,7 @@ import { realtimeService } from '../services/realtimeService';
 import { saveJugador, getJugadores, JugadorBingo } from '../services/playerStorage';
 import { supabase } from '../services/supabaseClient';
 import { hashPassword, normalizeAdminRole, toDbRole } from '../utils/crypto';
+import { mobileCacheManager } from '../services/mobileCacheManager';
 
 export { getJugadores, saveJugador };
 export type { JugadorBingo };
@@ -270,18 +271,79 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentRoleState(role);
   }, [isAuthenticated, sessionToken, activeCredential, loggedUsername]);
 
-  useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users)); }, [users]);
-  useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(rounds)); }, [rounds]);
-  useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_cards`, JSON.stringify(cards)); }, [cards]);
-  useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(recharges)); }, [recharges]);
-  useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_withdrawals`, JSON.stringify(withdrawals)); }, [withdrawals]);
-  useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_ledger`, JSON.stringify(ledger)); }, [ledger]);
-  useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_audit`, JSON.stringify(auditLogs)); }, [auditLogs]);
-  useEffect(() => { localStorage.setItem(`${STORAGE_KEY}_config`, JSON.stringify(commercialConfig)); }, [commercialConfig]);
+  const activeRoundIds = useMemo(() => {
+    return new Set(
+      rounds
+        .filter((r) => {
+          const st = String(r.status || '').toLowerCase();
+          return st === 'open' || st === 'drawing' || st === 'scheduled';
+        })
+        .map((r) => r.id)
+    );
+  }, [rounds]);
 
-  // FIX CRITICO DE ROUNDS
+  // Mobile RAM Footprint Reducer: Prunes unneeded finished cards and unbounded logs on mobile
+  useEffect(() => {
+    if (!mobileCacheManager.isMobile()) return;
+    const limits = mobileCacheManager.getQuotaLimits();
+    if (cards.length > limits.maxCardsInMemory) {
+      const pruned = mobileCacheManager.pruneCardsForRAM(cards, currentUserId, activeRoundIds);
+      if (pruned.length < cards.length) {
+        setCards(pruned);
+      }
+    }
+  }, [cards.length, currentUserId, activeRoundIds]);
+
+  // Safe and debounced storage persistence specifically optimized for mobile devices
+  useEffect(() => {
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_users`, users, 'normal');
+  }, [users]);
+
+  useEffect(() => {
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, rounds, 'high');
+  }, [rounds]);
+
+  useEffect(() => {
+    const cardsToStore = mobileCacheManager.isMobile()
+      ? mobileCacheManager.pruneCardsForRAM(cards, currentUserId, activeRoundIds)
+      : cards;
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, cardsToStore, 'high');
+  }, [cards, currentUserId, activeRoundIds]);
+
+  useEffect(() => {
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_recharges`, recharges, 'normal');
+  }, [recharges]);
+
+  useEffect(() => {
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_withdrawals`, withdrawals, 'normal');
+  }, [withdrawals]);
+
+  useEffect(() => {
+    const limits = mobileCacheManager.getQuotaLimits();
+    const ledgerToStore = mobileCacheManager.isMobile()
+      ? ledger.slice(0, limits.maxLedgerInMemory)
+      : ledger;
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_ledger`, ledgerToStore, 'normal');
+  }, [ledger]);
+
+  useEffect(() => {
+    const limits = mobileCacheManager.getQuotaLimits();
+    const auditToStore = mobileCacheManager.isMobile()
+      ? auditLogs.slice(0, limits.maxAuditInMemory)
+      : auditLogs;
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_audit`, auditToStore, 'normal');
+  }, [auditLogs]);
+
+  useEffect(() => {
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_config`, commercialConfig, 'high');
+  }, [commercialConfig]);
+
+  // FIX CRITICO DE ROUNDS WITH SURGICAL INVALIDATION
   const fetchActiveRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
     try {
+      if (options?.bypassCache) {
+        mobileCacheManager.invalidateRoundsCache();
+      }
       const limit = options?.limit || 3;
       const { data: rawRounds, error } = await supabase.from('rounds').select('*').in('status', ['open', 'scheduled']).order('starts_at', { ascending: true }).limit(limit);
       if (error) throw error;
@@ -298,7 +360,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const newServerRounds = fetchedRounds.filter(r =>!existingIds.has(r.id));
         const combined = [...newServerRounds,...updated];
         const deduped = Array.from(new Map(combined.map(r => [r.id, r])).values());
-        try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(deduped)); } catch {}
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, deduped, 'high');
         return deduped;
       });
     } catch (err) { console.warn('[GameContext] fetchActiveRounds:', err); }
@@ -392,12 +454,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         case 'CARDS_PURCHASED': {
-          const { cards: newPurchasedCards, roundId, totalCostVes, ledgerEntry } = event.payload || {};
+          const { cards: newPurchasedCards, roundId, totalCostVes, ledgerEntry, userId } = event.payload || {};
+          // Surgical cache invalidation on purchased/updated cards
+          mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId, userId });
           if (newPurchasedCards && Array.isArray(newPurchasedCards)) {
             setCards((prev) => {
               const existingIds = new Set(prev.map((c) => c.id));
               const fresh = newPurchasedCards.filter((c) => !existingIds.has(c.id));
-              return fresh.length > 0 ? [...fresh, ...prev] : prev;
+              const merged = fresh.length > 0 ? [...fresh, ...prev] : prev;
+              return mobileCacheManager.isMobile()
+                ? mobileCacheManager.pruneCardsForRAM(merged, currentUserId, activeRoundIds)
+                : merged;
             });
             setRounds((prev) =>
               prev.map((r) =>
@@ -436,6 +503,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case 'ROUND_CREATED': {
           const { round } = event.payload || {};
           if (round && round.id) {
+            mobileCacheManager.surgicalInvalidate('ROUND_CREATED', { roundId: round.id });
             setRounds((prev) => {
               const exists = prev.some((r) => r.id === round.id);
               return exists ? prev.map((r) => (r.id === round.id ? { ...r, ...round } : r)) : [round, ...prev];
@@ -447,6 +515,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case 'ROUND_STATUS_CHANGED': {
           const { roundId, status } = event.payload || {};
           if (roundId && status) {
+            // Surgical round status cache invalidation
+            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId });
             setRounds((prev) => prev.map((r) => (r.id === roundId ? { ...r, status } : r)));
           }
           break;
@@ -491,6 +561,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cards' }, (payload: any) => {
           if (payload?.new) {
             const item = payload.new as MatrixCard;
+            mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId: item.roundId, userId: item.userId });
             setCards((prev) => (prev.some((c) => c.id === item.id) ? prev : [item, ...prev]));
           }
         })
@@ -503,6 +574,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
           if (payload?.new) {
             const item = payload.new as GameRound;
+            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: item.id });
             setRounds((prev) => {
               const exists = prev.some((r) => r.id === item.id);
               return exists ? prev.map((r) => (r.id === item.id ? { ...r, ...item } : r)) : [item, ...prev];
@@ -520,7 +592,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try { supabase.removeChannel(sbChannel); } catch {}
       }
     };
-  }, [formatMoney, addAuditLog]);
+  }, [formatMoney, addAuditLog, currentUserId, activeRoundIds]);
 
   //... (todo tu syncEngine, realtimeService, lifecycle, etc lo mantengo igual que me enviaste, sin cambios)...
   // Para no hacer el mensaje gigante, te dejo el resto de funciones tal cual las enviaste, pero con los fixes de activeRounds/activeRound:
@@ -534,11 +606,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updated = rounds.map(round => {
         const st = String(round.status || '').toLowerCase(); if (st === 'finished' || st === 'drawing') return round;
         const openMs = timeSync.parseIsoToEpochMs(round.starts_at || round.openBetAt); const closeMs = timeSync.parseIsoToEpochMs(round.ends_at || round.closeBetAt);
-        if (st === 'scheduled' &&!isNaN(openMs) &&!isNaN(closeMs) && now >= openMs && now < closeMs) { hasChanges = true; return {...round, status: 'open' as RoundStatus }; }
-        if ((st === 'open' || st === 'scheduled') &&!isNaN(closeMs) && now >= closeMs) { hasChanges = true; return {...round, status: 'closed' as RoundStatus }; }
+        if (st === 'scheduled' &&!isNaN(openMs) &&!isNaN(closeMs) && now >= openMs && now < closeMs) {
+          hasChanges = true;
+          mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
+          return {...round, status: 'open' as RoundStatus };
+        }
+        if ((st === 'open' || st === 'scheduled') &&!isNaN(closeMs) && now >= closeMs) {
+          hasChanges = true;
+          mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
+          return {...round, status: 'closed' as RoundStatus };
+        }
         return round;
       });
-      if (hasChanges) { setRounds(updated); try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(updated)); } catch {} }
+      if (hasChanges) {
+        setRounds(updated);
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, updated, 'high');
+      }
     }; check(); const i = setInterval(check, 3000); return () => clearInterval(i);
   }, [rounds]);
 
@@ -635,10 +718,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLedger((prev) => [newLedger, ...prev]);
 
       const allUpdatedCards = [...newCards, ...cards];
-      setCards(allUpdatedCards);
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_cards`, JSON.stringify(allUpdatedCards));
-      } catch {}
+      const finalCards = mobileCacheManager.isMobile()
+        ? mobileCacheManager.pruneCardsForRAM(allUpdatedCards, user.id, activeRoundIds)
+        : allUpdatedCards;
+
+      setCards(finalCards);
+      mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId: round.id, userId: user.id });
+      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, finalCards, 'high');
 
       setRounds((prev) =>
         prev.map((r) =>
@@ -1136,9 +1222,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const setRoundStatus = useCallback(
     (roundId: string, status: GameRound['status']) => {
-      setRounds((prev) =>
-        prev.map((r) => (r.id === roundId ? { ...r, status } : r))
-      );
+      // Surgical round status cache invalidation
+      mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId });
+      setRounds((prev) => {
+        const updated = prev.map((r) => (r.id === roundId ? { ...r, status } : r));
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, updated, 'high');
+        return updated;
+      });
       try {
         supabase.from('rounds').update({ status }).eq('id', roundId).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase update status error:', error);
@@ -1160,6 +1250,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       winnersCount?: number;
       totalPaidVes?: number;
     } => {
+      // Surgical invalidation when a round is finished
+      mobileCacheManager.surgicalInvalidate('ROUND_FINISHED', { roundId });
+
       const targetRound = rounds.find((r) => r.id === roundId);
       if (!targetRound) {
         return { success: false, message: 'Sorteo no encontrado.' };
@@ -1205,10 +1298,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       });
 
-      setCards(updatedCards);
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_cards`, JSON.stringify(updatedCards));
-      } catch {}
+      const finalCards = mobileCacheManager.isMobile()
+        ? mobileCacheManager.pruneCardsForRAM(updatedCards, currentUserId, activeRoundIds)
+        : updatedCards;
+
+      setCards(finalCards);
+      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, finalCards, 'high');
 
       // 2. Liquidar premios y generar movimientos en ledger
       const newLedgerEntries: WalletLedgerEntry[] = [];
@@ -1243,10 +1338,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
 
       if (newLedgerEntries.length > 0) {
-        setLedger((prev) => [...newLedgerEntries, ...prev]);
-        try {
-          localStorage.setItem(`${STORAGE_KEY}_ledger`, JSON.stringify([...newLedgerEntries, ...ledger]));
-        } catch {}
+        setLedger((prev) => {
+          const combinedLedger = [...newLedgerEntries, ...prev];
+          const limits = mobileCacheManager.getQuotaLimits();
+          const pruned = mobileCacheManager.isMobile()
+            ? combinedLedger.slice(0, limits.maxLedgerInMemory)
+            : combinedLedger;
+          mobileCacheManager.scheduleSave(`${STORAGE_KEY}_ledger`, pruned, 'normal');
+          return pruned;
+        });
       }
 
       // 3. Marcar la ronda como finalizada con resultados firmados
@@ -1264,9 +1364,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const updatedRounds = rounds.map((r) => (r.id === roundId ? updatedRound : r));
       setRounds(updatedRounds);
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(updatedRounds));
-      } catch {}
+      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, updatedRounds, 'high');
 
       // 4. Actualizar en Supabase si está disponible
       try {

@@ -8,9 +8,17 @@
  * 3. QuotaExceededError protection and prioritized LRU storage eviction.
  * 4. Fast-path in-memory caching to avoid redundant JSON parsing on mobile devices.
  * 5. Device capability detection (memory, viewport, WebKit iOS vs Android).
+ * 6. Debounced/deferred storage writes to eliminate UI thread micro-stutters during card purchases.
  */
 
-import { MatrixCard, GameRound, WalletLedgerEntry, AuditLogEntry, RechargeTransaction, WithdrawalTransaction } from '../types';
+import {
+  MatrixCard,
+  GameRound,
+  WalletLedgerEntry,
+  AuditLogEntry,
+  RechargeTransaction,
+  WithdrawalTransaction,
+} from '../types';
 
 export interface CacheQuotaLimits {
   maxCardsInMemory: number;
@@ -19,14 +27,30 @@ export interface CacheQuotaLimits {
   maxRechargesInMemory: number;
   maxWithdrawalsInMemory: number;
   maxFinishedRoundsHistory: number;
+  maxEvaluatedCacheSize: number;
   enableAggressiveGC: boolean;
 }
+
+export type InvalidationReason =
+  | 'ROUND_STATUS_CHANGED'
+  | 'CARDS_PURCHASED'
+  | 'ROUND_FINISHED'
+  | 'ROUND_CREATED'
+  | 'BALANCE_UPDATED'
+  | 'USER_LOGOUT'
+  | 'MEMORY_PRESSURE';
+
+export type InvalidationListener = (
+  reason: InvalidationReason,
+  payload?: { roundId?: string; userId?: string }
+) => void;
 
 class MobileCacheManager {
   private isClient = typeof window !== 'undefined';
   private memoryCache = new Map<string, { data: any; timestamp: number; version: number }>();
   private evaluatedCardCache = new Map<string, any>();
-  private readonly MAX_EVALUATED_CACHE_SIZE = 250;
+  private writeQueue = new Map<string, { value: any; priority: 'critical' | 'high' | 'normal' | 'low'; timer: any }>();
+  private listeners = new Set<InvalidationListener>();
   private versionCounter = 1;
 
   constructor() {
@@ -65,36 +89,49 @@ class MobileCacheManager {
   public getQuotaLimits(): CacheQuotaLimits {
     if (this.isLowMemoryDevice()) {
       return {
-        maxCardsInMemory: 60,
-        maxLedgerInMemory: 30,
-        maxAuditInMemory: 15,
-        maxRechargesInMemory: 20,
-        maxWithdrawalsInMemory: 20,
+        maxCardsInMemory: 80,
+        maxLedgerInMemory: 35,
+        maxAuditInMemory: 20,
+        maxRechargesInMemory: 25,
+        maxWithdrawalsInMemory: 25,
         maxFinishedRoundsHistory: 6,
+        maxEvaluatedCacheSize: 80,
         enableAggressiveGC: true,
       };
     }
     return {
-      maxCardsInMemory: 250,
-      maxLedgerInMemory: 100,
+      maxCardsInMemory: 300,
+      maxLedgerInMemory: 120,
       maxAuditInMemory: 60,
       maxRechargesInMemory: 60,
       maxWithdrawalsInMemory: 60,
-      maxFinishedRoundsHistory: 12,
+      maxFinishedRoundsHistory: 15,
+      maxEvaluatedCacheSize: 300,
       enableAggressiveGC: false,
     };
   }
 
   /**
-   * Surgical Invalidation: Invalidate specific cached keys when domain events happen
+   * Register a listener for surgical cache invalidations
+   */
+  public onInvalidate(listener: InvalidationListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Surgical Invalidation: Invalidate specific cached keys when domain events happen.
+   * Cleans client-side cache automatically when round changes status or card lists update.
    */
   public surgicalInvalidate(
-    reason: 'ROUND_STATUS_CHANGED' | 'CARDS_PURCHASED' | 'ROUND_FINISHED' | 'ROUND_CREATED' | 'BALANCE_UPDATED' | 'USER_LOGOUT',
+    reason: InvalidationReason,
     payload?: { roundId?: string; userId?: string }
   ): void {
     this.versionCounter++;
 
-    // 1. Clear card evaluation memoization cache on round change or card change
+    // 1. Clear card evaluation memoization cache on round or card change
     this.evaluatedCardCache.clear();
 
     // 2. Specific round invalidation
@@ -109,17 +146,39 @@ class MobileCacheManager {
       this.invalidateRoundsCache(payload?.roundId);
     }
 
-    // 4. Invalidate user cards cache on purchase or balance update
-    if (reason === 'CARDS_PURCHASED' || reason === 'USER_LOGOUT') {
+    // 4. Invalidate user cards cache on purchase, round finish or logout
+    if (reason === 'CARDS_PURCHASED' || reason === 'USER_LOGOUT' || reason === 'ROUND_FINISHED') {
       if (payload?.userId) {
         this.memoryCache.delete(`user_cards_${payload.userId}`);
       }
       this.memoryCache.delete('all_active_cards');
+      this.memoryCache.delete('Millioneire_Destiny_Lottery_v1_cards');
+      this.memoryCache.delete('lucky_fichas_db_v1_cards');
     }
 
-    // 5. On low memory devices, run garbage collection sweep immediately
+    // 5. On mobile/low memory devices, run garbage collection sweep immediately
     if (this.isLowMemoryDevice()) {
       this.runSoftGarbageCollection();
+    }
+
+    // 6. Notify subscribers
+    this.listeners.forEach((listener) => {
+      try {
+        listener(reason, payload);
+      } catch (err) {
+        console.warn('[MobileCacheManager] Listener error on invalidation:', err);
+      }
+    });
+
+    // 7. Dispatch browser custom event for decoupling if needed
+    if (this.isClient) {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('supermillonario_cache_invalidated', {
+            detail: { reason, payload, timestamp: Date.now() },
+          })
+        );
+      } catch {}
     }
   }
 
@@ -156,13 +215,51 @@ class MobileCacheManager {
   }
 
   public setCachedEvaluation(cardId: string, drawnLength: number, result: any): void {
-    if (this.evaluatedCardCache.size >= this.MAX_EVALUATED_CACHE_SIZE) {
+    const maxCache = this.getQuotaLimits().maxEvaluatedCacheSize;
+    if (this.evaluatedCardCache.size >= maxCache) {
       // Evict oldest entries
       const firstKey = this.evaluatedCardCache.keys().next().value;
       if (firstKey) this.evaluatedCardCache.delete(firstKey);
     }
     const key = `${cardId}_len_${drawnLength}`;
     this.evaluatedCardCache.set(key, result);
+  }
+
+  /**
+   * Prunes matrix cards specifically for mobile RAM conservation:
+   * 1. Retains all cards belonging to the logged-in user in active/open rounds.
+   * 2. Retains recent cards of the logged-in user in finished rounds up to quota.
+   * 3. Retains cards of active rounds for other users (capped to 20 for count display).
+   * 4. Drops stale cards of other players in finished rounds from mobile memory.
+   */
+  public pruneCardsForRAM(
+    allCards: MatrixCard[],
+    currentUserId: string,
+    activeRoundIds: Set<string>
+  ): MatrixCard[] {
+    if (!this.isMobile()) {
+      return allCards;
+    }
+
+    const limits = this.getQuotaLimits();
+
+    // User's cards in active rounds
+    const userActiveCards = allCards.filter(
+      (c) => c.userId === currentUserId && activeRoundIds.has(c.roundId)
+    );
+
+    // User's cards in past rounds (sorted recent first)
+    const userPastCards = allCards
+      .filter((c) => c.userId === currentUserId && !activeRoundIds.has(c.roundId))
+      .slice(0, Math.max(10, limits.maxCardsInMemory - userActiveCards.length));
+
+    // Other users' cards in active rounds (only for counter / stats display)
+    const otherActiveCards = allCards
+      .filter((c) => c.userId !== currentUserId && activeRoundIds.has(c.roundId))
+      .slice(0, 20);
+
+    const merged = [...userActiveCards, ...userPastCards, ...otherActiveCards];
+    return merged.slice(0, limits.maxCardsInMemory);
   }
 
   /**
@@ -188,13 +285,12 @@ class MobileCacheManager {
   } {
     const limits = this.getQuotaLimits();
 
-    // 1. Prune cards: Prioritize current user cards and cards in active/open rounds
-    const userCards = (state.cards || []).filter((c) => c.userId === state.currentUserId);
-    const activeCards = userCards.filter((c) => state.activeRoundIds.has(c.roundId));
-    const recentOtherCards = userCards.filter((c) => !state.activeRoundIds.has(c.roundId)).slice(0, limits.maxCardsInMemory - activeCards.length);
-    const prunedCards = [...activeCards, ...recentOtherCards].slice(0, limits.maxCardsInMemory);
+    const prunedCards = this.pruneCardsForRAM(
+      state.cards || [],
+      state.currentUserId,
+      state.activeRoundIds
+    );
 
-    // 2. Prune ledger, audit, recharges, withdrawals
     const prunedLedger = (state.ledger || []).slice(0, limits.maxLedgerInMemory);
     const prunedAudit = (state.auditLogs || []).slice(0, limits.maxAuditInMemory);
     const prunedRecharges = (state.recharges || []).slice(0, limits.maxRechargesInMemory);
@@ -202,7 +298,7 @@ class MobileCacheManager {
     const prunedFinished = (state.finishedRounds || []).slice(0, limits.maxFinishedRoundsHistory);
 
     return {
-      cards: prunedCards.length > 0 ? prunedCards : state.cards.slice(0, limits.maxCardsInMemory),
+      cards: prunedCards,
       ledger: prunedLedger,
       auditLogs: prunedAudit,
       recharges: prunedRecharges,
@@ -212,9 +308,45 @@ class MobileCacheManager {
   }
 
   /**
+   * Debounced / non-blocking storage writer.
+   * Avoids locking the UI thread during rapid card purchases or live draw ticks.
+   */
+  public scheduleSave(
+    key: string,
+    value: any,
+    priority: 'critical' | 'high' | 'normal' | 'low' = 'normal'
+  ): void {
+    if (!this.isClient) return;
+
+    // Critical or high priority items are written immediately
+    if (priority === 'critical' || priority === 'high') {
+      const existing = this.writeQueue.get(key);
+      if (existing?.timer) clearTimeout(existing.timer);
+      this.writeQueue.delete(key);
+      this.safeSetItem(key, value, priority);
+      return;
+    }
+
+    // Normal or low priority items are debounced
+    const existing = this.writeQueue.get(key);
+    if (existing?.timer) clearTimeout(existing.timer);
+
+    const timer = setTimeout(() => {
+      this.writeQueue.delete(key);
+      this.safeSetItem(key, value, priority);
+    }, 250);
+
+    this.writeQueue.set(key, { value, priority, timer });
+  }
+
+  /**
    * Quota-safe write to localStorage with automatic eviction on storage pressure
    */
-  public safeSetItem(key: string, value: any, priority: 'critical' | 'high' | 'normal' | 'low' = 'normal'): boolean {
+  public safeSetItem(
+    key: string,
+    value: any,
+    priority: 'critical' | 'high' | 'normal' | 'low' = 'normal'
+  ): boolean {
     if (!this.isClient) return false;
     try {
       const serialized = typeof value === 'string' ? value : JSON.stringify(value);
@@ -265,6 +397,7 @@ class MobileCacheManager {
     if (!this.isClient) return;
     const lowPriorityKeys = [
       'lucky_fichas_db_v1_audit',
+      'Millioneire_Destiny_Lottery_v1_audit',
       'supermillonario_login_attempts_v1',
       'supermillonario_pwd_recovery_tokens_v1',
       'supermillonario_cross_tab_sync_trigger_v2',
@@ -283,18 +416,23 @@ class MobileCacheManager {
    * Soft garbage collection on visibility / memory changes
    */
   public runSoftGarbageCollection(): void {
-    // 1. Clear memory caches older than 3 minutes
+    // 1. Clear memory caches older than 2 minutes
     const now = Date.now();
     for (const [k, v] of this.memoryCache.entries()) {
-      if (now - v.timestamp > 3 * 60 * 1000) {
+      if (now - v.timestamp > 2 * 60 * 1000) {
         this.memoryCache.delete(k);
       }
     }
 
-    // 2. Truncate evaluated card cache
-    if (this.evaluatedCardCache.size > 50) {
-      this.evaluatedCardCache.clear();
+    // 2. Clear evaluated card cache
+    this.evaluatedCardCache.clear();
+
+    // 3. Flush pending writeQueue
+    for (const [key, item] of this.writeQueue.entries()) {
+      if (item.timer) clearTimeout(item.timer);
+      this.safeSetItem(key, item.value, item.priority);
     }
+    this.writeQueue.clear();
   }
 
   /**
@@ -303,7 +441,7 @@ class MobileCacheManager {
   private initLifecycleListeners(): void {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
-        // App backgrounded: release non-critical memory
+        // App backgrounded: release non-critical memory and flush pending writes
         this.runSoftGarbageCollection();
       }
     });

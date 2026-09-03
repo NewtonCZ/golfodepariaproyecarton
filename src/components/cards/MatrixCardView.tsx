@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { MatrixCard, RoundStatus } from '../../types';
 import { getFichaById } from '../../data/fichasPool';
 import { Trophy, Sparkles, CheckCircle2, Archive, ArchiveRestore, Radio, XCircle } from 'lucide-react';
 import { useGame } from '../../context/GameContext';
+import { mobileCacheManager } from '../../services/mobileCacheManager';
 
 interface MatrixCardViewProps {
   card: MatrixCard;
@@ -15,7 +16,7 @@ interface MatrixCardViewProps {
   onUnarchive?: (cardId: string) => void;
 }
 
-export const MatrixCardView: React.FC<MatrixCardViewProps> = ({
+const MatrixCardViewComponent: React.FC<MatrixCardViewProps> = ({
   card,
   drawnFichas = [],
   roundStatus = 'open',
@@ -26,15 +27,28 @@ export const MatrixCardView: React.FC<MatrixCardViewProps> = ({
   onUnarchive,
 }) => {
   const { formatMoney } = useGame();
-  const drawnSet = new Set(drawnFichas);
 
-  // Determine which cells in this 4x4 are matched
-  const matchedCellIndices = new Set<number>();
-  card.matrix.forEach((fichaId, index) => {
-    if (drawnSet.has(fichaId)) {
-      matchedCellIndices.add(index);
+  // Determine which cells in this 4x4 are matched with mobile cache memoization
+  const matchedCellIndices = useMemo(() => {
+    const cached = mobileCacheManager.getCachedEvaluation(card.id, drawnFichas.length);
+    if (cached && Array.isArray(cached.matchedIndices)) {
+      return new Set<number>(cached.matchedIndices);
     }
-  });
+
+    const drawnSet = new Set(drawnFichas);
+    const matched = new Set<number>();
+    card.matrix.forEach((fichaId, index) => {
+      if (drawnSet.has(fichaId)) {
+        matched.add(index);
+      }
+    });
+
+    mobileCacheManager.setCachedEvaluation(card.id, drawnFichas.length, {
+      matchedIndices: Array.from(matched),
+    });
+
+    return matched;
+  }, [card.id, card.matrix, drawnFichas.length, drawnFichas]);
 
   const isWinner = card.status === 'winner' || card.winningPatterns.length > 0;
   const isRoundFinished = roundStatus === 'finished';
@@ -203,3 +217,16 @@ export const MatrixCardView: React.FC<MatrixCardViewProps> = ({
     </div>
   );
 };
+
+export const MatrixCardView = React.memo(MatrixCardViewComponent, (prev, next) => {
+  return (
+    prev.card.id === next.card.id &&
+    prev.card.status === next.card.status &&
+    prev.card.matchedCount === next.card.matchedCount &&
+    prev.card.is_archived === next.card.is_archived &&
+    prev.card.totalPrizeVes === next.card.totalPrizeVes &&
+    prev.roundStatus === next.roundStatus &&
+    prev.compact === next.compact &&
+    (prev.drawnFichas?.length || 0) === (next.drawnFichas?.length || 0)
+  );
+});
