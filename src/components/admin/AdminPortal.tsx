@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useGame } from '../../context/GameContext';
+import { GameRound } from '../../types';
 import { supabase } from '../../services/realtimeService';
 import { saveCommercialConfigToDb } from '../../services/configService';
 import { FICHAS_POOL, getFichaById } from '../../data/fichasPool';
@@ -131,6 +132,44 @@ export const AdminPortal: React.FC = () => {
   const [savedRoundFeedback, setSavedRoundFeedback] = useState<string | null>(null);
 
   // Result submission
+  // =========================================================================
+  // REGLA DE LIMPIEZA AUTOMÁTICA Y OPTIMIZACIÓN DE ESTADO (FRONTEND EXCLUSIVO)
+  // Módulo de Gestión de Sorteos - Listado de Rondas y Monitor Financiero en Tiempo Real
+  //
+  // Mantiene y renderiza estrictamente un máximo de 6 a 7 sorteos (los más recientes,
+  // activos o programados). Al superar este límite, los registros más antiguos se
+  // descartan automáticamente del estado local y del DOM para optimizar RAM.
+  //
+  // GARANTÍA ESTRICTA: NO borra ni altera ningún registro histórico en Supabase.
+  // =========================================================================
+  const [roundsWindowLimit, setRoundsWindowLimit] = useState<6 | 7>(7);
+  const [monitoredRoundsWindow, setMonitoredRoundsWindow] = useState<GameRound[]>([]);
+
+  useEffect(() => {
+    const activeOrScheduled = rounds.filter((r) => {
+      const st = String(r.status || '').toLowerCase();
+      return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay' || st === 'closed';
+    });
+
+    const sorted = [...activeOrScheduled].sort((a, b) => {
+      const timeA = new Date(a.starts_at || a.openBetAt || a.drawAt || a.created_at || 0).getTime();
+      const timeB = new Date(b.starts_at || b.openBetAt || b.drawAt || b.created_at || 0).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+    });
+
+    // Poda automática en memoria local del cliente: máximo 6 a 7 sorteos
+    setMonitoredRoundsWindow(sorted.slice(0, roundsWindowLimit));
+  }, [rounds, roundsWindowLimit]);
+
+  // Próximo orden calculado globalmente para garantizar que la creación y publicación no se altere
+  const calculatedNextOrder = useMemo(() => {
+    const maxOrder = rounds.reduce((max, r) => Math.max(max, r.order || r.roundNumber || 0), 0);
+    return maxOrder + 1;
+  }, [rounds]);
+
+  const visibleActiveRounds = monitoredRoundsWindow;
+
   const [selectedRoundForResult, setSelectedRoundForResult] = useState<string>(
     rounds.find((r) => r.status === 'open' || r.status === 'closed')?.id || rounds[0]?.id || ''
   );
@@ -633,7 +672,7 @@ export const AdminPortal: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {rounds.map((round) => (
+              {visibleActiveRounds.map((round) => (
                 <div
                   key={round.id}
                   className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex flex-col justify-between"
@@ -1075,8 +1114,8 @@ export const AdminPortal: React.FC = () => {
       {/* ======================================================== */}
       {activeTab === 'rounds' && (
         <div className="space-y-6">
-          {/* Create New Round Form (SorteoForm) */}
-          <SorteoForm nextOrder={rounds.length + 1} />
+          {/* Create New Round Form (SorteoForm) - con orden calculado seguro */}
+          <SorteoForm nextOrder={calculatedNextOrder} />
 
           {/* Feedback Toast */}
           {savedRoundFeedback && (
@@ -1091,20 +1130,59 @@ export const AdminPortal: React.FC = () => {
             </div>
           )}
 
-          {/* Existing Rounds Table */}
+          {/* Existing Rounds Table - Listado de Rondas y Monitor Financiero */}
           <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
-                <h3 className="font-black text-slate-900 text-base">
-                  Listado de Rondas y Monitor Financiero en Tiempo Real
+                <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+                  <span>Listado de Rondas y Monitor Financiero en Tiempo Real</span>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                    RAM Optimizada
+                  </span>
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Muestra la recaudación en tiempo real, el pozo de premios calculado y la ganancia de la casa por sorteo.
+                  Muestra la recaudación en tiempo real, pozo calculado y ganancia de la casa. Registros históricos resguardados en Supabase.
                 </p>
               </div>
-              <span className="text-xs bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-xl">
-                {rounds.length} Sorteos Registrados
-              </span>
+
+              {/* Controles de ventana de estado local (6 a 7 sorteos) */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold px-3 py-1 rounded-xl flex items-center gap-1.5 shadow-xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Límite DOM: Máx. {roundsWindowLimit}</span>
+                </span>
+
+                <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-bold border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setRoundsWindowLimit(6)}
+                    className={`px-2.5 py-1 rounded-lg transition-all text-xs font-bold cursor-pointer ${
+                      roundsWindowLimit === 6
+                        ? 'bg-white text-indigo-950 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                    title="Renderizar máximo 6 sorteos en el DOM"
+                  >
+                    6 Sorteos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRoundsWindowLimit(7)}
+                    className={`px-2.5 py-1 rounded-lg transition-all text-xs font-bold cursor-pointer ${
+                      roundsWindowLimit === 7
+                        ? 'bg-white text-indigo-950 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                    title="Renderizar máximo 7 sorteos en el DOM"
+                  >
+                    7 Sorteos
+                  </button>
+                </div>
+
+                <span className="text-xs bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-xl">
+                  {monitoredRoundsWindow.length} / {roundsWindowLimit} Sorteos Visibles
+                </span>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -1124,7 +1202,14 @@ export const AdminPortal: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {rounds.map((round) => {
+                  {monitoredRoundsWindow.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="py-8 text-center text-slate-400 font-medium">
+                        No hay sorteos programados o activos en la ventana local de visualización.
+                      </td>
+                    </tr>
+                  )}
+                  {monitoredRoundsWindow.map((round) => {
                     const statusLower = String(round.status || '').toLowerCase();
                     const isStarted = statusLower !== 'scheduled';
                     const effectivePrice =
@@ -1362,7 +1447,7 @@ export const AdminPortal: React.FC = () => {
                 disabled={!canManageResults}
                 className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 disabled:opacity-60"
               >
-                {rounds.map((r) => (
+                {visibleActiveRounds.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.title} (#{r.roundNumber}) - {r.status}
                   </option>

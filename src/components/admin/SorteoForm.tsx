@@ -37,6 +37,13 @@ export const SorteoForm: React.FC<SorteoFormProps> = ({ onSuccess, nextOrder }) 
     orden: nextOrder || rounds.length + 1,
   });
 
+  // Sincronizar automáticamente con nextOrder si cambia
+  React.useEffect(() => {
+    if (nextOrder) {
+      setForm((prev) => ({ ...prev, orden: nextOrder }));
+    }
+  }, [nextOrder]);
+
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const handleSubmit = (e?: React.FormEvent) => {
@@ -75,7 +82,7 @@ export const SorteoForm: React.FC<SorteoFormProps> = ({ onSuccess, nextOrder }) 
       fechaFin: getDefaultCaracasDateTime(),
       montoPremio: '',
       porcentajePremio: 70,
-      orden: rounds.length + 2,
+      orden: (form.orden || nextOrder || 1) + 1,
     });
 
     if (onSuccess) onSuccess();
@@ -90,7 +97,10 @@ export const SorteoForm: React.FC<SorteoFormProps> = ({ onSuccess, nextOrder }) 
             Horario programado en hora legal de Venezuela (Caracas UTC-4).
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-xl flex items-center gap-1">
+            <span>⚡ Regla: Máx. 6 sorteos activos</span>
+          </span>
           <span className="text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1 rounded-xl flex items-center gap-1">
             <Clock className="w-3.5 h-3.5 text-amber-600" />
             <span>Zona Horaria: Caracas (-04:00)</span>

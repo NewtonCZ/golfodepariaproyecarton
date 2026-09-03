@@ -403,34 +403,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const deleteIds = toDelete.map((r) => r.id);
     const deleteIdsSet = new Set(deleteIds);
 
-    // Lista limpia de sorteos resultante en memoria para la interfaz
+    // Lista limpia de sorteos resultante en memoria local del cliente
     const cleanedRounds = currentRounds.filter((r) => !deleteIdsSet.has(r.id));
 
-    // 1. Eliminar progresivamente en la base de datos Supabase en tiempo real
-    try {
-      supabase
-        .from('rounds')
-        .delete()
-        .in('id', deleteIds)
-        .then(({ error }: any) => {
-          if (error) {
-            console.warn('[GameContext] Supabase auto-cleanup delete error:', error);
-          } else {
-            console.log(`[GameContext] ✅ Limpieza automática aplicada: eliminados ${deleteIds.length} sorteos más antiguos en BD:`, deleteIds);
-          }
-        });
-
-      // Archivar en base de datos únicamente los cartones de los sorteos que fueron eliminados
-      supabase
-        .from('cards')
-        .update({ is_archived: true, round_status: 'finished' })
-        .in('round_id', deleteIds)
-        .then(() => {});
-    } catch (dbErr) {
-      console.warn('[GameContext] Error en proceso de limpieza de BD:', dbErr);
-    }
-
-    // 2. Notificar e invalidar caché local
+    // Optimización exclusiva en caché local de frontend (sin tocar la BD de Supabase)
     mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleanedRounds, 'high');
     deleteIds.forEach((id) => {
       mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: id });

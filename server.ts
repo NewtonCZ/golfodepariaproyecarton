@@ -509,67 +509,11 @@ const defaultScheduledRounds = [
 
 let inMemoryRounds = [...defaultScheduledRounds];
 
-// Regla de limpieza automática en servidor: mantener máximo 6 sorteos activos/programados
-async function enforceServerAutoCleanupRounds(): Promise<void> {
-  const MAX_ACTIVE_ROUNDS = 6;
-  try {
-    if (supabaseServerClient) {
-      const { data: rawRounds, error } = await supabaseServerClient
-        .from('rounds')
-        .select('id, round_number, order, status, starts_at, open_bet_at, draw_at, created_at')
-        .in('status', ['open', 'scheduled', 'OPEN', 'SCHEDULED', 'live', 'drawing', 'replay'])
-        .order('starts_at', { ascending: true });
-
-      if (!error && Array.isArray(rawRounds) && rawRounds.length > MAX_ACTIVE_ROUNDS) {
-        const sorted = [...rawRounds].sort((a: any, b: any) => {
-          const timeA = new Date(a.starts_at || a.open_bet_at || a.draw_at || a.created_at || 0).getTime();
-          const timeB = new Date(b.starts_at || b.open_bet_at || b.draw_at || b.created_at || 0).getTime();
-          if (timeA !== timeB) return timeA - timeB;
-          return Number(a.order || a.round_number || 0) - Number(b.order || b.round_number || 0);
-        });
-
-        const excess = rawRounds.length - MAX_ACTIVE_ROUNDS;
-        const toDeleteIds: string[] = [];
-        for (const r of sorted) {
-          if (toDeleteIds.length >= excess) break;
-          const st = String(r.status || '').toLowerCase();
-          if (st !== 'live' && st !== 'drawing' && st !== 'replay') {
-            toDeleteIds.push(String(r.id));
-          }
-        }
-
-        if (toDeleteIds.length > 0) {
-          await supabaseServerClient.from('rounds').delete().in('id', toDeleteIds);
-          await supabaseServerClient.from('cards').update({ is_archived: true, round_status: 'finished' }).in('round_id', toDeleteIds);
-          console.log(`[Server Auto-Cleanup] Eliminados ${toDeleteIds.length} sorteos más antiguos en BD:`, toDeleteIds);
-        }
-      }
-    }
-
-    const activeMemory = inMemoryRounds.filter((r) => {
-      const st = String(r.status || '').toLowerCase();
-      return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay';
-    });
-    if (activeMemory.length > MAX_ACTIVE_ROUNDS) {
-      const sortedMem = [...activeMemory].sort((a: any, b: any) => {
-        const timeA = new Date(a.starts_at || a.openBetAt || a.drawAt || 0).getTime();
-        const timeB = new Date(b.starts_at || b.openBetAt || b.drawAt || 0).getTime();
-        if (timeA !== timeB) return timeA - timeB;
-        return Number(a.order || a.roundNumber || 0) - Number(b.order || b.roundNumber || 0);
-      });
-      const excess = activeMemory.length - MAX_ACTIVE_ROUNDS;
-      const toDeleteMemIds = new Set<string>();
-      for (const r of sortedMem) {
-        if (toDeleteMemIds.size >= excess) break;
-        const st = String(r.status || '').toLowerCase();
-        if (st !== 'live' && st !== 'drawing' && st !== 'replay') {
-          toDeleteMemIds.add(r.id);
-        }
-      }
-      inMemoryRounds = inMemoryRounds.filter((r) => !toDeleteMemIds.has(r.id));
-    }
-  } catch (err) {
-    console.warn('[Server Auto-Cleanup Warning]:', err);
+// In-memory scheduled rounds fallback (sin tocar registros en base de datos Supabase)
+const MAX_LOCAL_ROUNDS = 7;
+function trimInMemoryRounds(): void {
+  if (inMemoryRounds.length > MAX_LOCAL_ROUNDS) {
+    inMemoryRounds = inMemoryRounds.slice(0, MAX_LOCAL_ROUNDS);
   }
 }
 
@@ -718,13 +662,13 @@ app.post(['/api/rounds', '/api/sorteos'], async (req, res) => {
         };
         await supabaseServerClient.from('rounds').delete().eq('id', roundId);
         await supabaseServerClient.from('rounds').upsert(dbRoundPayload, { onConflict: 'id' });
-        // Aplicar regla de limpieza automática en servidor para mantener máximo 6 sorteos
-        await enforceServerAutoCleanupRounds();
+        // Solo optimizar memoria de fallback local sin alterar Supabase
+        trimInMemoryRounds();
       } catch (err) {
         console.warn('[Supabase Round Insert Notice]:', err);
       }
     } else {
-      await enforceServerAutoCleanupRounds();
+      trimInMemoryRounds();
     }
 
     return res.status(201).json({ success: true, message: 'Sorteo programado exitosamente', round: newRound });
