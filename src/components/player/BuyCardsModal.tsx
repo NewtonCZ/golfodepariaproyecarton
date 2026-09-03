@@ -116,7 +116,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
               ¡Cartones Generados con Éxito!
             </h3>
             <p className="text-xs text-slate-600 max-w-md mx-auto mb-5">
-              Se han generado {boughtCardsPreview.length} tarjetas aleatorias e inalterables con figuras del pool de 72.
+              Se han generado {boughtCardsPreview.length} tarjetas aleatorias e inalterables con figuras del pool de 70.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">

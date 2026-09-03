@@ -213,7 +213,7 @@ export const AdminPortal: React.FC = () => {
   const pendingRechargesCount = recharges.filter((r) => r.status === 'pending').length;
   const pendingWithdrawalsCount = withdrawals.filter((w) => w.status === 'pending').length;
 
-  // Toggle selection for 72 fichas result submission
+  // Toggle selection for 70 fichas result submission
   const toggleFichaSelection = (id: number) => {
     if (selectedResultFichas.includes(id)) {
       setSelectedResultFichas(selectedResultFichas.filter((fId) => fId !== id));
@@ -223,8 +223,8 @@ export const AdminPortal: React.FC = () => {
     }
   };
 
-  const handleAutoSelect32Fichas = () => {
-    const pool = Array.from({ length: 72 }, (_, i) => i + 1);
+  const handleAutoSelect20Fichas = () => {
+    const pool = FICHAS_POOL.map((f) => f.id);
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -1398,7 +1398,7 @@ export const AdminPortal: React.FC = () => {
               <button
                 type="button"
                 disabled={!canManageResults}
-                onClick={handleAutoSelect32Fichas}
+                onClick={handleAutoSelect20Fichas}
                 className="bg-indigo-100 hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed text-indigo-900 font-bold text-xs px-3 py-1.5 rounded-xl transition-all"
               >
                 🍏 Auto-Seleccionar 20 Figuras Aleatorias
@@ -1414,7 +1414,7 @@ export const AdminPortal: React.FC = () => {
             </div>
           </div>
 
-          {/* 72 Fichas Grid */}
+          {/* 70 Fichas Grid */}
           <div className="grid grid-cols-4 sm:grid-cols-7 md:grid-cols-10 gap-2 max-h-[420px] overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-200">
             {FICHAS_POOL.map((ficha) => {
               const isSelected = selectedResultFichas.includes(ficha.id);

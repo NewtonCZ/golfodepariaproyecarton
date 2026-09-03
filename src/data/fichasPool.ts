@@ -642,24 +642,6 @@ export const FICHAS_POOL: Ficha[] = [
     accentColor: '#EA580C',
     bgGradient: 'from-amber-400 to-red-600',
   },
-  {
-    id: 71,
-    name: 'Trofeo',
-    category: 'objeto',
-    emoji: '🏆',
-    pronunciation: '¡El Trofeo!',
-    accentColor: '#F59E0B',
-    bgGradient: 'from-amber-400 to-yellow-600',
-  },
-  {
-    id: 72,
-    name: 'Trébol',
-    category: 'objeto',
-    emoji: '🍀',
-    pronunciation: '¡El Trébol!',
-    accentColor: '#16A34A',
-    bgGradient: 'from-emerald-400 to-green-700',
-  },
 ];
 
 export const FICHAS_BY_ID: Record<number, Ficha> = FICHAS_POOL.reduce((acc, f) => {

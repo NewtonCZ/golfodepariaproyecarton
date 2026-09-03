@@ -1,10 +1,10 @@
 import { MatrixCard, WinningPatternResult, CommercialConfig } from '../types';
 
 /**
- * Generates 16 UNIQUE random ficha IDs between 1 and 72 for a 4x4 matrix
+ * Generates 16 UNIQUE random ficha IDs between 1 and 70 for a 4x4 matrix
  */
 export function generateRandomMatrix(): number[] {
-  const pool = Array.from({ length: 72 }, (_, i) => i + 1);
+  const pool = Array.from({ length: 70 }, (_, i) => i + 1);
   // Fisher-Yates shuffle
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));

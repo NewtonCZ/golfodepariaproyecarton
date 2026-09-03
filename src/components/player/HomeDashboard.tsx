@@ -472,17 +472,17 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </span>
       </div>
 
-      {/* 72 Fichas Pool Modal */}
+      {/* 70 Fichas Pool Modal */}
       {showFichasPoolModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-indigo-950/80 backdrop-blur-sm animate-in fade-in">
           <div className="bg-slate-900 rounded-3xl max-w-3xl w-full p-5 sm:p-7 shadow-2xl border border-slate-800 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
               <div>
                 <h3 className="text-lg font-black text-white">
-                  Librería Completa de las 72 Fichas
+                  Librería Completa de las 70 Fichas
                 </h3>
                 <p className="text-xs text-slate-400 font-bold">
-                  25 Animales, 25 Frutas y 22 Objetos oficiales
+                  25 Animales, 25 Frutas y 20 Objetos oficiales
                 </p>
               </div>
               <button
@@ -506,12 +506,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   }`}
                 >
                   {cat === 'all'
-                    ? 'Todas (72)'
+                    ? 'Todas (70)'
                     : cat === 'animal'
                     ? 'Animales (25)'
                     : cat === 'fruta'
                     ? 'Frutas (25)'
-                    : 'Objetos (22)'}
+                    : 'Objetos (20)'}
                 </button>
               ))}
             </div>

@@ -388,7 +388,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             prizePercentage: Number(r.prizePercentage ?? r.prize_percentage ?? 70),
             jackpotVes: Number(r.jackpotVes ?? r.jackpot_ves ?? 15000),
             totalCardsSold: Number(r.totalCardsSold ?? r.total_cards_sold ?? 0),
-            drawnFichas: Array.isArray(r.drawnFichas) ? r.drawnFichas : (Array.isArray(r.drawn_fichas) ? r.drawn_fichas : []),
+            bolas_cantadas: Array.isArray(r.bolas_cantadas) ? r.bolas_cantadas : (Array.isArray(r.drawnFichas) ? r.drawnFichas : []),
+            drawnFichas: Array.isArray(r.bolas_cantadas) && r.bolas_cantadas.length > 0 ? r.bolas_cantadas : (Array.isArray(r.drawnFichas) ? r.drawnFichas : (Array.isArray(r.drawn_fichas) ? r.drawn_fichas : [])),
             starts_at: r.starts_at || r.startsAt || r.openBetAt || r.open_bet_at,
             ends_at: r.ends_at || r.endsAt || r.closeBetAt || r.close_bet_at,
             drawAt: r.drawAt || r.draw_at,
@@ -405,7 +406,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const fetchedMap = new Map(fetchedRounds.map(r => [r.id, r]));
         const updated = prev.map(r => {
           const serverR = fetchedMap.get(r.id);
-          if (serverR) return { ...r, ...serverR, drawnFichas: r.drawnFichas && r.drawnFichas.length > 0 ? r.drawnFichas : serverR.drawnFichas || [] };
+          if (serverR) {
+            const hasServerBolas = Array.isArray(serverR.bolas_cantadas) && serverR.bolas_cantadas.length > 0;
+            return {
+              ...r,
+              ...serverR,
+              bolas_cantadas: serverR.bolas_cantadas || r.bolas_cantadas,
+              drawnFichas: hasServerBolas
+                ? serverR.bolas_cantadas!
+                : (r.drawnFichas && r.drawnFichas.length > 0 ? r.drawnFichas : serverR.drawnFichas || []),
+            };
+          }
           return r;
         });
         const existingIds = new Set(prev.map(r => r.id));
@@ -669,11 +680,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
           if (payload?.new) {
-            const item = payload.new as GameRound;
+            const item = payload.new as any;
             mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: item.id });
             setRounds((prev) => {
               const exists = prev.some((r) => r.id === item.id);
-              return exists ? prev.map((r) => (r.id === item.id ? { ...r, ...item } : r)) : [item, ...prev];
+              const normalizedItem: GameRound = {
+                ...item,
+                drawnFichas: Array.isArray(item.bolas_cantadas) && item.bolas_cantadas.length > 0
+                  ? item.bolas_cantadas
+                  : (Array.isArray(item.drawnFichas) ? item.drawnFichas : (Array.isArray(item.drawn_fichas) ? item.drawn_fichas : [])),
+                bolas_cantadas: Array.isArray(item.bolas_cantadas) ? item.bolas_cantadas : item.drawnFichas,
+              };
+              return exists ? prev.map((r) => (r.id === item.id ? { ...r, ...normalizedItem } : r)) : [normalizedItem, ...prev];
             });
           }
         })
@@ -1735,8 +1753,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, message: 'Debes seleccionar las fichas para el resultado del sorteo.' };
       }
 
+      const twentyFichasIds = drawnFichas.slice(0, 20);
+
       // CAMBIO 3: Verificación obligatoria de todos los cartones y saldo con idempotencia
-      const verificationResult = verifyWinners(roundId, drawnFichas);
+      const verificationResult = verifyWinners(roundId, twentyFichasIds);
 
       // CAMBIO 1: NO hacer closeRoom() ni status='closed'.
       // Solo guardar bolas en rounds.bolas_cantadas. La sala sigue en countdown normal.
@@ -1744,8 +1764,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updatedRound: GameRound = {
         ...targetRound,
         status: (targetRound.status === 'finished' || targetRound.status === 'closed') ? targetRound.status : targetRound.status || 'open',
-        bolas_cantadas: drawnFichas,
-        drawnFichas,
+        bolas_cantadas: twentyFichasIds,
+        drawnFichas: twentyFichasIds,
         hasPreloadedResults: true,
         winningCardsCount: verificationResult.count,
         totalPrizesPaidVes: verificationResult.totalPaid,
@@ -1762,12 +1782,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase
           .from('rounds')
           .update({
-            bolas_cantadas: drawnFichas,
-            drawn_fichas: drawnFichas,
-            winning_cards_count: verificationResult.count,
-            total_prizes_paid_ves: verificationResult.totalPaid,
-            result_locked: true,
-            result_submitted_at: new Date().toISOString(),
+            bolas_cantadas: twentyFichasIds,
           })
           .eq('id', roundId)
           .then(({ error }) => {
