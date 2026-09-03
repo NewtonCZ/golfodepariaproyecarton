@@ -633,7 +633,26 @@ app.post(['/api/rounds', '/api/sorteos'], async (req, res) => {
 
     if (supabaseServerClient) {
       try {
-        await supabaseServerClient.from('rounds').upsert(newRound, { onConflict: 'id' });
+        const dbRoundPayload = {
+          id: roundId,
+          round_number: newRoundNumber,
+          order: Number(order) || inMemoryRounds.length + 1,
+          title: title || `Sorteo #${newRoundNumber}`,
+          status: 'scheduled',
+          card_price_ves: price,
+          card_price: price,
+          prize_percentage: prizePct,
+          jackpot_ves: Number(manualJackpotVes) || 15000,
+          total_cards_sold: 0,
+          drawn_fichas: [],
+          starts_at: openDate.toISOString(),
+          ends_at: closeDate.toISOString(),
+          draw_at: drawDate.toISOString(),
+          open_bet_at: openDate.toISOString(),
+          close_bet_at: closeDate.toISOString(),
+          created_at: new Date().toISOString(),
+        };
+        await supabaseServerClient.from('rounds').upsert(dbRoundPayload, { onConflict: 'id' });
       } catch (err) {
         console.warn('[Supabase Round Insert Notice]:', err);
       }

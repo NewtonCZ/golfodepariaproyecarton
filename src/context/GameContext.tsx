@@ -794,7 +794,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('ledger').insert([newLedger]).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert ledger error:', error);
         });
-        supabase.from('rounds').update({ totalCardsSold: (round.totalCardsSold || 0) + packCount }).eq('id', roundId).then(({ error }) => {
+        supabase.from('rounds').update({ total_cards_sold: (round.totalCardsSold || 0) + packCount }).eq('id', roundId).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase update round error:', error);
         });
       } catch (err) {}
@@ -1436,8 +1436,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       setRounds((prev) => [newRound, ...prev]);
+
+      // Mapeo exacto de Supabase en snake_case para prevenir error PGRST204
+      const roundPayload = {
+        id: newRound.id,
+        title: newRound.title,
+        status: newRound.status,
+        order: newRound.order,
+        round_number: newRound.roundNumber,
+        card_price_ves: price,
+        card_price: price,
+        prize_percentage: prizePct,
+        jackpot_ves: manualJackpotVes || 15000,
+        total_cards_sold: 0,
+        drawn_fichas: [],
+        winning_cards_count: 0,
+        total_prizes_paid_ves: 0,
+        result_locked: false,
+        starts_at: openDate.toISOString(),
+        ends_at: closeDate.toISOString(),
+        draw_at: drawDate.toISOString(),
+        open_bet_at: openDate.toISOString(),
+        close_bet_at: closeDate.toISOString(),
+        created_at: new Date().toISOString(),
+      };
+
+      console.log('[GameContext] Supabase insert round payload:', roundPayload);
+
       try {
-        supabase.from('rounds').insert([newRound]).then(({ error }) => {
+        supabase.from('rounds').insert([roundPayload]).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert round error:', error);
         });
       } catch {}
@@ -1456,7 +1483,27 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         prev.map((r) => (r.id === roundId ? { ...r, ...data } : r))
       );
       try {
-        supabase.from('rounds').update(data).eq('id', roundId).then(({ error }) => {
+        const mappedData: Record<string, any> = {};
+        for (const [key, val] of Object.entries(data)) {
+          if (key === 'openBetAt') mappedData.open_bet_at = val;
+          else if (key === 'closeBetAt') mappedData.close_bet_at = val;
+          else if (key === 'drawAt') mappedData.draw_at = val;
+          else if (key === 'startsAt') mappedData.starts_at = val;
+          else if (key === 'endsAt') mappedData.ends_at = val;
+          else if (key === 'cardPriceVes') {
+            mappedData.card_price_ves = val;
+            mappedData.card_price = val;
+          } else if (key === 'prizePercentage') mappedData.prize_percentage = val;
+          else if (key === 'jackpotVes') mappedData.jackpot_ves = val;
+          else if (key === 'roundNumber') mappedData.round_number = val;
+          else if (key === 'totalCardsSold') mappedData.total_cards_sold = val;
+          else if (key === 'drawnFichas') mappedData.drawn_fichas = val;
+          else if (key === 'winningCardsCount') mappedData.winning_cards_count = val;
+          else if (key === 'totalPrizesPaidVes') mappedData.total_prizes_paid_ves = val;
+          else if (key === 'resultLocked') mappedData.result_locked = val;
+          else mappedData[key] = val;
+        }
+        supabase.from('rounds').update(mappedData).eq('id', roundId).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase update round error:', error);
         });
       } catch {}
