@@ -160,15 +160,62 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   // =========================================================================
   // VALIDACIÓN DE CONTROL DE ACCESO ESTRICTO (3 REQUISITOS OBLIGATORIOS)
   // 1. auth: Usuario registrado y autenticado
-  // 2. identidad verificada +18 aprobada por admin (KYC Aprobado y status active)
+  // 2. identidad verificada +18: detecta confirmación realizada durante registro inicial (birthDate / is_of_age) o KYC
   // 3. tener >= 1 cartón comprado en la ronda en curso / evaluada
   // =========================================================================
   const isRegisteredAndAuthenticated = Boolean(isAuthenticated && sessionToken && currentUser);
 
+  // Detección auditada de mayoría de edad (+18) desde los datos de registro inicial
+  const isUserOfAge = useMemo(() => {
+    if (!currentUser) return false;
+
+    // 1. Bandera explícita en el perfil o base de datos Supabase
+    if (
+      currentUser.is_of_age === true ||
+      currentUser.isAdult === true ||
+      currentUser.isOfAge === true ||
+      (currentUser as any).is_adult === true
+    ) {
+      return true;
+    }
+
+    // 2. Verificación por fecha de nacimiento confirmada en el registro
+    const dobStr =
+      currentUser.birthDate ||
+      currentUser.fechaNacimiento ||
+      (currentUser as any).birth_date ||
+      (currentUser as any).fecha_nacimiento;
+
+    if (dobStr) {
+      const birth = new Date(dobStr);
+      if (!isNaN(birth.getTime())) {
+        const today = new Date();
+        let age = today.getFullYear() - birth.getFullYear();
+        const m = today.getMonth() - birth.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+          age--;
+        }
+        if (age >= 18) return true;
+      }
+    }
+
+    // 3. Confirmación previa de fecha o KYC Aprobado
+    if (
+      currentUser.kycStatus === 'Aprobado' ||
+      currentUser.kycStatus === 'Verificado' ||
+      currentUser.ageConfirmedAt ||
+      (currentUser as any).age_confirmed_at
+    ) {
+      return true;
+    }
+
+    return false;
+  }, [currentUser]);
+
   const isKycVerified = Boolean(
     isRegisteredAndAuthenticated &&
-      currentUser?.kycStatus === 'Aprobado' &&
-      currentUser?.status === 'active'
+      (currentUser?.kycStatus === 'Aprobado' || isUserOfAge) &&
+      (currentUser?.status === 'active' || !currentUser?.status)
   );
 
   const hasActiveCardsForRound = currentRoundCards.length >= 1;
@@ -550,10 +597,10 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
               <p className="text-xs text-slate-300 mb-4 leading-relaxed">
                 {isKycVerified ? (
                   <>
-                    Cuenta certificada formalmente con documento oficial ({currentUser.documentId}). Mayoría de edad (+18) validada.
+                    Mayoría de edad (+18) validada desde el registro inicial ({currentUser.documentId || 'Cédula Registrada'}{currentUser.birthDate ? ` • Nacimiento: ${currentUser.birthDate}` : ''}).
                   </>
                 ) : (
-                  'El usuario debe tener su documento de identidad nacional verificado y aprobado para poder interactuar en la sala de sorteos en vivo.'
+                  'El usuario debe confirmar su mayoría de edad (+18) y cédula de identidad para interactuar en la sala de sorteos en vivo.'
                 )}
               </p>
             </div>

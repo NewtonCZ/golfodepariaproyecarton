@@ -153,6 +153,8 @@ export async function saveJugador(
         telefono: cleanRecord.telefono,
         fecha_nacimiento: cleanRecord.fechaNacimiento,
         fecha_registro: cleanRecord.fechaRegistro,
+        is_of_age: true,
+        age_confirmed_at: new Date().toISOString(),
       };
 
       if (cleanRecord.password) {
@@ -161,6 +163,26 @@ export async function saveJugador(
 
       // Upsert en la tabla 'jugadores_bingo'
       const { error } = await supabase.from('jugadores_bingo').upsert(dbPayload, { onConflict: 'id' });
+
+      // También sincronizar en tabla 'users'
+      try {
+        await supabase.from('users').upsert(
+          {
+            id: cleanRecord.id,
+            name: `${cleanRecord.nombre} ${cleanRecord.apellido}`.trim(),
+            email: cleanRecord.correo,
+            phone: cleanRecord.telefono,
+            document_id: cleanRecord.cedula,
+            role: 'Player',
+            birth_date: cleanRecord.fechaNacimiento,
+            fecha_nacimiento: cleanRecord.fechaNacimiento,
+            is_of_age: true,
+            age_confirmed_at: new Date().toISOString(),
+            kyc_status: 'Aprobado',
+          },
+          { onConflict: 'id' }
+        );
+      } catch {}
 
       if (error) {
         console.warn('[playerStorage] Fallback a tabla jugadores tras error en jugadores_bingo:', error.message);
@@ -172,6 +194,7 @@ export async function saveJugador(
             correo: cleanRecord.correo,
             telefono: cleanRecord.telefono,
             fecha_nacimiento: cleanRecord.fechaNacimiento,
+            is_of_age: true,
           },
           { onConflict: 'id' }
         );

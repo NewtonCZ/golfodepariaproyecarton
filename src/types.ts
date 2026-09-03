@@ -166,9 +166,19 @@ export interface AppUser {
   email?: string;
   balanceVes?: number;
   availableBalance?: number;
+  pendingBalance?: number;
+  lockedBalance?: number;
   role: 'Player' | 'Super Admin' | 'Operador Financiero' | 'Auditor' | string;
   avatarUrl?: string;
   createdAt?: string;
+  birthDate?: string;
+  fechaNacimiento?: string;
+  is_of_age?: boolean;
+  isAdult?: boolean;
+  isOfAge?: boolean;
+  ageConfirmedAt?: string;
+  kycStatus?: 'Pendiente' | 'Aprobado' | 'Verificado' | string;
+  status?: 'active' | 'suspended' | 'banned' | string;
   [key: string]: any;
 }
 

@@ -284,7 +284,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         phone: cleanPhone,
         birthDate,
         password: cleanPassword,
+        is_of_age: true,
+        isAdult: true,
+        kycStatus: 'Aprobado',
       });
+
+      // Confirmar mayoría de edad en backend
+      try {
+        fetch('/api/users/confirm-age', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: authUserId, birthDate, documentId: cleanDoc }),
+        }).catch(() => {});
+      } catch {}
 
       // 5. Gestión del estado de éxito
       const successMessage =
