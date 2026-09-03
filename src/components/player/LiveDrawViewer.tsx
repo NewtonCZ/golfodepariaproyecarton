@@ -5,6 +5,7 @@ import { MatrixCardView } from '../cards/MatrixCardView';
 import { getFichaById } from '../../data/fichasPool';
 import { soundService } from '../../services/soundAndSpeech';
 import { LotteryStorageService } from '../../services/storageService';
+import { timeSync } from '../../services/timeSyncService';
 import confetti from 'canvas-confetti';
 import {
   Radio,
@@ -379,6 +380,66 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     startLiveDrawSimulation(targetRound.id);
   };
 
+  // =========================================================================
+  // ARRANQUE AUTOMÁTICO DEL SORTEO AL FINALIZAR LA CUENTA REGRESIVA
+  // =========================================================================
+  const drawTargetIso = useMemo(() => {
+    if (!targetRound || isTargetFinished) return null;
+    return targetRound.drawAt || targetRound.starts_at || targetRound.closeBetAt || null;
+  }, [targetRound, isTargetFinished]);
+
+  const [secondsUntilAutoStart, setSecondsUntilAutoStart] = useState<number | null>(null);
+  const autoStartInitiatedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!targetRound || isTargetFinished || isLiveDrawing) {
+      if (isLiveDrawing) {
+        setSecondsUntilAutoStart(null);
+      }
+      return;
+    }
+
+    const st = String(targetRound.status).toLowerCase();
+    if (st === 'finished' || st === 'completado') {
+      setSecondsUntilAutoStart(null);
+      return;
+    }
+
+    const targetEpoch = drawTargetIso ? timeSync.parseIsoToEpochMs(drawTargetIso) : 0;
+    const currentServerNow = timeSync.getServerNow();
+    const remainingSec = targetEpoch > 0 ? Math.floor((targetEpoch - currentServerNow) / 1000) : 0;
+
+    if (remainingSec <= 0) {
+      // Si la cuenta regresiva llegó a 0 o ya finalizó su tiempo, arrancar automáticamente
+      if (autoStartInitiatedRef.current !== targetRound.id) {
+        autoStartInitiatedRef.current = targetRound.id;
+        setSecondsUntilAutoStart(0);
+        const timer = setTimeout(() => {
+          startLiveDrawSimulation(targetRound.id);
+        }, 800);
+        return () => clearTimeout(timer);
+      }
+    } else {
+      setSecondsUntilAutoStart(remainingSec);
+      const interval = setInterval(() => {
+        const nowMs = timeSync.getServerNow();
+        const diffSec = Math.floor((targetEpoch - nowMs) / 1000);
+        if (diffSec <= 0) {
+          clearInterval(interval);
+          setSecondsUntilAutoStart(0);
+          if (autoStartInitiatedRef.current !== targetRound.id) {
+            autoStartInitiatedRef.current = targetRound.id;
+            startLiveDrawSimulation(targetRound.id);
+          }
+        } else {
+          setSecondsUntilAutoStart(diffSec);
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [targetRound?.id, isTargetFinished, isLiveDrawing, drawTargetIso, startLiveDrawSimulation]);
+
   // Helper for formatting mm:ss
   const formatTime = (totalSec: number) => {
     const m = Math.floor(totalSec / 60);
@@ -717,11 +778,25 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
                 </div>
               )}
 
-              {/* 7-Minute Countdown Pill if within 7 min */}
-              {isWithin7Min && (
+              {/* 7-Minute Countdown Pill if within 7 min, or Live/Countdown pill */}
+              {isWithin7Min ? (
                 <div className="inline-flex items-center gap-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/50 font-mono font-black text-xs px-3 py-1 rounded-full shadow-sm">
                   <Clock className="w-3.5 h-3.5 text-amber-400" />
                   <span>Tiempo restante de réplica: {formatTime(remainingSecondsIn7Min)}</span>
+                </div>
+              ) : isLiveDrawing ? (
+                <div className="inline-flex items-center gap-1.5 bg-rose-600 text-white font-black text-xs px-3 py-1 rounded-full shadow-sm animate-pulse">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                  <span>En Transmisión Directa</span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/50 font-mono font-black text-xs px-3 py-1 rounded-full shadow-sm">
+                  <Clock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  <span>
+                    {secondsUntilAutoStart !== null && secondsUntilAutoStart > 0
+                      ? `Cuenta Regresiva: ${formatTime(secondsUntilAutoStart)}`
+                      : 'Iniciando sorteo...'}
+                  </span>
                 </div>
               )}
 
@@ -802,20 +877,20 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
                   <span className="font-black">Final</span>
                 </button>
               </div>
+            ) : isLiveDrawing ? (
+              <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl font-black text-xs bg-red-600 text-white shadow-lg border border-red-500 animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-yellow-300 animate-ping" />
+                <span>Sorteo en Vivo en Curso</span>
+              </div>
             ) : (
-              <button
-                type="button"
-                disabled={isLiveDrawing}
-                onClick={startSimulation}
-                className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-sm shadow-xl transition-all cursor-pointer ${
-                  isLiveDrawing
-                    ? 'bg-slate-700 text-slate-300 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/30 active:scale-95'
-                }`}
-              >
-                <Play className="w-4 h-4 fill-indigo-950" />
-                <span>{isLiveDrawing ? 'Sorteando Fichas...' : 'Iniciar Sorteo en Vivo'}</span>
-              </button>
+              <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs bg-indigo-900/90 border border-indigo-700 text-amber-300 shadow-md">
+                <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+                <span>
+                  {secondsUntilAutoStart !== null && secondsUntilAutoStart > 0
+                    ? `Inicio Automático: ${formatTime(secondsUntilAutoStart)}`
+                    : 'Iniciando sorteo automáticamente...'}
+                </span>
+              </div>
             )}
           </div>
         </div>
@@ -871,7 +946,9 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
                 <p className="text-xs text-slate-500 max-w-xs mt-1">
                   {isWithin7Min
                     ? 'Iniciando réplica oficial de figuras sorteadas...'
-                    : 'Presiona "Iniciar Sorteo en Vivo" para ver el correr de las figuras y escuchar la cantada oficial.'}
+                    : isLiveDrawing
+                    ? 'Extrayendo figuras de la tómbola oficial en vivo...'
+                    : 'El sorteo iniciará de forma automática al finalizar la cuenta regresiva.'}
                 </p>
               </div>
             )}
