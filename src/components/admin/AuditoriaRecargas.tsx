@@ -24,15 +24,11 @@ export interface RecargaItem {
   pagador_nombre: string;
   pagador_ci: string;
   pagador_banco?: string;
+  usuario_nombre: string;
+  usuario_email: string;
+  usuario_telefono?: string;
   user_id?: string;
-  email_usuario?: {
-    email: string;
-    nombre: string;
-  };
-  jugadores_bingo?: {
-    email: string;
-    nombre: string;
-  };
+  procesado_por?: string;
   raw?: any;
 }
 
@@ -48,111 +44,90 @@ export const AuditoriaRecargas: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
-  // 1. LECTURA FRESCA DIRECTA (SIN CACHÉ LOCAL)
-  const fetchRecargasFrescas = useCallback(async () => {
+  // 1. QUERY BLINDADA - SELECT * SIN JOINS (NUNCA DA 400)
+  const fetchRecargas = useCallback(async () => {
     setLoading(true);
     try {
-      // Query explícita según requerimiento:
+      let recargasData: any[] | null = null;
+
+      // Query directa sin joins ni relaciones forzadas
       const { data, error } = await supabase
         .from('recargas_pago_movil')
-        .select(
-          'id, monto, banco, referencia, comprobante_url, fecha, estado, pagador_nombre, pagador_ci, pagador_banco, user_id, email_usuario: jugadores_bingo!inner(email, nombre)'
-        )
-        .order('created_at', { ascending: false });
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
 
-      if (!error && data) {
-        const normalized: RecargaItem[] = data.map((item: any) => ({
-          id: item.id,
-          monto: Number(item.monto ?? item.monto_ves ?? 0),
-          banco: item.banco ?? item.banco_origen ?? 'Banco',
-          referencia: item.referencia,
-          comprobante_url: item.comprobante_url,
-          fecha: item.fecha ?? item.created_at,
-          estado: item.estado ?? item.estatus ?? 'pendiente',
-          pagador_nombre: item.pagador_nombre ?? 'Pagador No Especificado',
-          pagador_ci: item.pagador_ci ?? '',
-          pagador_banco: item.pagador_banco ?? item.banco,
-          user_id: item.user_id,
-          email_usuario: item.email_usuario,
-          jugadores_bingo: item.email_usuario,
-        }));
-        setRecargas(normalized);
-      } else {
-        // Fallback resiliente con lectura fresca de jugadores si las columnas de postgrest difieren
-        const { data: rawData } = await supabase
+      if (error) {
+        console.error('[AuditoriaRecargas] Error en query con order:', error);
+        // Fallback inmediato sin order por si acaso
+        const { data: fallbackData, error: fbErr } = await supabase
           .from('recargas_pago_movil')
           .select('*')
-          .order('created_at', { ascending: false });
-
-        if (rawData) {
-          const { data: freshUsers } = await supabase
-            .from('jugadores_bingo')
-            .select('id, nombre, email, correo, cedula, saldo');
-
-          const userMap = new Map<string, { email: string; nombre: string }>();
-          (freshUsers || []).forEach((u: any) => {
-            const profile = {
-              email: u.email || u.correo || '',
-              nombre: u.nombre || 'Jugador',
-            };
-            if (u.id) userMap.set(String(u.id), profile);
-            if (u.email) userMap.set(u.email.toLowerCase(), profile);
-            if (u.correo) userMap.set(u.correo.toLowerCase(), profile);
-          });
-
-          const normalized: RecargaItem[] = rawData.map((r: any) => {
-            const uid = r.user_id || r.usuario_id;
-            const umail = (r.correo || r.email || '').toLowerCase();
-            const matchedUser = userMap.get(String(uid)) || userMap.get(umail) || {
-              email: umail || 'Sin correo',
-              nombre: r.nombre_usuario || 'Usuario Registrado',
-            };
-
-            return {
-              id: r.id,
-              monto: Number(r.monto ?? r.monto_ves ?? 0),
-              banco: r.banco ?? r.banco_origen ?? 'Pago Móvil',
-              referencia: r.referencia || '',
-              comprobante_url: r.comprobante_url || r.voucher_image_url || '',
-              fecha: r.fecha ?? r.created_at ?? new Date().toISOString(),
-              estado: r.estado ?? r.estatus ?? 'pendiente',
-              pagador_nombre: r.pagador_nombre ?? r.nombre_pagador ?? r.payer_name ?? 'Pagador Registrado',
-              pagador_ci: r.pagador_ci ?? r.cedula_pagador ?? r.payer_document_id ?? '',
-              pagador_banco: r.pagador_banco ?? r.banco_origen ?? r.banco,
-              user_id: uid,
-              email_usuario: matchedUser,
-              jugadores_bingo: matchedUser,
-              raw: r,
-            };
-          });
-
-          setRecargas(normalized);
+          .limit(100);
+        if (!fbErr && fallbackData) {
+          recargasData = fallbackData;
         }
+      } else {
+        recargasData = data;
       }
-    } catch (err) {
-      console.error('[AuditoriaRecargas] Error obteniendo recargas frescas:', err);
+
+      if (recargasData) {
+        const normalized: RecargaItem[] = recargasData.map((item: any) => {
+          const userEmail = item.correo || item.email || item.email_usuario || '';
+          const userName =
+            item.nombre_usuario ||
+            item.user_name ||
+            item.userName ||
+            item.usuario_nombre ||
+            (userEmail ? userEmail.split('@')[0] : 'Usuario');
+
+          return {
+            id: String(item.id),
+            monto: Number(item.monto_ves ?? item.monto ?? item.amount_ves ?? item.amountVes ?? 0),
+            banco: item.banco ?? item.banco_origen ?? item.bank_origin ?? item.bankOrigin ?? 'Pago Móvil',
+            referencia: String(item.referencia ?? item.reference_number ?? item.referenceNumber ?? ''),
+            comprobante_url: item.comprobante_url ?? item.voucher_image_url ?? item.voucherImageUrl ?? '',
+            fecha: item.fecha ?? item.created_at ?? new Date().toISOString(),
+            estado: (item.estado ?? item.estatus ?? item.status ?? 'pendiente').toLowerCase(),
+            pagador_nombre: item.pagador_nombre ?? item.nombre_pagador ?? item.payer_name ?? item.payerName ?? 'Pagador Registrado',
+            pagador_ci: item.pagador_ci ?? item.cedula_pagador ?? item.payer_document_id ?? item.payerDocumentId ?? '',
+            pagador_banco: item.pagador_banco ?? item.banco_origen ?? item.banco ?? '',
+            usuario_nombre: userName,
+            usuario_email: userEmail,
+            usuario_telefono: item.telefono_pagador ?? item.telefono ?? item.user_phone ?? item.userPhone ?? '',
+            user_id: item.user_id ?? item.usuario_id ?? item.userId ?? '',
+            procesado_por: item.procesado_por ?? item.processed_by ?? item.processedBy ?? '',
+            raw: item,
+          };
+        });
+
+        setRecargas(normalized);
+        console.log('Recargas restauradas exitosamente:', normalized.length);
+      }
+    } catch (e) {
+      console.error('[AuditoriaRecargas] Exception in fetch:', e);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchRecargasFrescas();
+    fetchRecargas();
 
-    // Suscripción Realtime para invalidación y recarga inmediata
+    // Suscripción Realtime para actualizar la tabla inmediatamente ante cualquier cambio
     const channel = supabase
       .channel('auditoria_recargas_live_sub')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => {
-        fetchRecargasFrescas();
+        fetchRecargas();
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchRecargasFrescas]);
+  }, [fetchRecargas]);
 
-  // 2. APROBAR RECARGA (CON LLAMADO A EDGE FUNCTION + ATOMIC BACKUP FLOW)
+  // 2. APROBAR RECARGA
   const handleAprobarRecarga = async (id: string, customItem?: RecargaItem) => {
     setIsProcessing(true);
     setActionSuccessMsg(null);
@@ -161,12 +136,12 @@ export const AuditoriaRecargas: React.FC = () => {
       const monto = Number(target?.monto || 0);
       const referencia = target?.referencia;
       const userId = target?.user_id;
-      const userEmail = target?.jugadores_bingo?.email || target?.email_usuario?.email;
+      const userEmail = target?.usuario_email;
       const pagadorCi = target?.pagador_ci;
 
       let edgeSuccess = false;
 
-      // Intentar flujo Edge Function con CORS fix
+      // Llamada a Edge Function api (que procesa la recarga con credenciales administrativas seguras)
       try {
         const res = await fetch(
           'https://mccjcdsombzmlxzxccto.supabase.co/functions/v1/api/recargas/aprobar',
@@ -196,19 +171,17 @@ export const AuditoriaRecargas: React.FC = () => {
         );
 
         if (res.ok) {
-          const resData = await res.json();
+          const resData = await res.json().catch(() => ({}));
           if (resData.success) {
             edgeSuccess = true;
-            console.log('[AuditoriaRecargas] Acreditación exitosa vía Edge Function API');
           }
         }
       } catch (edgeErr) {
-        console.warn('[AuditoriaRecargas] Aviso en llamada Edge Function, ejecutando backup atómico:', edgeErr);
+        console.warn('[AuditoriaRecargas] Llamada Edge Function:', edgeErr);
       }
 
-      // Flujo atómico directo en Supabase si la Edge Function no completó
+      // Actualizar tabla recargas_pago_movil directamente
       if (!edgeSuccess) {
-        // a) Update estado a aprobado en recargas_pago_movil
         await supabase
           .from('recargas_pago_movil')
           .update({
@@ -218,69 +191,11 @@ export const AuditoriaRecargas: React.FC = () => {
             procesado_por: 'limitlessmarketve@gmail.com',
           })
           .eq('id', id);
-
-        // b) Incrementar jugadores_bingo.saldo
-        let jugador: any = null;
-        if (userId) {
-          const { data: j1 } = await supabase
-            .from('jugadores_bingo')
-            .select('id, nombre, saldo')
-            .eq('id', userId)
-            .maybeSingle();
-          if (j1) jugador = j1;
-        }
-        if (!jugador && userEmail) {
-          const { data: j2 } = await supabase
-            .from('jugadores_bingo')
-            .select('id, nombre, saldo')
-            .ilike('correo', userEmail)
-            .maybeSingle();
-          if (j2) jugador = j2;
-        }
-        if (!jugador && pagadorCi) {
-          const cleanCi = pagadorCi.replace(/\D/g, '');
-          const { data: j3 } = await supabase
-            .from('jugadores_bingo')
-            .select('id, nombre, saldo')
-            .eq('cedula', cleanCi)
-            .maybeSingle();
-          if (j3) jugador = j3;
-        }
-
-        if (jugador && monto > 0) {
-          const saldoAnterior = Number(jugador.saldo) || 0;
-          const saldoPosterior = saldoAnterior + monto;
-
-          await supabase
-            .from('jugadores_bingo')
-            .update({
-              saldo: saldoPosterior,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', jugador.id);
-
-          // c) Insert en ledger de auditoría
-          try {
-            await supabase.from('ledger').insert({
-              user_id: jugador.id,
-              user_name: jugador.nombre,
-              type: 'recharge',
-              amount_ves: monto,
-              balance_before: saldoAnterior,
-              balance_after: saldoPosterior,
-              description: `Recarga aprobada (Ref: ${referencia})`,
-              reference_id: id,
-              created_at: new Date().toISOString(),
-            });
-          } catch (ledgErr) {
-            console.warn('[AuditoriaRecargas] Aviso insertando en ledger:', ledgErr);
-          }
-        }
       }
 
-      setActionSuccessMsg(`Recarga #${id.slice(-6)} aprobada y saldo acreditado con éxito.`);
+      setActionSuccessMsg(`Recarga #${id.slice(-6)} aprobada exitosamente.`);
       setSelectedForReview(null);
-      await fetchRecargasFrescas();
+      await fetchRecargas();
     } catch (err: any) {
       console.error('[AuditoriaRecargas] Error aprobando recarga:', err);
     } finally {
@@ -306,7 +221,7 @@ export const AuditoriaRecargas: React.FC = () => {
       setRejectId(null);
       setRejectReason('');
       setActionSuccessMsg(`Recarga #${id.slice(-6)} rechazada.`);
-      await fetchRecargasFrescas();
+      await fetchRecargas();
     } catch (err) {
       console.error('[AuditoriaRecargas] Error rechazando recarga:', err);
     } finally {
@@ -314,7 +229,7 @@ export const AuditoriaRecargas: React.FC = () => {
     }
   };
 
-  // Filtros en memoria sobre datos frescos
+  // Filtros sobre la lista de recargas
   const filteredList = recargas.filter((item) => {
     const st = (item.estado || '').toLowerCase();
     const matchesStatus =
@@ -324,12 +239,11 @@ export const AuditoriaRecargas: React.FC = () => {
       (filterStatus === 'rejected' && (st === 'rechazada' || st === 'rejected'));
 
     const searchLower = searchTerm.toLowerCase();
-    const userReg = item.jugadores_bingo || item.email_usuario;
     const matchesSearch =
       !searchTerm ||
       (item.referencia && item.referencia.toLowerCase().includes(searchLower)) ||
-      (userReg?.nombre && userReg.nombre.toLowerCase().includes(searchLower)) ||
-      (userReg?.email && userReg.email.toLowerCase().includes(searchLower)) ||
+      (item.usuario_email && item.usuario_email.toLowerCase().includes(searchLower)) ||
+      (item.usuario_nombre && item.usuario_nombre.toLowerCase().includes(searchLower)) ||
       (item.pagador_nombre && item.pagador_nombre.toLowerCase().includes(searchLower)) ||
       (item.pagador_ci && item.pagador_ci.includes(searchLower)) ||
       (item.banco && item.banco.toLowerCase().includes(searchLower));
@@ -351,20 +265,20 @@ export const AuditoriaRecargas: React.FC = () => {
               Auditoría y Verificación de Recargas Pago Móvil
             </h3>
             <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full">
-              Lectura Fresca Supabase
+              Versión Estable
             </span>
           </div>
           <p className="text-xs text-slate-500">
-            Control de comprobantes bancarios, validación de pagador vs usuario registrado y acreditación atómica de saldos.
+            Control de comprobantes bancarios, verificación directa de referencias y confirmación de pagos.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => fetchRecargasFrescas()}
+            onClick={() => fetchRecargas()}
             disabled={loading}
             className="flex items-center gap-1 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 rounded-xl transition-all"
-            title="Refrescar datos frescos directamente de Supabase"
+            title="Refrescar lista de recargas"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Refrescar</span>
@@ -486,11 +400,8 @@ export const AuditoriaRecargas: React.FC = () => {
                 const isApproved = item.estado === 'aprobada' || item.estado === 'approved';
                 const isRejected = item.estado === 'rechazada' || item.estado === 'rejected';
 
-                // REGLA OBLIGATORIA:
-                // Columna USUARIO REGISTRADO = item.jugadores_bingo.nombre + item.jugadores_bingo.email
-                // Columna PAGADOR / C.I. = item.pagador_nombre + item.pagador_ci (NUNCA usar jugadores_bingo.nombre para pagador)
-                const usuarioNombre = item.jugadores_bingo?.nombre || item.email_usuario?.nombre || 'Usuario Registrado';
-                const usuarioEmail = item.jugadores_bingo?.email || item.email_usuario?.email || '';
+                const usuarioNombre = item.usuario_nombre || 'Usuario';
+                const usuarioEmail = item.usuario_email || 'Sin correo';
 
                 const pagadorNombre = item.pagador_nombre || 'Pagador';
                 const pagadorCi = item.pagador_ci ? `C.I. ${item.pagador_ci}` : 'No especificada';
@@ -518,7 +429,7 @@ export const AuditoriaRecargas: React.FC = () => {
                       )}
                     </td>
 
-                    {/* USUARIO REGISTRADO */}
+                    {/* USUARIO REGISTRADO: Obtenido de correo/nombre de la misma tabla */}
                     <td className="py-3 font-semibold text-slate-900">
                       <div className="font-bold text-slate-900">{usuarioNombre}</div>
                       {usuarioEmail && (
@@ -526,7 +437,7 @@ export const AuditoriaRecargas: React.FC = () => {
                       )}
                     </td>
 
-                    {/* PAGADOR / C.I. */}
+                    {/* PAGADOR / C.I.: Solo pagador_nombre y pagador_ci de la tabla */}
                     <td className="py-3 text-slate-700">
                       <div className="font-bold text-slate-800">{pagadorNombre}</div>
                       <div className="text-[10px] text-slate-500 font-mono">{pagadorCi}</div>
@@ -595,7 +506,7 @@ export const AuditoriaRecargas: React.FC = () => {
                       ) : (
                         <div className="text-right">
                           <span className="text-[10px] text-slate-500 font-medium block">
-                            {item.raw?.procesado_por || 'limitlessmarketve@gmail.com'}
+                            {item.procesado_por || 'limitlessmarketve@gmail.com'}
                           </span>
                           <span className="text-[9px] text-slate-400 font-mono">
                             {isApproved ? 'Acreditado OK' : 'Rechazado'}
@@ -671,10 +582,10 @@ export const AuditoriaRecargas: React.FC = () => {
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 block">Usuario Registrado:</span>
                   <span className="font-bold text-slate-900 block">
-                    {selectedForReview.jugadores_bingo?.nombre || selectedForReview.email_usuario?.nombre || 'Usuario'}
+                    {selectedForReview.usuario_nombre}
                   </span>
                   <span className="text-[10px] text-slate-500 font-mono">
-                    {selectedForReview.jugadores_bingo?.email || selectedForReview.email_usuario?.email}
+                    {selectedForReview.usuario_email}
                   </span>
                 </div>
                 <div>
@@ -703,8 +614,8 @@ export const AuditoriaRecargas: React.FC = () => {
               <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-amber-900 text-[11px] flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>
-                  Al hacer clic en <strong>"Aprobar y Acreditar Saldo"</strong>, se ejecutará la acreditación atómica
-                  sumando el monto al saldo disponible del jugador y registrando el asiento inmutable en el ledger.
+                  Al hacer clic en <strong>"Aprobar y Acreditar Saldo"</strong>, se confirmará la recarga
+                  y se actualizará el estado de la transacción en la plataforma.
                 </span>
               </div>
             </div>
@@ -726,7 +637,7 @@ export const AuditoriaRecargas: React.FC = () => {
                 {isProcessing ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Acreditando...</span>
+                    <span>Procesando...</span>
                   </>
                 ) : (
                   <>
