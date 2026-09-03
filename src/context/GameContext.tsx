@@ -2035,12 +2035,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // CAMBIO 3: Verificación obligatoria de todos los cartones y saldo con idempotencia
       const verificationResult = verifyWinners(roundId, twentyFichasIds);
 
-      // CAMBIO 1: NO hacer closeRoom() ni status='closed'.
-      // Solo guardar bolas en rounds.bolas_cantadas. La sala sigue en countdown normal.
+      // Guarda y valida figuras: cambia el estado a 'closed' para evitar cambios posteriores
       const signedBy = loggedUsername || activeCredential?.displayName || operatorRole || 'Administrador';
       const updatedRound: GameRound = {
         ...targetRound,
-        status: (targetRound.status === 'finished' || targetRound.status === 'closed') ? targetRound.status : targetRound.status || 'open',
+        status: 'closed' as RoundStatus,
         bolas_cantadas: twentyFichasIds,
         drawnFichas: twentyFichasIds,
         hasPreloadedResults: true,
@@ -2059,19 +2058,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase
           .from('rounds')
           .update({
+            status: 'closed',
             bolas_cantadas: twentyFichasIds,
+            drawn_fichas: twentyFichasIds,
+            result_locked: true,
           })
           .eq('id', roundId)
           .then(({ error }) => {
-            if (error) console.warn('[GameContext] Supabase update bolas_cantadas error:', error);
+            if (error) console.warn('[GameContext] Supabase update status & bolas_cantadas error:', error);
           });
       } catch (err) {
-        console.warn('[GameContext] Error updating bolas_cantadas in Supabase:', err);
+        console.warn('[GameContext] Error updating round in Supabase:', err);
       }
 
       addAuditLog(
         'GUARDAR_RESULTADOS',
-        `Figuras guardadas en bolas_cantadas para Sorteo #${targetRound.roundNumber}. Fichas: ${drawnFichas.length}. Ganadores: ${verificationResult.count}. Sala continúa en cuenta regresiva.`
+        `Figuras guardadas y validadas para Sorteo #${targetRound.roundNumber}. Estado cambiado a Cerrado para evitar cambios posteriores. Fichas: ${twentyFichasIds.length}. Ganadores: ${verificationResult.count}.`
       );
 
       try {
@@ -2079,12 +2081,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {}
 
       try {
-        syncEngine.broadcastRoundStatus(roundId, updatedRound.status, targetRound.title, targetRound.roundNumber);
+        syncEngine.broadcastRoundStatus(roundId, 'closed', targetRound.title, targetRound.roundNumber);
       } catch {}
 
       return {
         success: true,
-        message: `¡Figuras guardadas en bolas_cantadas (${drawnFichas.length} fichas)! La sala continuará en cuenta regresiva normal hasta su hora de transmisión.`,
+        message: `¡Figuras guardadas y validadas exitosamente (${twentyFichasIds.length} fichas)! El sorteo cambió a estado "Cerrado" y la opción de ingresar figuras ha sido deshabilitada para evitar cambios posteriores.`,
         winnersCount: verificationResult.count,
         totalPaidVes: verificationResult.totalPaid,
       };

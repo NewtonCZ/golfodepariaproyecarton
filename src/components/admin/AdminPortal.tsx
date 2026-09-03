@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useGame } from '../../context/GameContext';
 import { GameRound } from '../../types';
 import { supabase } from '../../services/realtimeService';
@@ -235,6 +235,44 @@ export const AdminPortal: React.FC = () => {
   const [showResultConfirmModal, setShowResultConfirmModal] = useState(false);
   const [resultSubmitMessage, setResultSubmitMessage] = useState<{ success: boolean; text: string } | null>(null);
 
+  // Helper para verificar si un sorteo ya tiene figuras guardadas y validadas
+  const isRoundResultsLocked = useCallback((r?: GameRound | null) => {
+    if (!r) return false;
+    const st = String(r.status || '').toLowerCase();
+    const hasBolas = (Array.isArray(r.bolas_cantadas) && r.bolas_cantadas.length > 0) ||
+                     (Array.isArray(r.drawnFichas) && r.drawnFichas.length > 0);
+    return Boolean(
+      r.resultLocked ||
+      r.hasPreloadedResults ||
+      (st === 'closed' && hasBolas) ||
+      st === 'finished' ||
+      st === 'replay'
+    );
+  }, []);
+
+  const currentResultRound = useMemo(() => {
+    return rounds.find((r) => r.id === selectedRoundForResult);
+  }, [rounds, selectedRoundForResult]);
+
+  const isCurrentRoundResultsLocked = useMemo(() => {
+    return isRoundResultsLocked(currentResultRound);
+  }, [currentResultRound, isRoundResultsLocked]);
+
+  // Sincronizar fichas seleccionadas con las figuras guardadas si el sorteo está cerrado y validado
+  useEffect(() => {
+    if (!currentResultRound) return;
+    const existing = (currentResultRound.bolas_cantadas && currentResultRound.bolas_cantadas.length > 0)
+      ? currentResultRound.bolas_cantadas
+      : (currentResultRound.drawnFichas && currentResultRound.drawnFichas.length > 0)
+      ? currentResultRound.drawnFichas
+      : [];
+    if (isRoundResultsLocked(currentResultRound) && existing.length > 0) {
+      setSelectedResultFichas(existing);
+    } else if (!isRoundResultsLocked(currentResultRound)) {
+      setSelectedResultFichas(existing.length > 0 ? existing : []);
+    }
+  }, [currentResultRound?.id, isRoundResultsLocked, currentResultRound?.resultLocked, currentResultRound?.status]);
+
   // Commercial config form
   const [configBankName, setConfigBankName] = useState(commercialConfig.adminBank.bankName);
   const [configPhone, setConfigPhone] = useState(commercialConfig.adminBank.phone);
@@ -308,6 +346,7 @@ export const AdminPortal: React.FC = () => {
 
   // Toggle selection for 70 fichas result submission
   const toggleFichaSelection = (id: number) => {
+    if (isCurrentRoundResultsLocked) return;
     if (selectedResultFichas.includes(id)) {
       setSelectedResultFichas(selectedResultFichas.filter((fId) => fId !== id));
     } else {
@@ -317,6 +356,7 @@ export const AdminPortal: React.FC = () => {
   };
 
   const handleAutoSelect20Fichas = () => {
+    if (isCurrentRoundResultsLocked) return;
     const pool = FICHAS_POOL.map((f) => f.id);
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -1507,8 +1547,19 @@ export const AdminPortal: React.FC = () => {
                                 Cerrar Apuestas
                               </button>
                             )}
-                            {statusLower !== 'finished' && (
+                            {isRoundResultsLocked(round) ? (
                               <button
+                                type="button"
+                                disabled
+                                title="Figuras ya guardadas y validadas. Sorteo en estado Cerrado para evitar cambios posteriores."
+                                className="bg-slate-200 text-slate-500 font-bold text-[10px] px-2 py-1 rounded-lg cursor-not-allowed border border-slate-300 flex items-center gap-1 opacity-75 shadow-none"
+                              >
+                                <Lock className="w-3 h-3 text-slate-500" />
+                                <span>Ingresar Figuras (Cerrado)</span>
+                              </button>
+                            ) : statusLower !== 'finished' ? (
+                              <button
+                                type="button"
                                 onClick={() => {
                                   setSelectedRoundForResult(round.id);
                                   setActiveTab('results');
@@ -1517,7 +1568,7 @@ export const AdminPortal: React.FC = () => {
                               >
                                 Ingresar Figuras
                               </button>
-                            )}
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -1576,14 +1627,40 @@ export const AdminPortal: React.FC = () => {
                 disabled={!canManageResults}
                 className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 disabled:opacity-60"
               >
-                {visibleActiveRounds.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.title} (#{r.roundNumber}) - {r.status}
-                  </option>
-                ))}
+                {visibleActiveRounds.map((r) => {
+                  const isLocked = isRoundResultsLocked(r);
+                  return (
+                    <option key={r.id} value={r.id}>
+                      {r.title} (#{r.roundNumber}) - {r.status === 'closed' ? 'Cerrado' : r.status} {isLocked ? '🔒 (Figuras Guardadas)' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
+
+          {/* Banner de estado: Sorteo Cerrado con Figuras Validadas */}
+          {isCurrentRoundResultsLocked && (
+            <div className="bg-slate-900 text-white rounded-2xl p-4 border-2 border-amber-500 shadow-md flex items-center gap-3 animate-in fade-in">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-indigo-950 flex items-center justify-center shrink-0 shadow-md">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-black text-sm text-amber-300 uppercase tracking-wide">
+                    Sorteo #{currentResultRound?.roundNumber} • Estado: Cerrado
+                  </span>
+                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    Figuras Guardadas y Validadas Oficialmente
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1">
+                  La opción <strong>"Ingresar Figuras"</strong> se encuentra deshabilitada para este sorteo porque las figuras ya fueron guardadas y validadas, y el estado cambió a <strong>Cerrado</strong> para evitar cambios posteriores y blindar la transparencia de los resultados.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Feedback banner */}
           {resultSubmitMessage && (
@@ -1606,22 +1683,27 @@ export const AdminPortal: React.FC = () => {
               <span className="font-mono font-black text-sm bg-indigo-950 text-amber-300 px-2.5 py-0.5 rounded-lg">
                 {selectedResultFichas.length} / 20
               </span>
+              {isCurrentRoundResultsLocked && (
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> Bloqueado (Solo Lectura)
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                disabled={!canManageResults}
+                disabled={!canManageResults || isCurrentRoundResultsLocked}
                 onClick={handleAutoSelect20Fichas}
-                className="bg-indigo-100 hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed text-indigo-900 font-bold text-xs px-3 py-1.5 rounded-xl transition-all"
+                className="bg-indigo-100 hover:bg-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-900 font-bold text-xs px-3 py-1.5 rounded-xl transition-all cursor-pointer"
               >
                 🍏 Auto-Seleccionar 20 Figuras Aleatorias
               </button>
               <button
                 type="button"
-                disabled={!canManageResults}
-                onClick={() => setSelectedResultFichas([])}
-                className="bg-slate-200 hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 font-bold text-xs px-3 py-1.5 rounded-xl transition-all"
+                disabled={!canManageResults || isCurrentRoundResultsLocked}
+                onClick={() => !isCurrentRoundResultsLocked && setSelectedResultFichas([])}
+                className="bg-slate-200 hover:bg-slate-300 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-bold text-xs px-3 py-1.5 rounded-xl transition-all cursor-pointer"
               >
                 Limpiar Selección
               </button>
@@ -1632,14 +1714,15 @@ export const AdminPortal: React.FC = () => {
           <div className="grid grid-cols-4 sm:grid-cols-7 md:grid-cols-10 gap-2 max-h-[420px] overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-200">
             {FICHAS_POOL.map((ficha) => {
               const isSelected = selectedResultFichas.includes(ficha.id);
+              const isDisabled = !canManageResults || isCurrentRoundResultsLocked;
               return (
                 <div
                   key={ficha.id}
                   onClick={() => {
-                    if (canManageResults) toggleFichaSelection(ficha.id);
+                    if (canManageResults && !isCurrentRoundResultsLocked) toggleFichaSelection(ficha.id);
                   }}
-                  className={`p-2 rounded-2xl border-2 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
-                    !canManageResults ? 'cursor-not-allowed opacity-80' : ''
+                  className={`p-2 rounded-2xl border-2 text-center transition-all flex flex-col items-center justify-center ${
+                    isDisabled ? 'cursor-not-allowed opacity-85' : 'cursor-pointer'
                   } ${
                     isSelected
                       ? 'bg-gradient-to-b from-amber-300 to-yellow-300 border-amber-500 shadow-md scale-102 font-black text-indigo-950 ring-2 ring-amber-400'
@@ -1656,18 +1739,30 @@ export const AdminPortal: React.FC = () => {
 
           {/* Submit Trigger Button */}
           <div className="flex justify-end pt-3">
-            <button
-              disabled={selectedResultFichas.length < 16 || !canManageResults}
-              onClick={() => setShowResultConfirmModal(true)}
-              className={`px-6 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 ${
-                selectedResultFichas.length < 16 || !canManageResults
-                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-indigo-950 shadow-amber-500/25 active:scale-95'
-              }`}
-            >
-              <Lock className="w-4 h-4" />
-              <span>Validar y Procesar Liquidación Oficial ({selectedResultFichas.length} Fichas)</span>
-            </button>
+            {isCurrentRoundResultsLocked ? (
+              <button
+                type="button"
+                disabled
+                className="px-6 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2 bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300"
+              >
+                <Lock className="w-4 h-4 text-slate-500" />
+                <span>Opción Deshabilitada: Figuras Guardadas y Validadas (Sorteo Cerrado)</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={selectedResultFichas.length < 16 || !canManageResults}
+                onClick={() => setShowResultConfirmModal(true)}
+                className={`px-6 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 cursor-pointer ${
+                  selectedResultFichas.length < 16 || !canManageResults
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-indigo-950 shadow-amber-500/25 active:scale-95'
+                }`}
+              >
+                <Lock className="w-4 h-4" />
+                <span>Validar y Procesar Liquidación Oficial ({selectedResultFichas.length} Fichas)</span>
+              </button>
+            )}
           </div>
         </div>
       )}
