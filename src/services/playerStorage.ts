@@ -17,6 +17,7 @@ export interface JugadorBingo {
   fechaNacimiento: string;
   fechaRegistro?: string;
   password?: string;
+  saldo?: number;
 }
 
 // Caché en memoria para acceso rápido y renderizado reactivo instantáneo
@@ -55,6 +56,7 @@ function mapToJugadorBingo(item: any): JugadorBingo {
         minute: '2-digit',
       }),
     password: item.password || undefined,
+    saldo: Number(item.saldo ?? item.available_balance ?? item.balance ?? 0),
   };
 }
 

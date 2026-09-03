@@ -307,7 +307,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchPendingRecharges = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('recharges').select('*').order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) { setRecharges(data as any); try { localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(data)); } catch {} }
+      if (!error && data && data.length > 0) {
+        const normalized = data.map((r: any) => ({
+          ...r,
+          id: String(r.id),
+          userId: r.user_id || r.userId || '',
+          userName: r.user_name || r.userName || 'Usuario',
+          userPhone: r.user_phone || r.userPhone || '',
+          amountVes: Number(r.amount_ves ?? r.amountVes ?? r.monto_ves ?? r.monto ?? 0),
+          payerPhone: r.payer_phone || r.payerPhone || '',
+          payerName: r.payer_name || r.payerName || '',
+          payerDocumentId: r.payer_document_id || r.payerDocumentId || '',
+          bankOrigin: r.bank_origin || r.bankOrigin || 'Pago Móvil',
+          referenceNumber: r.reference_number || r.referenceNumber || '',
+          voucherImageUrl: r.voucher_image_url || r.voucherImageUrl || '',
+          status: (r.status || r.estado || 'pending').toLowerCase() === 'aprobada' ? 'approved' : (r.status || r.estado || 'pending').toLowerCase() === 'rechazada' ? 'rejected' : 'pending',
+          createdAt: r.created_at || r.createdAt || new Date().toISOString(),
+          processedAt: r.processed_at || r.processedAt || '',
+          processedBy: r.processed_by || r.processedBy || '',
+        }));
+        setRecharges(normalized as any);
+        try { localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(normalized)); } catch {}
+      }
     } catch (err) { console.warn('[GameContext] fetchPendingRecharges:', err); }
   }, []);
   const fetchWithdrawals = useCallback(async () => {
@@ -686,8 +707,43 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setRecharges((prev) => [newRecharge, ...prev]);
       try {
-        supabase.from('recharges').insert([newRecharge]).then(({ error }) => {
-          if (error) console.warn('[GameContext] Supabase insert recharge error:', error);
+        const dbPayload = {
+          id: newRecharge.id,
+          user_id: currentUser.id,
+          user_name: currentUser.name,
+          user_phone: currentUser.phone,
+          amount_ves: newRecharge.amountVes,
+          payer_phone: newRecharge.payerPhone,
+          payer_name: newRecharge.payerName,
+          payer_document_id: newRecharge.payerDocumentId,
+          bank_origin: newRecharge.bankOrigin,
+          reference_number: newRecharge.referenceNumber,
+          voucher_image_url: newRecharge.voucherImageUrl,
+          status: 'pending',
+          created_at: newRecharge.createdAt,
+        };
+
+        supabase.from('recharges').insert([dbPayload]).then(({ error }) => {
+          if (error) console.warn('[GameContext] Supabase insert recharges error:', error);
+        });
+
+        supabase.from('recargas_pago_movil').insert([{
+          id: newRecharge.id,
+          user_id: currentUser.id,
+          usuario_id: currentUser.id,
+          usuario_nombre: currentUser.name,
+          monto_ves: newRecharge.amountVes,
+          monto: newRecharge.amountVes,
+          referencia: newRecharge.referenceNumber,
+          banco: newRecharge.bankOrigin,
+          pagador_nombre: newRecharge.payerName,
+          pagador_ci: newRecharge.payerDocumentId,
+          telefono_pagador: newRecharge.payerPhone,
+          comprobante_url: newRecharge.voucherImageUrl,
+          estado: 'pendiente',
+          created_at: newRecharge.createdAt,
+        }]).then(({ error }) => {
+          if (error) console.warn('[GameContext] Supabase insert recargas_pago_movil error:', error);
         });
       } catch {}
 
@@ -714,6 +770,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const processedAt = new Date().toISOString();
       const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
+      const targetUserId = target.userId || (target as any).user_id;
+      const targetAmount = Number(target.amountVes ?? (target as any).amount_ves ?? 0);
 
       setRecharges((prev) =>
         prev.map((r) => (r.id === transactionId ? { ...r, status: 'approved', processedAt, processedBy } : r))
@@ -721,9 +779,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUsers((prev) =>
         prev.map((u) => {
-          if (u.id === target.userId) {
+          if (u.id === targetUserId) {
             const balBefore = u.availableBalance;
-            const balAfter = balBefore + target.amountVes;
+            const balAfter = balBefore + targetAmount;
 
             setLedger((l) => [
               {
@@ -731,10 +789,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 userId: u.id,
                 userName: u.name,
                 type: 'recharge',
-                amountVes: target.amountVes,
+                amountVes: targetAmount,
                 balanceBefore: balBefore,
                 balanceAfter: balAfter,
-                description: `Recarga aprobada (Ref: ${target.referenceNumber})`,
+                description: `Recarga aprobada (Ref: ${target.referenceNumber || (target as any).reference_number})`,
                 referenceId: target.id,
                 createdAt: processedAt,
               },
@@ -747,6 +805,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
       );
 
+      // 1. Cuando estado pasa a APROBADO:
+      // a) Actualizar recharges y recargas_pago_movil
       try {
         supabase
           .from('recharges')
@@ -755,9 +815,50 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .then(({ error }) => {
             if (error) console.warn('[GameContext] Error updating recharge in Supabase:', error);
           });
+
+        supabase
+          .from('recargas_pago_movil')
+          .update({ estado: 'aprobada', estatus: 'aprobada', fecha_procesado: processedAt, procesado_por: processedBy })
+          .eq('id', transactionId)
+          .then(() => {});
       } catch {}
 
-      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(target.amountVes)} aprobada para ${target.userName}`);
+      // b) Actualizar saldo en jugadores_bingo directamente
+      if (targetUserId) {
+        supabase
+          .from('jugadores_bingo')
+          .select('saldo')
+          .eq('id', targetUserId)
+          .single()
+          .then(({ data: jData }) => {
+            const saldo_actual = Number(jData?.saldo || 0);
+            supabase
+              .from('jugadores_bingo')
+              .update({ saldo: saldo_actual + targetAmount })
+              .eq('id', targetUserId)
+              .then(() => {});
+          });
+
+        try {
+          supabase
+            .from('jugadores')
+            .select('saldo')
+            .eq('id', targetUserId)
+            .single()
+            .then(({ data: jData }) => {
+              if (jData) {
+                const saldo_actual = Number(jData?.saldo || 0);
+                supabase
+                  .from('jugadores')
+                  .update({ saldo: saldo_actual + targetAmount })
+                  .eq('id', targetUserId)
+                  .then(() => {});
+              }
+            });
+        } catch {}
+      }
+
+      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(targetAmount)} aprobada para ${target.userName}`);
       try {
         soundService.playCoin();
       } catch {}
@@ -779,6 +880,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         prev.map((r) => (r.id === transactionId ? { ...r, status: 'rejected', rejectionReason: reason, processedAt, processedBy } : r))
       );
 
+      // Asegúrate que rechazarRecarga solo cambie estado, no toque saldo.
       try {
         supabase
           .from('recharges')
@@ -787,6 +889,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .then(({ error }) => {
             if (error) console.warn('[GameContext] Error rejecting recharge in Supabase:', error);
           });
+
+        supabase
+          .from('recargas_pago_movil')
+          .update({ estado: 'rechazada', estatus: 'rechazada', motivo_rechazo: reason, fecha_procesado: processedAt, procesado_por: processedBy })
+          .eq('id', transactionId)
+          .then(() => {});
       } catch {}
 
       addAuditLog('RECHAZAR_RECARGA', `Recarga ${transactionId} rechazada. Motivo: ${reason}`);

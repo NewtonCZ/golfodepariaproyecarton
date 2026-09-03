@@ -193,6 +193,37 @@ export const AuditoriaRecargas: React.FC = () => {
           .eq('id', id);
       }
 
+      // Actualizar tabla recharges
+      try {
+        await supabase
+          .from('recharges')
+          .update({
+            status: 'approved',
+            processed_at: new Date().toISOString(),
+            processed_by: 'limitlessmarketve@gmail.com',
+          })
+          .eq('id', id);
+      } catch {}
+
+      // Actualizar saldo en jugadores_bingo
+      if (userId) {
+        try {
+          const { data: jData } = await supabase
+            .from('jugadores_bingo')
+            .select('saldo')
+            .eq('id', userId)
+            .single();
+
+          const saldo_actual = Number(jData?.saldo || 0);
+          await supabase
+            .from('jugadores_bingo')
+            .update({ saldo: saldo_actual + monto })
+            .eq('id', userId);
+        } catch (jErr) {
+          console.warn('[AuditoriaRecargas] Error actualizando saldo:', jErr);
+        }
+      }
+
       setActionSuccessMsg(`Recarga #${id.slice(-6)} aprobada exitosamente.`);
       setSelectedForReview(null);
       await fetchRecargas();
@@ -217,6 +248,18 @@ export const AuditoriaRecargas: React.FC = () => {
           fecha_procesado: new Date().toISOString(),
         })
         .eq('id', id);
+
+      try {
+        await supabase
+          .from('recharges')
+          .update({
+            status: 'rejected',
+            rejection_reason: motivo || 'Comprobante no coincide con extracto bancario',
+            processed_at: new Date().toISOString(),
+            processed_by: 'limitlessmarketve@gmail.com',
+          })
+          .eq('id', id);
+      } catch {}
 
       setRejectId(null);
       setRejectReason('');
