@@ -63,6 +63,8 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     startLiveDrawSimulation,
     isRealtimeSyncConnected,
     commercialConfig,
+    setRoundTransmissionReplay,
+    setRoundLive,
   } = useGame();
 
   const [voiceEnabled, setVoiceEnabled] = useState(true);
@@ -78,13 +80,15 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   }, []);
 
   // Determine the target round to display:
-  // 1. If a round is actively drawing or marked live:
+  // 1. If a round is actively drawing or marked live or replay
   // 2. If no drawing round, check if there's a finished round <= 7 minutes ago
   // 3. Else check open round or activeRound
   const targetRound: GameRound | null = useMemo(() => {
-    // 1. Live drawing round
+    // 1. Live drawing or replay round
     const liveRound = rounds.find(
       (r) =>
+        String(r.status).toLowerCase() === 'live' ||
+        String(r.status).toLowerCase() === 'replay' ||
         String(r.status).toLowerCase() === 'drawing' ||
         String(r.status).toLowerCase() === 'en_vivo' ||
         (isLiveDrawing && r.id === activeRound?.id)
@@ -97,8 +101,8 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
         (r) =>
           (String(r.status).toLowerCase() === 'finished' ||
             String(r.status).toLowerCase() === 'completado') &&
-          Array.isArray(r.drawnFichas) &&
-          r.drawnFichas.length > 0
+          ((Array.isArray(r.bolas_cantadas) && r.bolas_cantadas.length > 0) ||
+            (Array.isArray(r.drawnFichas) && r.drawnFichas.length > 0))
       )
       .sort((a, b) => {
         const timeA = new Date(a.resultSubmittedAt || a.updatedAt || a.drawAt || 0).getTime();
@@ -109,7 +113,8 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     if (finishedRounds.length > 0) {
       const latestFinished = finishedRounds[0];
       const finishTimeMs = new Date(
-        latestFinished.resultSubmittedAt ||
+        latestFinished.transmission_ends_at ||
+          latestFinished.resultSubmittedAt ||
           latestFinished.updatedAt ||
           latestFinished.drawAt ||
           nowTimestamp
@@ -129,27 +134,41 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   }, [rounds, activeRound, isLiveDrawing, nowTimestamp]);
 
   // Round status flags & 7-Minute calculation
-  const isTargetFinished = Boolean(
-    targetRound &&
-      (String(targetRound.status).toLowerCase() === 'finished' ||
-        String(targetRound.status).toLowerCase() === 'completado')
-  );
+  const roundStatusLower = String(targetRound?.status || '').toLowerCase();
+  const isTargetLive =
+    roundStatusLower === 'live' ||
+    roundStatusLower === 'drawing' ||
+    roundStatusLower === 'en_vivo' ||
+    isLiveDrawing;
+  const isTargetReplay = roundStatusLower === 'replay';
+  const isTargetFinished = roundStatusLower === 'finished' || roundStatusLower === 'completado';
 
-  const finishTimeMs = useMemo(() => {
-    if (!targetRound || !isTargetFinished) return 0;
-    return new Date(
-      targetRound.resultSubmittedAt ||
-        targetRound.updatedAt ||
-        targetRound.drawAt ||
-        targetRound.ends_at ||
-        Date.now()
-    ).getTime();
-  }, [targetRound, isTargetFinished]);
+  const remainingSecondsIn7Min = useMemo(() => {
+    if (!targetRound) return 0;
+    if (isTargetReplay) {
+      if (targetRound.transmission_ends_at) {
+        const endMs = new Date(targetRound.transmission_ends_at).getTime();
+        return Math.max(0, Math.floor((endMs - nowTimestamp) / 1000));
+      }
+      return 420; // 7 min default
+    }
+    if (isTargetFinished) {
+      const finishMs = new Date(
+        targetRound.transmission_ends_at ||
+          targetRound.resultSubmittedAt ||
+          targetRound.updatedAt ||
+          targetRound.drawAt ||
+          targetRound.ends_at ||
+          nowTimestamp
+      ).getTime();
+      const elapsedSec = Math.max(0, (nowTimestamp - finishMs) / 1000);
+      return Math.max(0, Math.floor(420 - elapsedSec));
+    }
+    return 0;
+  }, [targetRound, isTargetReplay, isTargetFinished, nowTimestamp]);
 
-  const diffSeconds = isTargetFinished ? Math.max(0, (nowTimestamp - finishTimeMs) / 1000) : 0;
-  const diffMinutes = diffSeconds / 60;
-  const isWithin7Min = isTargetFinished && diffMinutes <= 7;
-  const remainingSecondsIn7Min = isWithin7Min ? Math.max(0, Math.floor(420 - diffSeconds)) : 0;
+  const isWithin7Min = (isTargetReplay && remainingSecondsIn7Min > 0) || (isTargetFinished && remainingSecondsIn7Min > 0);
+  const diffMinutes = isTargetFinished ? Math.max(0, (420 - remainingSecondsIn7Min) / 60) : 0;
 
   // Cartones del usuario para la ronda objetivo
   const currentRoundCards = useMemo(() => {
@@ -231,26 +250,30 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   const replicaTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const officialDrawnFichasIds: number[] = useMemo(() => {
-    if (isTargetFinished && Array.isArray(targetRound?.drawnFichas)) {
+    if (!targetRound) return [];
+    if (Array.isArray(targetRound.bolas_cantadas) && targetRound.bolas_cantadas.length > 0) {
+      return targetRound.bolas_cantadas;
+    }
+    if (Array.isArray(targetRound.drawnFichas) && targetRound.drawnFichas.length > 0) {
       return targetRound.drawnFichas;
     }
     return [];
-  }, [targetRound, isTargetFinished]);
+  }, [targetRound]);
 
   // Reset or initialize replica when target round changes
   useEffect(() => {
-    if (isWithin7Min && officialDrawnFichasIds.length > 0) {
+    if ((isTargetLive || isTargetReplay || isWithin7Min) && officialDrawnFichasIds.length > 0) {
       setReplicaStep(1);
       setIsReplicaPlaying(true);
     } else {
       setReplicaStep(0);
       setIsReplicaPlaying(false);
     }
-  }, [targetRound?.id, isWithin7Min, officialDrawnFichasIds.length]);
+  }, [targetRound?.id, isTargetLive, isTargetReplay, isWithin7Min, officialDrawnFichasIds.length]);
 
-  // Sequential replica runner
+  // Sequential streaming & replay runner
   useEffect(() => {
-    if (!isWithin7Min || !isReplicaPlaying || officialDrawnFichasIds.length === 0) {
+    if ((!isTargetLive && !isTargetReplay && !isWithin7Min) || !isReplicaPlaying || officialDrawnFichasIds.length === 0) {
       if (replicaTimerRef.current) clearInterval(replicaTimerRef.current);
       return;
     }
@@ -258,6 +281,15 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     replicaTimerRef.current = setInterval(() => {
       setReplicaStep((prev) => {
         if (prev >= officialDrawnFichasIds.length) {
+          // CAMBIO 2: Al terminar de transmitir, NO cerrar. Cambiar a replay por 7 minutos.
+          if (isTargetLive && targetRound?.id) {
+            setRoundTransmissionReplay(targetRound.id, 7);
+            return prev;
+          }
+          // CAMBIO 2: Durante replay reproducir en bucle las bolas
+          if (isTargetReplay) {
+            return 1;
+          }
           setIsReplicaPlaying(false);
           if (replicaTimerRef.current) clearInterval(replicaTimerRef.current);
           return prev;
@@ -278,14 +310,14 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     return () => {
       if (replicaTimerRef.current) clearInterval(replicaTimerRef.current);
     };
-  }, [isWithin7Min, isReplicaPlaying, officialDrawnFichasIds, voiceEnabled]);
+  }, [isTargetLive, isTargetReplay, isWithin7Min, isReplicaPlaying, officialDrawnFichasIds, voiceEnabled, targetRound?.id, setRoundTransmissionReplay]);
 
   // Drawn list for display:
-  // - If in 7-minute replica mode: slice official drawn sequence up to replicaStep
+  // - If in 7-minute replica mode or live: slice official drawn sequence up to replicaStep
   // - If live drawing: liveDrawnFichas
   // - Else: restored from storage or empty
   const drawnList: Ficha[] = useMemo(() => {
-    if (isWithin7Min && officialDrawnFichasIds.length > 0) {
+    if ((isTargetLive || isTargetReplay || isWithin7Min) && officialDrawnFichasIds.length > 0) {
       const currentSlice = officialDrawnFichasIds.slice(0, replicaStep);
       return currentSlice.map((id) => getFichaById(id));
     }
@@ -300,6 +332,8 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     }
     return [];
   }, [
+    isTargetLive,
+    isTargetReplay,
     isWithin7Min,
     officialDrawnFichasIds,
     replicaStep,
@@ -705,7 +739,17 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="text-center md:text-left">
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-3">
-              {isWithin7Min ? (
+              {isTargetReplay ? (
+                <div className="inline-flex items-center gap-2 bg-amber-600/90 text-white font-black text-xs px-3.5 py-1 rounded-full shadow-md animate-pulse">
+                  <Radio className="w-4 h-4" />
+                  <span>RETRANSMISIÓN EN BUCLE</span>
+                </div>
+              ) : isTargetLive ? (
+                <div className="inline-flex items-center gap-2 bg-red-600/90 text-white font-black text-xs px-3 py-1 rounded-full shadow-md">
+                  <Radio className="w-4 h-4 animate-pulse" />
+                  <span>SALA DE SORTEO EN VIVO</span>
+                </div>
+              ) : isWithin7Min ? (
                 <div className="inline-flex items-center gap-2 bg-emerald-600/90 text-white font-black text-xs px-3.5 py-1 rounded-full shadow-md animate-pulse">
                   <Radio className="w-4 h-4" />
                   <span>RÉPLICA OFICIAL EN VIVO • RESULTADOS</span>
@@ -718,10 +762,15 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
               )}
 
               {/* 7-Minute Countdown Pill if within 7 min */}
-              {isWithin7Min && (
+              {(isTargetReplay || isWithin7Min) && (
                 <div className="inline-flex items-center gap-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/50 font-mono font-black text-xs px-3 py-1 rounded-full shadow-sm">
                   <Clock className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Tiempo restante de réplica: {formatTime(remainingSecondsIn7Min)}</span>
+                  <span>
+                    RETRANSMISIÓN - Quedan{' '}
+                    {`${String(Math.floor(Math.max(0, remainingSecondsIn7Min) / 60)).padStart(2, '0')}:${String(
+                      Math.max(0, remainingSecondsIn7Min) % 60
+                    ).padStart(2, '0')}`}
+                  </span>
                 </div>
               )}
 

@@ -41,9 +41,10 @@ export interface MatrixCard {
   totalPrizeVes: number;
   isClaimed?: boolean;
   is_archived?: boolean;
+  pagado?: boolean;
 }
 
-export type RoundStatus = 'scheduled' | 'open' | 'closed' | 'drawing' | 'finished';
+export type RoundStatus = 'scheduled' | 'open' | 'closed' | 'drawing' | 'live' | 'replay' | 'finished';
 
 export interface GameRound {
   id: string;
@@ -55,6 +56,9 @@ export interface GameRound {
   drawAt: string;
   starts_at?: string;
   ends_at?: string;
+  transmission_ends_at?: string;
+  bolas_cantadas?: number[];
+  hasPreloadedResults?: boolean;
   status: RoundStatus;
   drawnFichas: number[]; // Ordered array of ficha IDs drawn
   totalCardsSold: number;

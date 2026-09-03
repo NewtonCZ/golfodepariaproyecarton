@@ -115,10 +115,11 @@ export interface MatrixCard {
   totalPrizeVes: number;
   matchedCount?: number;
   isArchived?: boolean;
+  pagado?: boolean;
   [key: string]: any;
 }
 
-export type RoundStatus = 'open' | 'closed' | 'drawing' | 'finished' | 'scheduled' | string;
+export type RoundStatus = 'open' | 'closed' | 'drawing' | 'live' | 'replay' | 'finished' | 'scheduled' | string;
 
 export interface GameRound {
   id: string;
@@ -133,6 +134,9 @@ export interface GameRound {
   drawAt?: string;
   starts_at?: string;
   ends_at?: string;
+  transmission_ends_at?: string;
+  bolas_cantadas?: number[];
+  hasPreloadedResults?: boolean;
   status: RoundStatus;
   cardPriceVes?: number;
   card_price?: number;

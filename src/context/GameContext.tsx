@@ -73,6 +73,10 @@ interface GameContextType {
   updateRoundConfig: (roundId: string, data: any) => { success: boolean; message: string };
   setRoundStatus: (roundId: string, status: GameRound['status']) => void;
   submitRoundResult: (roundId: string, drawnFichas: number[], otpCode: string) => { success: boolean; message: string; winnersCount?: number; totalPaidVes?: number };
+  ingresarResultados: (roundId: string, drawnFichas: number[], otpCode: string) => { success: boolean; message: string; winnersCount?: number; totalPaidVes?: number };
+  verifyWinners: (roundId: string, customDrawnFichas?: number[]) => { count: number; totalPaid: number };
+  setRoundTransmissionReplay: (roundId: string, replayMinutes?: number) => void;
+  setRoundLive: (roundId: string) => void;
   updateCommercialConfig: (newConfig: Partial<CommercialConfig>) => Promise<{ success: boolean; message: string; data?: CommercialConfig }>;
   fetchCommercialConfig: () => Promise<void>; resetToInitialData: () => void;
   liveDrawingRound: GameRound | null; isLiveDrawing: boolean; liveDrawnFichas: Ficha[];
@@ -696,14 +700,41 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const check = () => {
       const now = timeSync.getServerNow(); let hasChanges = false;
       const updated = rounds.map(round => {
-        const st = String(round.status || '').toLowerCase(); if (st === 'finished' || st === 'drawing') return round;
-        const openMs = timeSync.parseIsoToEpochMs(round.starts_at || round.openBetAt); const closeMs = timeSync.parseIsoToEpochMs(round.ends_at || round.closeBetAt);
-        if (st === 'scheduled' &&!isNaN(openMs) &&!isNaN(closeMs) && now >= openMs && now < closeMs) {
+        const st = String(round.status || '').toLowerCase();
+        if (st === 'finished') return round;
+
+        // CAMBIO 2: Verificar fin de los 7 minutos de retransmisión
+        if (st === 'replay') {
+          const replayEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
+          if (replayEndMs > 0 && now >= replayEndMs) {
+            hasChanges = true;
+            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
+            return { ...round, status: 'finished' as RoundStatus };
+          }
+          return round;
+        }
+
+        if (st === 'drawing' || st === 'live') return round;
+
+        const openMs = timeSync.parseIsoToEpochMs(round.starts_at || round.openBetAt);
+        const closeMs = timeSync.parseIsoToEpochMs(round.ends_at || round.closeBetAt);
+        const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
+
+        // CAMBIO 2: Al llegar la hora start_at / drawAt, si tiene bolas_cantadas pasa a live
+        const hasBolas = (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length > 0) ||
+                         (Array.isArray(round.drawnFichas) && round.drawnFichas.length > 0);
+        if (!isNaN(drawMs) && now >= drawMs && hasBolas) {
+          hasChanges = true;
+          mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
+          return { ...round, status: 'live' as RoundStatus };
+        }
+
+        if (st === 'scheduled' && !isNaN(openMs) && !isNaN(closeMs) && now >= openMs && now < closeMs) {
           hasChanges = true;
           mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
           return {...round, status: 'open' as RoundStatus };
         }
-        if ((st === 'open' || st === 'scheduled') &&!isNaN(closeMs) && now >= closeMs) {
+        if ((st === 'open' || st === 'scheduled') && !isNaN(closeMs) && now >= closeMs) {
           hasChanges = true;
           mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
           return {...round, status: 'closed' as RoundStatus };
@@ -718,17 +749,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [rounds]);
 
   const upcomingRounds = useMemo(() => {
-    return rounds.filter(r => { const st = String(r.status || '').toLowerCase(); return st === 'open' || st === 'scheduled'; })
-     .sort((a, b) => { const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt); const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt); if (timeA!== timeB) return timeA - timeB; return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0); }).slice(0, 3);
+    return rounds.filter(r => {
+      const st = String(r.status || '').toLowerCase();
+      return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay';
+    })
+     .sort((a, b) => {
+       const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
+       const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
+       if (timeA !== timeB) return timeA - timeB;
+       return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+     }).slice(0, 3);
   }, [rounds]);
 
   const activeRounds = upcomingRounds;
 
   const activeRound = useMemo(() => {
-    if (upcomingRounds.length > 0) { const open = upcomingRounds.find(r => String(r.status).toLowerCase() === 'open'); return open || upcomingRounds[0]; }
-    const drawing = rounds.find(r => String(r.status).toLowerCase() === 'drawing'); if (drawing) return drawing;
-    const anyOpen = rounds.find(r => String(r.status).toLowerCase() === 'open'); if (anyOpen) return anyOpen;
-    return rounds.find(r => String(r.status).toLowerCase()!== 'finished') || rounds[0] || null;
+    const live = rounds.find(r => {
+      const s = String(r.status).toLowerCase();
+      return s === 'live' || s === 'drawing' || s === 'replay';
+    });
+    if (live) return live;
+    if (upcomingRounds.length > 0) {
+      const open = upcomingRounds.find(r => String(r.status).toLowerCase() === 'open');
+      return open || upcomingRounds[0];
+    }
+    const anyOpen = rounds.find(r => String(r.status).toLowerCase() === 'open');
+    if (anyOpen) return anyOpen;
+    return rounds.find(r => String(r.status).toLowerCase() !== 'finished') || rounds[0] || null;
   }, [upcomingRounds, rounds]);
 
   // --- OPERACIONES COMPLETAS DEL CONTEXTO ---
@@ -1407,6 +1454,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('[GameContext] Error upserting round in Supabase:', err);
       }
 
+      // CAMBIO 4: Anular automáticamente cartones anteriores
+      // Un cartón solo sirve para el round_id donde se compró.
+      // WHERE round_id != new_round_id no participan en nuevos sorteos.
+      setCards((prevCards) => {
+        const updated = prevCards.map((c) => {
+          if (c.roundId !== newRound.id) {
+            return {
+              ...c,
+              is_archived: true,
+              isArchived: true,
+              anulado: true,
+              participa: false,
+              roundStatus: 'finished' as const,
+            };
+          }
+          return c;
+        });
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, updated, 'high');
+        return updated;
+      });
+
+      try {
+        supabase
+          .from('cards')
+          .update({ is_archived: true, round_status: 'finished' })
+          .neq('round_id', newRound.id)
+          .then(() => {});
+      } catch {}
+
       addAuditLog('CREAR_SORTEO', `Nuevo sorteo programado: ${newRound.title} (#${newRound.roundNumber}) para ${drawAt}`);
       try {
         syncEngine.broadcastRoundCreated(newRound);
@@ -1474,46 +1550,55 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [rounds, addAuditLog]
   );
 
-  const submitRoundResult = useCallback(
-    (roundId: string, drawnFichas: number[], otpCode: string): {
-      success: boolean;
-      message: string;
-      winnersCount?: number;
-      totalPaidVes?: number;
-    } => {
-      // Surgical invalidation when a round is finished
-      mobileCacheManager.surgicalInvalidate('ROUND_FINISHED', { roundId });
-
+  const verifyWinners = useCallback(
+    (roundId: string, customDrawnFichas?: number[]): { count: number; totalPaid: number } => {
       const targetRound = rounds.find((r) => r.id === roundId);
-      if (!targetRound) {
-        return { success: false, message: 'Sorteo no encontrado.' };
-      }
+      if (!targetRound) return { count: 0, totalPaid: 0 };
 
-      if (!drawnFichas || drawnFichas.length === 0) {
-        return { success: false, message: 'Debes seleccionar al menos una ficha para certificar el sorteo.' };
-      }
+      const fichas =
+        (customDrawnFichas && customDrawnFichas.length > 0 ? customDrawnFichas : null) ||
+        targetRound.bolas_cantadas ||
+        targetRound.drawnFichas ||
+        [];
 
-      const effectiveCardPrice = targetRound.cardPriceVes || targetRound.card_price || commercialConfig.singleCardPriceVes || 25;
+      if (!fichas || fichas.length === 0) return { count: 0, totalPaid: 0 };
 
-      // 1. Evaluar todos los cartones
-      let totalWinnersCount = 0;
-      let totalPrizesPaidVes = 0;
+      const effectiveCardPrice =
+        targetRound.cardPriceVes || targetRound.card_price || commercialConfig.singleCardPriceVes || 25;
+
+      let newlyVerifiedWinners = 0;
+      let newlyPaidVes = 0;
       const userPrizeMap = new Map<string, number>();
 
+      let cardsChanged = false;
       const updatedCards = cards.map((card) => {
         if (card.roundId !== roundId) return card;
 
         const evaluation = evaluateCardMatrix(
           card.matrix,
-          drawnFichas,
+          fichas,
           card.priceVes || effectiveCardPrice,
           commercialConfig,
           true
         );
 
-        if (evaluation.isWinner && evaluation.totalPrizeVes > 0) {
-          totalWinnersCount++;
-          totalPrizesPaidVes += evaluation.totalPrizeVes;
+        // CAMBIO 3: Idempotencia estricta con campo pagado
+        if (card.pagado) {
+          return {
+            ...card,
+            matchedCount: evaluation.matchedCount,
+            winningPatterns: evaluation.winningPatterns,
+            totalPrizeVes: evaluation.totalPrizeVes,
+            status: evaluation.status,
+            isWinner: evaluation.isWinner,
+          };
+        }
+
+        cardsChanged = true;
+        const isWin = evaluation.isWinner && evaluation.totalPrizeVes > 0;
+        if (isWin) {
+          newlyVerifiedWinners++;
+          newlyPaidVes += evaluation.totalPrizeVes;
           const currentPrize = userPrizeMap.get(card.userId) || 0;
           userPrizeMap.set(card.userId, currentPrize + evaluation.totalPrizeVes);
         }
@@ -1525,69 +1610,122 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           totalPrizeVes: evaluation.totalPrizeVes,
           status: evaluation.status,
           isWinner: evaluation.isWinner,
-          roundStatus: 'finished' as const,
+          pagado: true, // Idempotente: marcado como verificado y pagado
         };
       });
 
-      const finalCards = mobileCacheManager.isMobile()
-        ? mobileCacheManager.pruneCardsForRAM(updatedCards, currentUserId, activeRoundIds)
-        : updatedCards;
+      if (cardsChanged) {
+        const finalCards = mobileCacheManager.isMobile()
+          ? mobileCacheManager.pruneCardsForRAM(updatedCards, currentUserId, activeRoundIds)
+          : updatedCards;
+        setCards(finalCards);
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, finalCards, 'high');
 
-      setCards(finalCards);
-      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, finalCards, 'high');
-
-      // 2. Liquidar premios y generar movimientos en ledger
-      const newLedgerEntries: WalletLedgerEntry[] = [];
-      setUsers((prevUsers) =>
-        prevUsers.map((u) => {
-          const wonAmount = userPrizeMap.get(u.id);
-          if (wonAmount && wonAmount > 0) {
-            const balBefore = u.availableBalance;
-            const balAfter = balBefore + wonAmount;
-
-            newLedgerEntries.push({
-              id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-              userId: u.id,
-              userName: u.name,
-              type: 'prize_payout',
-              amountVes: wonAmount,
-              balanceBefore: balBefore,
-              balanceAfter: balAfter,
-              description: `Premio ganado en Sorteo #${targetRound.roundNumber} (${targetRound.title})`,
-              referenceId: targetRound.id,
-              createdAt: new Date().toISOString(),
-            });
-
-            return {
-              ...u,
-              availableBalance: balAfter,
-              totalWonVes: (u.totalWonVes || 0) + wonAmount,
-            };
-          }
-          return u;
-        })
-      );
-
-      if (newLedgerEntries.length > 0) {
-        setLedger((prev) => {
-          const combinedLedger = [...newLedgerEntries, ...prev];
-          const limits = mobileCacheManager.getQuotaLimits();
-          const pruned = mobileCacheManager.isMobile()
-            ? combinedLedger.slice(0, limits.maxLedgerInMemory)
-            : combinedLedger;
-          mobileCacheManager.scheduleSave(`${STORAGE_KEY}_ledger`, pruned, 'normal');
-          return pruned;
-        });
+        try {
+          supabase
+            .from('cards')
+            .update({ pagado: true })
+            .eq('round_id', roundId)
+            .then(() => {});
+        } catch {}
       }
 
-      // 3. Marcar la ronda como finalizada con resultados firmados
+      // Acreditar saldo a ganadores sólo por lo que no había sido pagado
+      if (userPrizeMap.size > 0) {
+        const newLedgerEntries: WalletLedgerEntry[] = [];
+        setUsers((prevUsers) =>
+          prevUsers.map((u) => {
+            const wonAmount = userPrizeMap.get(u.id);
+            if (wonAmount && wonAmount > 0) {
+              const balBefore = u.availableBalance;
+              const balAfter = balBefore + wonAmount;
+
+              newLedgerEntries.push({
+                id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                userId: u.id,
+                userName: u.name,
+                type: 'prize_payout',
+                amountVes: wonAmount,
+                balanceBefore: balBefore,
+                balanceAfter: balAfter,
+                description: `Premio ganado en Sorteo #${targetRound.roundNumber} (${targetRound.title})`,
+                referenceId: targetRound.id,
+                createdAt: new Date().toISOString(),
+              });
+
+              return {
+                ...u,
+                availableBalance: balAfter,
+                totalWonVes: (u.totalWonVes || 0) + wonAmount,
+              };
+            }
+            return u;
+          })
+        );
+
+        if (newLedgerEntries.length > 0) {
+          setLedger((prev) => {
+            const combinedLedger = [...newLedgerEntries, ...prev];
+            const limits = mobileCacheManager.getQuotaLimits();
+            const pruned = mobileCacheManager.isMobile()
+              ? combinedLedger.slice(0, limits.maxLedgerInMemory)
+              : combinedLedger;
+            mobileCacheManager.scheduleSave(`${STORAGE_KEY}_ledger`, pruned, 'normal');
+            return pruned;
+          });
+        }
+      }
+
+      return { count: newlyVerifiedWinners, totalPaid: newlyPaidVes };
+    },
+    [rounds, cards, commercialConfig, currentUserId, activeRoundIds]
+  );
+
+  const ingresarResultados = useCallback(
+    (roundId: string, drawnFichas: number[], otpCode: string): {
+      success: boolean;
+      message: string;
+      winnersCount?: number;
+      totalPaidVes?: number;
+    } => {
+      const targetRound = rounds.find((r) => r.id === roundId);
+      if (!targetRound) {
+        return { success: false, message: 'Sorteo no encontrado.' };
+      }
+
+      // CAMBIO 1: Permitir hasta 10 min antes de close_bet_at
+      const closeBetStr = targetRound.closeBetAt || targetRound.close_bet_at || targetRound.ends_at;
+      if (closeBetStr) {
+        const closeBetMs = new Date(closeBetStr).getTime();
+        const tenMinBeforeClose = closeBetMs - 10 * 60 * 1000;
+        const now = timeSync.getServerNow();
+        if (now < tenMinBeforeClose) {
+          const minLeft = Math.ceil((tenMinBeforeClose - now) / (60 * 1000));
+          return {
+            success: false,
+            message: `Solo se permite ingresar resultados cuando falten 10 minutos o menos para el cierre de apuestas (faltan ${minLeft} min).`,
+          };
+        }
+      }
+
+      if (!drawnFichas || drawnFichas.length === 0) {
+        return { success: false, message: 'Debes seleccionar las fichas para el resultado del sorteo.' };
+      }
+
+      // CAMBIO 3: Verificación obligatoria de todos los cartones y saldo con idempotencia
+      const verificationResult = verifyWinners(roundId, drawnFichas);
+
+      // CAMBIO 1: NO hacer closeRoom() ni status='closed'.
+      // Solo guardar bolas en rounds.bolas_cantadas. La sala sigue en countdown normal.
       const signedBy = loggedUsername || activeCredential?.displayName || operatorRole || 'Administrador';
       const updatedRound: GameRound = {
         ...targetRound,
-        status: 'finished',
+        status: (targetRound.status === 'finished' || targetRound.status === 'closed') ? targetRound.status : targetRound.status || 'open',
+        bolas_cantadas: drawnFichas,
         drawnFichas,
-        winningCardsCount: totalWinnersCount,
-        totalPrizesPaidVes: totalPrizesPaidVes,
+        hasPreloadedResults: true,
+        winningCardsCount: verificationResult.count,
+        totalPrizesPaidVes: verificationResult.totalPaid,
         resultLocked: true,
         resultSubmittedBy: signedBy,
         resultSubmittedAt: new Date().toISOString(),
@@ -1597,57 +1735,85 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setRounds(updatedRounds);
       mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, updatedRounds, 'high');
 
-      // 4. Actualizar en Supabase si está disponible
       try {
         supabase
           .from('rounds')
           .update({
-            status: 'finished',
+            bolas_cantadas: drawnFichas,
             drawn_fichas: drawnFichas,
-            winning_cards_count: totalWinnersCount,
-            total_prizes_paid_ves: totalPrizesPaidVes,
+            winning_cards_count: verificationResult.count,
+            total_prizes_paid_ves: verificationResult.totalPaid,
             result_locked: true,
             result_submitted_at: new Date().toISOString(),
           })
           .eq('id', roundId)
           .then(({ error }) => {
-            if (error) console.warn('[GameContext] Error updating round in Supabase:', error);
+            if (error) console.warn('[GameContext] Supabase update bolas_cantadas error:', error);
           });
       } catch (err) {
-        console.warn('[GameContext] Supabase update error:', err);
+        console.warn('[GameContext] Error updating bolas_cantadas in Supabase:', err);
       }
 
-      // 5. Registrar en auditoría
       addAuditLog(
-        'FIRMA_RESULTADO',
-        `Sorteo #${targetRound.roundNumber} cerrado y firmado. Fichas: ${drawnFichas.length}. Ganadores: ${totalWinnersCount}. Total pagado: ${formatMoney(totalPrizesPaidVes)}`
+        'GUARDAR_RESULTADOS',
+        `Figuras guardadas en bolas_cantadas para Sorteo #${targetRound.roundNumber}. Fichas: ${drawnFichas.length}. Ganadores: ${verificationResult.count}. Sala continúa en cuenta regresiva.`
       );
 
-      // 6. Efecto de sonido y sincronización
       try {
         soundService.playWinner();
       } catch {}
 
       try {
-        syncEngine.broadcastLiveDrawFinished({
-          roundId,
-          drawnFichas,
-          winnersCount: totalWinnersCount,
-          totalPaidVes: totalPrizesPaidVes,
-          updatedRound,
-        });
-        syncEngine.broadcastRoundStatus(roundId, 'finished', targetRound.title, targetRound.roundNumber);
+        syncEngine.broadcastRoundStatus(roundId, updatedRound.status, targetRound.title, targetRound.roundNumber);
       } catch {}
 
       return {
         success: true,
-        message: `¡Sorteo #${targetRound.roundNumber} firmado con éxito! Ganadores: ${totalWinnersCount}, Premios liquidados: ${formatMoney(totalPrizesPaidVes)}.`,
-        winnersCount: totalWinnersCount,
-        totalPaidVes: totalPrizesPaidVes,
+        message: `¡Figuras guardadas en bolas_cantadas (${drawnFichas.length} fichas)! La sala continuará en cuenta regresiva normal hasta su hora de transmisión.`,
+        winnersCount: verificationResult.count,
+        totalPaidVes: verificationResult.totalPaid,
       };
     },
-    [rounds, cards, commercialConfig, loggedUsername, activeCredential, operatorRole, ledger, addAuditLog, formatMoney]
+    [rounds, verifyWinners, loggedUsername, activeCredential, operatorRole, addAuditLog]
   );
+
+  const submitRoundResult = ingresarResultados;
+
+  const setRoundTransmissionReplay = useCallback((roundId: string, replayMinutes: number = 7) => {
+    const endsAt = new Date(Date.now() + replayMinutes * 60 * 1000).toISOString();
+    setRounds((prev) =>
+      prev.map((r) => {
+        if (r.id === roundId) {
+          return {
+            ...r,
+            status: 'replay' as RoundStatus,
+            transmission_ends_at: r.transmission_ends_at || endsAt,
+          };
+        }
+        return r;
+      })
+    );
+    try {
+      supabase.from('rounds').update({ status: 'replay', transmission_ends_at: endsAt }).eq('id', roundId).then(() => {});
+    } catch {}
+  }, []);
+
+  const setRoundLive = useCallback((roundId: string) => {
+    setRounds((prev) =>
+      prev.map((r) => {
+        if (r.id === roundId) {
+          return {
+            ...r,
+            status: 'live' as RoundStatus,
+          };
+        }
+        return r;
+      })
+    );
+    try {
+      supabase.from('rounds').update({ status: 'live' }).eq('id', roundId).then(() => {});
+    } catch {}
+  }, []);
 
   const startLiveDrawSimulation = useCallback(
     (roundId: string) => {
@@ -1981,6 +2147,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     purchaseCards, submitRecharge, approveRecharge, rejectRecharge,
     submitWithdrawal, completeWithdrawal, rejectWithdrawal,
     createRound, updateRoundConfig, setRoundStatus, submitRoundResult,
+    ingresarResultados, verifyWinners, setRoundTransmissionReplay, setRoundLive,
     updateCommercialConfig, fetchCommercialConfig, resetToInitialData,
     liveDrawingRound, isLiveDrawing, liveDrawnFichas, startLiveDrawSimulation, stopLiveDrawSimulation,
     quickAddBalance, adjustUserBalance, updateUserStatus, isRealtimeSyncConnected, lastSyncTimestamp, fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals,
