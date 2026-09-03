@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { getJugadores, getJugadoresSync, JugadorBingo, deleteJugador, saveJugador } from '../../services/playerStorage';
+import { supabase } from '../../services/supabaseClient';
 import { realtimeService } from '../../services/realtimeService';
 import {
   Users,
@@ -25,17 +26,99 @@ export const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({ onBackToGame
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Recarga en tiempo real cuando se registra un nuevo jugador
+  // Recarga en tiempo real usando Supabase directamente
   const refreshList = async () => {
     setIsLoading(true);
     try {
-      const data = await getJugadores();
-      setJugadores(data);
+      // 1. Usar supabase.from().select() directo, no fetch manual
+      const { data: dbData, error: sbError } = await supabase
+        .from('jugadores_bingo')
+        .select('*')
+        .order('fecha_registro', { ascending: false });
 
-      // También consultar la API en segundo plano para sincronización entre dispositivos
-      const res = await fetch(`/api/players?_nocache=${Date.now()}`);
-      if (res.ok) {
-        const result = await res.json();
+      if (sbError) {
+        console.log('[AdminPlayersView] Supabase jugadores_bingo error:', sbError);
+        // Fallback a tabla alternativa 'jugadores' mediante supabase.from().select() directo
+        const { data: altData, error: altError } = await supabase
+          .from('jugadores')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (altError) {
+          console.log('[AdminPlayersView] Supabase jugadores error:', altError);
+          const localData = await getJugadores();
+          setJugadores(localData);
+        } else if (Array.isArray(altData) && altData.length > 0) {
+          const mappedAlt: JugadorBingo[] = altData.map((item: any) => ({
+            id: String(item.id || `jug-${Date.now()}`),
+            nombre: (item.nombre || item.name || item.first_name || item.firstName || '').trim() || 'Jugador',
+            apellido: (item.apellido || item.last_name || item.lastName || '').trim(),
+            cedula: String(item.cedula || item.document_id || item.documentId || '').trim().toUpperCase(),
+            correo: String(item.correo || item.email || '').trim().toLowerCase(),
+            telefono: String(item.telefono || item.phone || '0412-0000000').trim(),
+            fechaNacimiento: String(item.fecha_nacimiento || item.fechaNacimiento || item.birth_date || item.birthDate || '').trim(),
+            fechaRegistro:
+              item.fecha_registro ||
+              item.fechaRegistro ||
+              item.created_at ||
+              new Date().toLocaleDateString('es-VE', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+          }));
+          setJugadores(mappedAlt);
+        } else {
+          const localData = await getJugadores();
+          setJugadores(localData);
+        }
+      } else if (Array.isArray(dbData) && dbData.length > 0) {
+        const mapped: JugadorBingo[] = dbData.map((item: any) => ({
+          id: String(item.id || `jug-${Date.now()}`),
+          nombre: (item.nombre || item.name || item.first_name || item.firstName || '').trim() || 'Jugador',
+          apellido: (item.apellido || item.last_name || item.lastName || '').trim(),
+          cedula: String(item.cedula || item.document_id || item.documentId || '').trim().toUpperCase(),
+          correo: String(item.correo || item.email || '').trim().toLowerCase(),
+          telefono: String(item.telefono || item.phone || '0412-0000000').trim(),
+          fechaNacimiento: String(item.fecha_nacimiento || item.fechaNacimiento || item.birth_date || item.birthDate || '').trim(),
+          fechaRegistro:
+            item.fecha_registro ||
+            item.fechaRegistro ||
+            item.created_at ||
+            new Date().toLocaleDateString('es-VE', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+        }));
+        setJugadores(mapped);
+      } else {
+        const localData = await getJugadores();
+        setJugadores(localData);
+      }
+
+      // 2. Si se realiza sincronización secundaria opcional por fetch:
+      // Agregamos if (!response.ok) throw y console.log(await response.text()) para ver el error real
+      try {
+        const response = await fetch(`/api/players?_nocache=${Date.now()}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.log('[AdminPlayersView] Response error:', errorText);
+          throw new Error(`HTTP error ${response.status}: ${errorText}`);
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const text = await response.text();
+          console.log('[AdminPlayersView] Non-JSON response (HTML):', text);
+          throw new Error(`Expected JSON but received ${contentType}`);
+        }
+
+        const result = await response.json();
         if (result && result.success && Array.isArray(result.data)) {
           for (const serverUser of result.data) {
             const cleanDoc = (serverUser.documentId || serverUser.cedula || '').trim();
@@ -61,6 +144,8 @@ export const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({ onBackToGame
           const updated = await getJugadores();
           setJugadores(updated);
         }
+      } catch (fetchErr) {
+        // Error de fetch atrapado de forma segura tras registrarlo
       }
     } catch (e) {
       console.warn('[AdminPlayersView] Error en refreshList:', e);
