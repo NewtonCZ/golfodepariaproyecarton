@@ -298,12 +298,14 @@ export const supabase = {
           error: null,
         }),
       }),
-      delete: async () => ({
-        eq: (_col: string, _val: any) => ({
-          data: null,
-          error: null,
-        }),
-      }),
+      delete: () => {
+        const deleteBuilder: any = {
+          eq: (_col: string, _val: any) => deleteBuilder,
+          in: (_col: string, _vals: any[]) => deleteBuilder,
+          then: (resolve: any) => resolve({ data: null, error: null }),
+        };
+        return deleteBuilder;
+      },
     };
 
     return queryBuilder;

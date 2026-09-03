@@ -171,6 +171,38 @@ CREATE TABLE IF NOT EXISTS public.cards (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 4.1 TABLA: user_cards (compatibilidad para adjudicación de cartones comprados)
+CREATE TABLE IF NOT EXISTS public.user_cards (
+    id TEXT PRIMARY KEY,
+    card_id TEXT,
+    round_id TEXT,
+    round_number INTEGER,
+    user_id TEXT,
+    user_name TEXT,
+    card_data JSONB,
+    matrix JSONB,
+    code TEXT,
+    price_ves NUMERIC(10, 2) DEFAULT 25.00,
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4.2 TABLA: cartones_comprados (tabla alternativa de respaldo para cartones comprados)
+CREATE TABLE IF NOT EXISTS public.cartones_comprados (
+    id TEXT PRIMARY KEY,
+    card_id TEXT,
+    round_id TEXT,
+    round_number INTEGER,
+    user_id TEXT,
+    user_name TEXT,
+    card_data JSONB,
+    matrix JSONB,
+    code TEXT,
+    price_ves NUMERIC(10, 2) DEFAULT 25.00,
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- 5. TABLA: recharges (user_id como TEXT plano, SIN REFERENCES)
 CREATE TABLE IF NOT EXISTS public.recharges (
     id TEXT PRIMARY KEY,
@@ -359,6 +391,8 @@ BEGIN
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.recharges; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.recargas_pago_movil; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.cards; EXCEPTION WHEN duplicate_object THEN END;
+    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.user_cards; EXCEPTION WHEN duplicate_object THEN END;
+    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.cartones_comprados; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.withdrawals; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.retiros; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.rounds; EXCEPTION WHEN duplicate_object THEN END;
@@ -375,6 +409,8 @@ ALTER TABLE public.jugadores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rounds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cartones_comprados ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recharges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.recargas_pago_movil ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.withdrawals ENABLE ROW LEVEL SECURITY;
@@ -392,6 +428,7 @@ DECLARE
 BEGIN
     FOR tbl IN SELECT unnest(ARRAY[
         'users', 'jugadores_bingo', 'jugadores', 'admin_users', 'rounds', 'cards',
+        'user_cards', 'cartones_comprados',
         'recharges', 'recargas_pago_movil', 'withdrawals', 'retiros', 'comercial',
         'ledger', 'otp_codes', 'audit_logs', 'support_tickets', 'reclamos'
     ])
@@ -399,6 +436,19 @@ BEGIN
         EXECUTE format('DROP POLICY IF EXISTS allow_all_%I ON public.%I', tbl, tbl);
         EXECUTE format('CREATE POLICY allow_all_%I ON public.%I FOR ALL TO public USING (true) WITH CHECK (true)', tbl, tbl);
     END LOOP;
+END $$;
+
+-- Políticas de inserción y selección garantizadas para usuarios autenticados
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS allow_auth_all_cards ON public.cards;
+    CREATE POLICY allow_auth_all_cards ON public.cards FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    DROP POLICY IF EXISTS allow_auth_all_user_cards ON public.user_cards;
+    CREATE POLICY allow_auth_all_user_cards ON public.user_cards FOR ALL TO authenticated USING (true) WITH CHECK (true);
+    DROP POLICY IF EXISTS allow_auth_all_cartones ON public.cartones_comprados;
+    CREATE POLICY allow_auth_all_cartones ON public.cartones_comprados FOR ALL TO authenticated USING (true) WITH CHECK (true);
+EXCEPTION WHEN OTHERS THEN
+    NULL;
 END $$;
 
 -- 12. RECARGAR CACHÉ DE ESQUEMA POSTGREST

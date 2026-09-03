@@ -280,14 +280,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [isAuthenticated, sessionToken, activeCredential, loggedUsername]);
 
   const activeRoundIds = useMemo(() => {
-    return new Set(
-      rounds
-        .filter((r) => {
-          const st = String(r.status || '').toLowerCase();
-          return st === 'open' || st === 'drawing' || st === 'scheduled';
-        })
-        .map((r) => r.id)
-    );
+    const ids = new Set<string>();
+    rounds.forEach((r) => {
+      const st = String(r.status || '').toLowerCase();
+      if (st === 'open' || st === 'drawing' || st === 'scheduled') {
+        if (r.id) {
+          ids.add(String(r.id));
+          ids.add(String(r.id).toLowerCase());
+        }
+        if (r.roundNumber) {
+          ids.add(String(r.roundNumber));
+          ids.add(`round-${r.roundNumber}`);
+        }
+      }
+    });
+    return ids;
   }, [rounds]);
 
   // Mobile RAM Footprint Reducer: Prunes unneeded finished cards and unbounded logs on mobile
@@ -346,6 +353,92 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     mobileCacheManager.scheduleSave(`${STORAGE_KEY}_config`, commercialConfig, 'high');
   }, [commercialConfig]);
 
+  /**
+   * REGLA DE LIMPIEZA AUTOMÁTICA DE SORTEOS:
+   * El sistema mantiene visibles únicamente los últimos seis (6) sorteos programados o en curso.
+   * Si se supera el límite de 6, elimina progresivamente los más antiguos en tiempo real
+   * tanto en la base de datos Supabase como en la interfaz del usuario.
+   *
+   * Garantía de integridad: Protege cualquier sorteo que esté actualmente en emisión/transmisión
+   * ('live', 'drawing', 'replay') para garantizar que no se interrumpa el juego activo.
+   */
+  const enforceAutoCleanupRounds = useCallback((currentRounds: GameRound[]): GameRound[] => {
+    const MAX_ACTIVE_ROUNDS = 6;
+
+    // Filtrar sorteos programados o en curso (no concluidos)
+    const activeOrScheduled = currentRounds.filter((r) => {
+      const st = String(r.status || '').toLowerCase();
+      return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay';
+    });
+
+    if (activeOrScheduled.length <= MAX_ACTIVE_ROUNDS) {
+      return currentRounds;
+    }
+
+    // Ordenar cronológicamente ascendente: más antiguos primero
+    const sorted = [...activeOrScheduled].sort((a, b) => {
+      const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt || a.created_at);
+      const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt || b.created_at);
+      if (timeA !== timeB) return timeA - timeB;
+      return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+    });
+
+    // Cantidad de sorteos que exceden el límite de 6 a eliminar progresivamente
+    const excessCount = activeOrScheduled.length - MAX_ACTIVE_ROUNDS;
+
+    const toDelete: GameRound[] = [];
+    for (const r of sorted) {
+      if (toDelete.length >= excessCount) break;
+      const st = String(r.status || '').toLowerCase();
+      // Protección de integridad: NUNCA eliminar un sorteo en curso de emisión activa
+      if (st !== 'live' && st !== 'drawing' && st !== 'replay') {
+        toDelete.push(r);
+      }
+    }
+
+    if (toDelete.length === 0) {
+      return currentRounds;
+    }
+
+    const deleteIds = toDelete.map((r) => r.id);
+    const deleteIdsSet = new Set(deleteIds);
+
+    // Lista limpia de sorteos resultante en memoria para la interfaz
+    const cleanedRounds = currentRounds.filter((r) => !deleteIdsSet.has(r.id));
+
+    // 1. Eliminar progresivamente en la base de datos Supabase en tiempo real
+    try {
+      supabase
+        .from('rounds')
+        .delete()
+        .in('id', deleteIds)
+        .then(({ error }: any) => {
+          if (error) {
+            console.warn('[GameContext] Supabase auto-cleanup delete error:', error);
+          } else {
+            console.log(`[GameContext] ✅ Limpieza automática aplicada: eliminados ${deleteIds.length} sorteos más antiguos en BD:`, deleteIds);
+          }
+        });
+
+      // Archivar en base de datos únicamente los cartones de los sorteos que fueron eliminados
+      supabase
+        .from('cards')
+        .update({ is_archived: true, round_status: 'finished' })
+        .in('round_id', deleteIds)
+        .then(() => {});
+    } catch (dbErr) {
+      console.warn('[GameContext] Error en proceso de limpieza de BD:', dbErr);
+    }
+
+    // 2. Notificar e invalidar caché local
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleanedRounds, 'high');
+    deleteIds.forEach((id) => {
+      mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: id });
+    });
+
+    return cleanedRounds;
+  }, []);
+
   // FIX CRITICO DE ROUNDS WITH SURGICAL INVALIDATION & ENDPOINT SYNC
   const fetchActiveRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
     try {
@@ -357,7 +450,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // 1. Intentar obtener desde endpoint backend /api/rounds
       try {
-        const resp = await fetch(`/api/rounds?status=open,scheduled&limit=${limit}`);
+        const resp = await fetch(`/api/rounds?status=open,scheduled,live,drawing,replay&limit=${limit}`);
         if (resp.ok) {
           const json = await resp.json();
           if (Array.isArray(json) && json.length > 0) {
@@ -373,9 +466,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: rawRounds, error } = await supabase
           .from('rounds')
           .select('*')
-          .in('status', ['open', 'scheduled', 'OPEN', 'SCHEDULED'])
+          .in('status', ['open', 'scheduled', 'OPEN', 'SCHEDULED', 'live', 'drawing', 'replay'])
           .order('starts_at', { ascending: true })
-          .limit(limit);
+          .limit(30);
 
         if (!error && rawRounds && rawRounds.length > 0) {
           fetchedRounds = rawRounds.map((r: any) => ({
@@ -423,13 +516,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const newServerRounds = fetchedRounds.filter(r => !existingIds.has(r.id));
         const combined = [...newServerRounds, ...updated];
         const deduped = Array.from(new Map(combined.map(r => [r.id, r])).values());
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, deduped, 'high');
-        return deduped;
+        
+        // Aplicar regla de limpieza automática en tiempo real garantizando máximo 6 programados/en curso
+        const cleaned = enforceAutoCleanupRounds(deduped);
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
+        return cleaned;
       });
     } catch (err) {
       console.warn('[GameContext] fetchActiveRounds:', err);
     }
-  }, []);
+  }, [enforceAutoCleanupRounds]);
 
   const fetchPendingRecharges = useCallback(async () => {
     try {
@@ -516,13 +612,90 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) { console.warn('[GameContext] fetchCommercialConfig:', err); }
   }, []);
 
+  const fetchUserCards = useCallback(async () => {
+    try {
+      // 1. Intentar cargar desde tabla 'cards'
+      const { data: cardsData, error: cardsError } = await supabase
+        .from('cards')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (!cardsError && Array.isArray(cardsData) && cardsData.length > 0) {
+        const mapped: MatrixCard[] = cardsData.map((row: any) => ({
+          id: String(row.id || row.card_id),
+          code: row.code || `LF-${String(row.id || '1000').slice(-4)}`,
+          roundId: String(row.round_id || row.roundId || ''),
+          roundNumber: Number(row.round_number || row.roundNumber || 0),
+          userId: String(row.user_id || row.userId || ''),
+          userName: row.user_name || row.userName || 'Jugador',
+          matrix: Array.isArray(row.matrix) ? row.matrix : (Array.isArray(row.card_data) ? row.card_data : []),
+          purchaseTime: row.purchase_time || row.created_at || new Date().toISOString(),
+          priceVes: Number(row.price_ves || row.priceVes || 25),
+          status: row.status || 'active',
+          matchedCount: Number(row.matched_count || row.matchedCount || 0),
+          winningPatterns: Array.isArray(row.winning_patterns) ? row.winning_patterns : [],
+          totalPrizeVes: Number(row.total_prize_ves || row.totalPrizeVes || 0),
+          is_archived: Boolean(row.is_archived),
+        }));
+
+        setCards((prev) => {
+          const existingIds = new Set(prev.map((c) => c.id));
+          const newOnes = mapped.filter((c) => !existingIds.has(c.id));
+          if (newOnes.length === 0) return prev;
+          const merged = [...newOnes, ...prev];
+          mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, merged, 'high');
+          return merged;
+        });
+        return;
+      }
+
+      // 2. Fallback: intentar cargar desde tabla 'user_cards'
+      const { data: ucData, error: ucError } = await supabase
+        .from('user_cards')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (!ucError && Array.isArray(ucData) && ucData.length > 0) {
+        const mapped: MatrixCard[] = ucData.map((row: any) => ({
+          id: String(row.id || row.card_id),
+          code: row.code || `LF-${String(row.id || row.card_id || '1000').slice(-4)}`,
+          roundId: String(row.round_id || row.roundId || ''),
+          roundNumber: Number(row.round_number || 0),
+          userId: String(row.user_id || ''),
+          userName: row.user_name || 'Jugador',
+          matrix: Array.isArray(row.matrix) ? row.matrix : (Array.isArray(row.card_data) ? row.card_data : []),
+          purchaseTime: row.created_at || new Date().toISOString(),
+          priceVes: Number(row.price_ves || 25),
+          status: row.status || 'active',
+          matchedCount: 0,
+          winningPatterns: [],
+          totalPrizeVes: 0,
+          is_archived: false,
+        }));
+
+        setCards((prev) => {
+          const existingIds = new Set(prev.map((c) => c.id));
+          const newOnes = mapped.filter((c) => !existingIds.has(c.id));
+          if (newOnes.length === 0) return prev;
+          const merged = [...newOnes, ...prev];
+          mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, merged, 'high');
+          return merged;
+        });
+      }
+    } catch (err) {
+      console.warn('[GameContext] fetchUserCards error:', err);
+    }
+  }, []);
+
   useEffect(() => {
-    fetchActiveRounds({ bypassCache: true }); fetchPendingRecharges(); fetchWithdrawals(); fetchCommercialConfig();
-    const handleVis = () => { if (document.visibilityState === 'visible') { fetchCommercialConfig(); fetchActiveRounds({ bypassCache: true }); fetchPendingRecharges(); fetchWithdrawals(); } };
+    fetchActiveRounds({ bypassCache: true }); fetchPendingRecharges(); fetchWithdrawals(); fetchCommercialConfig(); fetchUserCards();
+    const handleVis = () => { if (document.visibilityState === 'visible') { fetchCommercialConfig(); fetchActiveRounds({ bypassCache: true }); fetchPendingRecharges(); fetchWithdrawals(); fetchUserCards(); } };
     window.addEventListener('visibilitychange', handleVis); window.addEventListener('focus', handleVis);
-    const intervalTimer = setInterval(() => { fetchCommercialConfig(); fetchWithdrawals(); }, 30000);
+    const intervalTimer = setInterval(() => { fetchCommercialConfig(); fetchWithdrawals(); fetchUserCards(); }, 30000);
     return () => { clearInterval(intervalTimer); window.removeEventListener('visibilitychange', handleVis); window.removeEventListener('focus', handleVis); };
-  }, [fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals, fetchCommercialConfig]);
+  }, [fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals, fetchCommercialConfig, fetchUserCards]);
 
   const addAuditLog = useCallback((action: string, details: string) => {
     const newLog: AuditLogEntry = { id: `aud-${Date.now()}-${Math.floor(Math.random()*1000)}`, timestamp: new Date().toISOString(), operatorRole, operatorName: operatorRole === 'Super Admin'? 'SuperAdmin Master' : `${operatorRole} Panel`, action, details, ip: '190.202.45.12' };
@@ -667,7 +840,46 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cards' }, (payload: any) => {
           if (payload?.new) {
-            const item = payload.new as MatrixCard;
+            const row = payload.new as any;
+            const item: MatrixCard = {
+              id: String(row.id || row.card_id),
+              code: row.code || `LF-${String(row.id || '1000').slice(-4)}`,
+              roundId: String(row.round_id || row.roundId || ''),
+              roundNumber: Number(row.round_number || row.roundNumber || 0),
+              userId: String(row.user_id || row.userId || ''),
+              userName: row.user_name || row.userName || 'Jugador',
+              matrix: Array.isArray(row.matrix) ? row.matrix : (Array.isArray(row.card_data) ? row.card_data : []),
+              purchaseTime: row.purchase_time || row.created_at || new Date().toISOString(),
+              priceVes: Number(row.price_ves || row.priceVes || 25),
+              status: row.status || 'active',
+              matchedCount: Number(row.matched_count || 0),
+              winningPatterns: Array.isArray(row.winning_patterns) ? row.winning_patterns : [],
+              totalPrizeVes: Number(row.total_prize_ves || 0),
+              is_archived: Boolean(row.is_archived),
+            };
+            mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId: item.roundId, userId: item.userId });
+            setCards((prev) => (prev.some((c) => c.id === item.id) ? prev : [item, ...prev]));
+          }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'user_cards' }, (payload: any) => {
+          if (payload?.new) {
+            const row = payload.new as any;
+            const item: MatrixCard = {
+              id: String(row.id || row.card_id),
+              code: row.code || `LF-${String(row.id || row.card_id || '1000').slice(-4)}`,
+              roundId: String(row.round_id || row.roundId || ''),
+              roundNumber: Number(row.round_number || 0),
+              userId: String(row.user_id || ''),
+              userName: row.user_name || 'Jugador',
+              matrix: Array.isArray(row.matrix) ? row.matrix : (Array.isArray(row.card_data) ? row.card_data : []),
+              purchaseTime: row.created_at || new Date().toISOString(),
+              priceVes: Number(row.price_ves || 25),
+              status: row.status || 'active',
+              matchedCount: 0,
+              winningPatterns: [],
+              totalPrizeVes: 0,
+              is_archived: false,
+            };
             mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId: item.roundId, userId: item.userId });
             setCards((prev) => (prev.some((c) => c.id === item.id) ? prev : [item, ...prev]));
           }
@@ -679,6 +891,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
+          // Manejo en tiempo real de eliminación (DELETE) de sorteos
+          if (payload?.eventType === 'DELETE' || (!payload?.new && payload?.old?.id)) {
+            const deletedId = String(payload?.old?.id || payload?.id || '');
+            if (deletedId) {
+              setRounds((prev) => {
+                const filtered = prev.filter((r) => r.id !== deletedId);
+                mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, filtered, 'high');
+                return filtered;
+              });
+              mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: deletedId });
+            }
+            return;
+          }
+
+          // Manejo en tiempo real de inserción y actualización (INSERT / UPDATE)
           if (payload?.new) {
             const item = payload.new as any;
             mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: item.id });
@@ -691,7 +918,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   : (Array.isArray(item.drawnFichas) ? item.drawnFichas : (Array.isArray(item.drawn_fichas) ? item.drawn_fichas : [])),
                 bolas_cantadas: Array.isArray(item.bolas_cantadas) ? item.bolas_cantadas : item.drawnFichas,
               };
-              return exists ? prev.map((r) => (r.id === item.id ? { ...r, ...normalizedItem } : r)) : [normalizedItem, ...prev];
+              const updated = exists ? prev.map((r) => (r.id === item.id ? { ...r, ...normalizedItem } : r)) : [normalizedItem, ...prev];
+              // Aplicar regla de limpieza automática en tiempo real
+              return enforceAutoCleanupRounds(updated);
             });
           }
         })
@@ -706,13 +935,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try { supabase.removeChannel(sbChannel); } catch {}
       }
     };
-  }, [formatMoney, addAuditLog, currentUserId, activeRoundIds]);
+  }, [formatMoney, addAuditLog, currentUserId, activeRoundIds, enforceAutoCleanupRounds]);
 
   //... (todo tu syncEngine, realtimeService, lifecycle, etc lo mantengo igual que me enviaste, sin cambios)...
   // Para no hacer el mensaje gigante, te dejo el resto de funciones tal cual las enviaste, pero con los fixes de activeRounds/activeRound:
 
-  const currentUser = users.find(u => u.id === currentUserId) || users[0];
-  const userCards = cards.filter(c => c.userId === currentUser.id);
+  const currentUser = users.find(u => u.id === currentUserId) || {
+    ...users[0],
+    id: currentUserId || users[0]?.id || 'usr-1',
+  };
+  const userCards = cards.filter(c =>
+    c.userId === currentUser.id ||
+    c.userId === currentUserId ||
+    (currentUserId && String(c.userId) === String(currentUserId)) ||
+    (currentUser.id && String(c.userId) === String(currentUser.id))
+  );
 
   useEffect(() => {
     const check = () => {
@@ -760,11 +997,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return round;
       });
       if (hasChanges) {
-        setRounds(updated);
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, updated, 'high');
+        const cleaned = enforceAutoCleanupRounds(updated);
+        setRounds(cleaned);
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
+      } else {
+        // Verificación proactiva de la regla de mantener visibles únicamente los últimos 6 sorteos programados o en curso
+        const activeCount = rounds.filter(r => {
+          const st = String(r.status || '').toLowerCase();
+          return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay';
+        }).length;
+        if (activeCount > 6) {
+          const cleaned = enforceAutoCleanupRounds(rounds);
+          setRounds(cleaned);
+        }
       }
     }; check(); const i = setInterval(check, 3000); return () => clearInterval(i);
-  }, [rounds]);
+  }, [rounds, enforceAutoCleanupRounds]);
 
   const upcomingRounds = useMemo(() => {
     return rounds.filter(r => {
@@ -776,7 +1024,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
        const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
        if (timeA !== timeB) return timeA - timeB;
        return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
-     }).slice(0, 3);
+     }).slice(0, 6);
   }, [rounds]);
 
   const activeRounds = upcomingRounds;
@@ -805,19 +1053,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const round = rounds.find((r) => r.id === roundId);
       if (!round) return { success: false, message: 'Sorteo no encontrado.' };
 
-      const user = currentUser;
-      const effectivePrice =
-        packCount === 2
-          ? commercialConfig.cardPrices?.pack2 || 50
-          : packCount === 4
-          ? commercialConfig.cardPrices?.pack4 || 100
-          : commercialConfig.cardPrices?.pack6 || 150;
-
-      if (user.availableBalance < effectivePrice) {
-        return { success: false, message: `Saldo insuficiente. Necesitas ${formatMoney(effectivePrice)}.` };
+      const roundStatus = String(round.status || '').toLowerCase();
+      if (roundStatus !== 'open' && roundStatus !== 'scheduled') {
+        return { success: false, message: 'Este sorteo no está activo para compras.' };
       }
 
-      const existingForRound = cards.filter((c) => c.userId === user.id && c.roundId === roundId);
+      // Priorizar el ID del usuario autenticado actual
+      const targetUserId = (isAuthenticated && currentUserId) ? currentUserId : (currentUser.id || currentUserId || 'usr-1');
+      const user = users.find((u) => u.id === targetUserId || u.id === currentUser.id) || currentUser;
+
+      const roundUnitPrice = Number(round.cardPriceVes ?? round.card_price ?? commercialConfig.singleCardPriceVes ?? 25);
+      const effectivePrice = (round.cardPriceVes || round.card_price)
+        ? roundUnitPrice * packCount
+        : (packCount === 2
+            ? commercialConfig.cardPrices?.pack2 || 50
+            : packCount === 4
+            ? commercialConfig.cardPrices?.pack4 || 100
+            : commercialConfig.cardPrices?.pack6 || 150);
+
+      // 4) Verificar que el saldo retorna success antes de adjudicar
+      if ((user.availableBalance || 0) < effectivePrice) {
+        return {
+          success: false,
+          message: `Saldo insuficiente. Tu saldo es ${formatMoney(user.availableBalance)}. Necesitas ${formatMoney(effectivePrice)}.`,
+        };
+      }
+
+      const existingForRound = cards.filter(
+        (c) => (c.userId === user.id || c.userId === targetUserId) && c.roundId === roundId
+      );
       if (existingForRound.length + packCount > 6) {
         return { success: false, message: 'Has alcanzado el límite máximo de 6 cartones por sorteo.' };
       }
@@ -825,16 +1089,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const singleCardPrice = effectivePrice / packCount;
       const newCards: MatrixCard[] = [];
 
+      // 3) Generar card_id y matrix de 16 números de 1 a 70
       for (let i = 0; i < packCount; i++) {
         const matrix = generateRandomMatrix();
         const code = generateCardCode();
+        const cardId = `crd-${Date.now()}-${i}-${Math.floor(1000 + Math.random() * 9000)}`;
         newCards.push({
-          id: `crd-${Date.now()}-${i}-${Math.floor(Math.random() * 10000)}`,
+          id: cardId,
           code,
           roundId: round.id,
           roundNumber: round.roundNumber,
-          userId: user.id,
-          userName: user.name,
+          userId: targetUserId,
+          userName: user.name || loggedUsername || 'Jugador',
           matrix,
           purchaseTime: new Date().toISOString(),
           priceVes: singleCardPrice,
@@ -846,11 +1112,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const balBefore = user.availableBalance;
-      const balAfter = balBefore - effectivePrice;
+      const balAfter = Math.max(0, balBefore - effectivePrice);
 
+      // Actualizar balance local
       setUsers((prev) =>
         prev.map((u) =>
-          u.id === user.id
+          u.id === user.id || u.id === targetUserId
             ? {
                 ...u,
                 availableBalance: balAfter,
@@ -862,8 +1129,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const newLedger: WalletLedgerEntry = {
         id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-        userId: user.id,
-        userName: user.name,
+        userId: targetUserId,
+        userName: user.name || loggedUsername || 'Jugador',
         type: 'card_purchase',
         amountVes: -effectivePrice,
         balanceBefore: balBefore,
@@ -874,14 +1141,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       setLedger((prev) => [newLedger, ...prev]);
 
-      const allUpdatedCards = [...newCards, ...cards];
-      const finalCards = mobileCacheManager.isMobile()
-        ? mobileCacheManager.pruneCardsForRAM(allUpdatedCards, user.id, activeRoundIds)
-        : allUpdatedCards;
+      // 5) Adjudicar cartones en memoria y caché local
+      setCards((prev) => {
+        const existingIds = new Set(prev.map((c) => c.id));
+        const additions = newCards.filter((c) => !existingIds.has(c.id));
+        const allUpdatedCards = [...additions, ...prev];
+        return mobileCacheManager.isMobile()
+          ? mobileCacheManager.pruneCardsForRAM(allUpdatedCards, targetUserId, activeRoundIds)
+          : allUpdatedCards;
+      });
 
-      setCards(finalCards);
-      mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId: round.id, userId: user.id });
-      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, finalCards, 'high');
+      mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId: round.id, userId: targetUserId });
+      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, [...newCards, ...cards], 'high');
 
       setRounds((prev) =>
         prev.map((r) =>
@@ -891,29 +1162,87 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       addAuditLog(
         'COMPRA_CARTONES',
-        `Usuario ${user.name} compró ${packCount} cartones en Sorteo #${round.roundNumber}`
+        `Usuario ${user.name || loggedUsername || 'Jugador'} compró ${packCount} cartones en Sorteo #${round.roundNumber}`
       );
       try {
         soundService.playPurchase();
       } catch {}
 
-      // Persist cards, ledger and update round cards sold in Supabase
+      // 1) y 2) Persistir en Supabase con columnas snake_case correctas (cards, user_cards, cartones_comprados)
       try {
-        supabase.from('cards').insert(newCards).then(({ error }) => {
+        const dbCardsPayload = newCards.map((c) => ({
+          id: c.id,
+          code: c.code,
+          round_id: c.roundId,
+          round_number: c.roundNumber,
+          user_id: targetUserId,
+          user_name: c.userName,
+          matrix: c.matrix,
+          purchase_time: c.purchaseTime,
+          price_ves: c.priceVes,
+          status: c.status,
+          matched_count: c.matchedCount,
+          winning_patterns: c.winningPatterns,
+          total_prize_ves: c.totalPrizeVes,
+        }));
+
+        const dbUserCardsPayload = newCards.map((c) => ({
+          id: c.id,
+          card_id: c.id,
+          round_id: c.roundId,
+          round_number: c.roundNumber,
+          user_id: targetUserId,
+          user_name: c.userName,
+          card_data: c.matrix,
+          matrix: c.matrix,
+          code: c.code,
+          price_ves: c.priceVes,
+          status: c.status,
+          created_at: c.purchaseTime,
+        }));
+
+        // Insertar en tabla cards
+        supabase.from('cards').insert(dbCardsPayload).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert cards error:', error);
         });
+
+        // Insertar en tabla user_cards (compatibilidad RLS)
+        supabase.from('user_cards').insert(dbUserCardsPayload).then(({ error }) => {
+          if (error && (error as any).code !== '42P01') {
+            console.warn('[GameContext] Supabase insert user_cards error:', error);
+          }
+        });
+
+        // Insertar en tabla cartones_comprados
+        supabase.from('cartones_comprados').insert(dbUserCardsPayload).then(({ error }) => {
+          if (error && (error as any).code !== '42P01') {
+            console.warn('[GameContext] Supabase insert cartones_comprados error:', error);
+          }
+        });
+
         supabase.from('ledger').insert([newLedger]).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert ledger error:', error);
         });
+
         supabase.from('rounds').update({ total_cards_sold: (round.totalCardsSold || 0) + packCount }).eq('id', roundId).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase update round error:', error);
         });
+
+        // Sincronizar saldo de usuario en Supabase
+        supabase.from('users').update({
+          available_balance: balAfter,
+          total_spent_ves: (user.totalSpentVes || 0) + effectivePrice,
+        }).eq('id', targetUserId).then(() => {});
+
+        supabase.from('jugadores_bingo').update({
+          saldo: balAfter,
+        }).eq('id', targetUserId).then(() => {});
       } catch (err) {}
 
       try {
         syncEngine.broadcastCardsPurchased({
           cards: newCards,
-          userId: user.id,
+          userId: targetUserId,
           roundId: round.id,
           newAvailableBalance: balAfter,
           ledgerEntry: newLedger,
@@ -927,7 +1256,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         cards: newCards,
       };
     },
-    [rounds, currentUser, cards, commercialConfig, formatMoney, addAuditLog]
+    [rounds, currentUser, users, cards, commercialConfig, formatMoney, addAuditLog, currentUserId, isAuthenticated, loggedUsername, activeRoundIds]
   );
 
   const submitRecharge = useCallback(
@@ -1453,7 +1782,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setRounds((prev) => {
         const filtered = prev.filter((r) => r.id !== roundId);
-        return [newRound, ...filtered];
+        const combined = [newRound, ...filtered];
+        return enforceAutoCleanupRounds(combined);
       });
 
       // Mapeo exacto de Supabase en snake_case para prevenir error PGRST204
@@ -1495,41 +1825,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('[GameContext] Error upserting round in Supabase:', err);
       }
 
-      // CAMBIO 4: Anular automáticamente cartones anteriores
-      // Un cartón solo sirve para el round_id donde se compró.
-      // WHERE round_id != new_round_id no participan en nuevos sorteos.
-      setCards((prevCards) => {
-        const updated = prevCards.map((c) => {
-          if (c.roundId !== newRound.id) {
-            return {
-              ...c,
-              is_archived: true,
-              isArchived: true,
-              anulado: true,
-              participa: false,
-              roundStatus: 'finished' as const,
-            };
-          }
-          return c;
-        });
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, updated, 'high');
-        return updated;
-      });
-
-      try {
-        supabase
-          .from('cards')
-          .update({ is_archived: true, round_status: 'finished' })
-          .neq('round_id', newRound.id)
-          .then(() => {});
-      } catch {}
-
       addAuditLog('CREAR_SORTEO', `Nuevo sorteo programado: ${newRound.title} (#${newRound.roundNumber}) para ${drawAt}`);
       try {
         syncEngine.broadcastRoundCreated(newRound);
       } catch {}
     },
-    [rounds, commercialConfig, addAuditLog]
+    [rounds, commercialConfig, addAuditLog, enforceAutoCleanupRounds]
   );
 
   const updateRoundConfig = useCallback(

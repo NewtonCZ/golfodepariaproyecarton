@@ -51,26 +51,26 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'animal' | 'fruta' | 'objeto'>('all');
   const [selectedRoundTabId, setSelectedRoundTabId] = useState<string | null>(null);
 
-  // 15-second Polling interval: fetch('/api/rounds?status=open,scheduled&limit=3') and re-renders dynamically
+  // 15-second Polling interval: fetch('/api/rounds?status=open,scheduled,live,drawing,replay&limit=6') and re-renders dynamically
   React.useEffect(() => {
-    fetchActiveRounds({ bypassCache: true, limit: 3 });
+    fetchActiveRounds({ bypassCache: true, limit: 6 });
 
     const pollingInterval = setInterval(() => {
-      fetchActiveRounds({ bypassCache: true, limit: 3 });
+      fetchActiveRounds({ bypassCache: true, limit: 6 });
     }, 15000);
 
     return () => clearInterval(pollingInterval);
   }, [fetchActiveRounds]);
 
-  // Compute the 3 sequential rounds ('open' or 'scheduled') sorted by starts_at ASC
+  // Compute the 6 sequential rounds ('open' or 'scheduled') sorted by starts_at ASC
   const displayRounds = React.useMemo(() => {
     if (upcomingRounds && upcomingRounds.length > 0) {
-      return upcomingRounds.slice(0, 3);
+      return upcomingRounds.slice(0, 6);
     }
     return rounds
       .filter((r) => {
         const st = String(r.status || '').toLowerCase();
-        return st === 'open' || st === 'scheduled';
+        return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay';
       })
       .sort((a, b) => {
         const rawDateA = a?.starts_at || a?.openBetAt || a?.drawAt || a?.created_at;
@@ -80,7 +80,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         if (timeA !== timeB) return timeA - timeB;
         return ((a?.order || a?.roundNumber || 0) - (b?.order || b?.roundNumber || 0));
       })
-      .slice(0, 3);
+      .slice(0, 6);
   }, [upcomingRounds, rounds]);
 
   const activeDisplayRound = displayRounds.find((r) => r.id === selectedRoundTabId) || displayRounds[0] || activeRound;
@@ -116,18 +116,18 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </div>
       </div>
 
-      {/* SECTION: 3 Sequential Sorteos (Next Draws) */}
+      {/* SECTION: Sequential Sorteos (Active / Scheduled Draws - Max 6) */}
       <section>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
           <div>
             <div className="flex items-center gap-2">
               <Layers className="w-5 h-5 text-amber-400" />
               <h2 className="text-xl sm:text-2xl font-black text-white">
-                Próximos Sorteos Secuenciales
+                Sorteos Programados y en Curso
               </h2>
             </div>
             <p className="text-xs text-slate-400">
-              Participa en cualquiera de los próximos 3 sorteos consecutivos. Cada uno posee su propio pozo y cartones independientes.
+              Participa en cualquiera de los sorteos activos. Cada uno posee su propio pozo acumulado y cartones independientes.
             </p>
           </div>
 
@@ -156,7 +156,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <p className="text-xs text-slate-400 mt-1">El administrador publicará nuevos sorteos en breve.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {displayRounds.map((round, idx) => {
               const statusLower = String(round.status || '').toLowerCase();
               const isOpen = statusLower === 'open';
