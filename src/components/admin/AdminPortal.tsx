@@ -5,7 +5,6 @@ import { saveCommercialConfigToDb } from '../../services/configService';
 import { FICHAS_POOL, getFichaById } from '../../data/fichasPool';
 import { FichaBadge } from '../common/FichaBadge';
 import { OperatorManagementView } from './OperatorManagementView';
-import { AdminPlayersView } from './AdminPlayersView';
 import { ROLE_PERMISSIONS, AdminTab } from '../../config/permissions';
 import {
   LayoutDashboard,
@@ -90,6 +89,9 @@ export const AdminPortal: React.FC = () => {
 
     const channel = supabase
       .channel('realtime-finanzas-admin')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => {
+        fetchPendingRecharges();
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharges' }, () => {
         fetchPendingRecharges();
       })
@@ -898,17 +900,28 @@ export const AdminPortal: React.FC = () => {
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => {
+                                approveRecharge(rec.id);
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] px-3 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1 cursor-pointer"
+                              title="Aprobar recarga en recargas_pago_movil"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Aprobar</span>
+                            </button>
+                            <button
+                              onClick={() => {
                                 setSelectedRechargeForReview(rec);
                                 setConfirmBankArrivalChecked(false);
                               }}
-                              className="bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 font-black text-[11px] px-3 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1"
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] px-2 py-1.5 rounded-lg transition-all"
+                              title="Revisar comprobante y detalles"
                             >
-                              <ShieldCheck className="w-3.5 h-3.5" />
-                              <span>Revisar y Confirmar</span>
+                              Revisar
                             </button>
                             <button
                               onClick={() => setRejectRechargeId(rec.id)}
-                              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] px-2 py-1.5 rounded-lg transition-all"
+                              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] px-2 py-1.5 rounded-lg transition-all cursor-pointer"
+                              title="Rechazar recarga"
                             >
                               Rechazar
                             </button>
@@ -1804,8 +1817,6 @@ export const AdminPortal: React.FC = () => {
       {/* ======================================================== */}
       {activeTab === 'users' && (
         <div className="space-y-6">
-          <AdminPlayersView />
-          
           <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>

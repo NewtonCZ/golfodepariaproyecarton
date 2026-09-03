@@ -414,9 +414,48 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchPendingRecharges = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('recharges').select('*').order('created_at', { ascending: false });
+      // 1. Cargar desde la tabla principal recargas_pago_movil
+      const { data, error } = await supabase
+        .from('recargas_pago_movil')
+        .select('*')
+        .order('created_at', { ascending: false });
+
       if (!error && data && data.length > 0) {
-        const normalized = data.map((r: any) => ({
+        const normalized = data.map((r: any) => {
+          const rawStatus = (r.estado || r.estatus || r.status || 'pending').toString().toUpperCase();
+          const isApproved = rawStatus === 'APROBADO' || rawStatus === 'APROBADA' || rawStatus === 'APPROVED';
+          const isRejected = rawStatus === 'RECHAZADO' || rawStatus === 'RECHAZADA' || rawStatus === 'REJECTED';
+          const status = isApproved ? 'approved' : isRejected ? 'rejected' : 'pending';
+
+          return {
+            ...r,
+            id: String(r.id),
+            userId: r.user_id || r.usuario_id || '',
+            userName: r.usuario_nombre || r.pagador_nombre || r.user_name || 'Usuario',
+            userPhone: r.usuario_telefono || r.user_phone || r.pagador_telefono || '',
+            amountVes: Number(r.monto_ves ?? r.monto ?? r.amount_ves ?? r.amountVes ?? 0),
+            payerPhone: r.pagador_telefono || r.payer_phone || '',
+            payerName: r.pagador_nombre || r.payer_name || '',
+            payerDocumentId: r.pagador_ci || r.payer_document_id || '',
+            bankOrigin: r.banco_origen || r.banco || r.bank_origin || 'Pago Móvil',
+            referenceNumber: r.referencia || r.reference_number || '',
+            voucherImageUrl: r.comprobante_url || r.voucher_image_url || '',
+            status,
+            createdAt: r.created_at || r.fecha || new Date().toISOString(),
+            processedAt: r.fecha_procesado || r.processed_at || '',
+            processedBy: r.procesado_por || r.processed_by || '',
+            rejectionReason: r.motivo_rechazo || r.rejection_reason || '',
+          };
+        });
+        setRecharges(normalized as any);
+        try { localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(normalized)); } catch {}
+        return;
+      }
+
+      // Fallback a recharges si recargas_pago_movil no retorna datos
+      const { data: recData, error: recError } = await supabase.from('recharges').select('*').order('created_at', { ascending: false });
+      if (!recError && recData && recData.length > 0) {
+        const normalized = recData.map((r: any) => ({
           ...r,
           id: String(r.id),
           userId: r.user_id || r.userId || '',
@@ -901,149 +940,39 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (target.status !== 'pending') return { success: false, message: 'La transacción ya ha sido procesada.' };
 
       const processedAt = new Date().toISOString();
-      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
-      const targetUserId = target.userId || (target as any).user_id;
+      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole || 'Auditor';
       const targetAmount = Number(target.amountVes ?? (target as any).amount_ves ?? 0);
 
+      // 1. Actualización local inmediata de la recarga en la UI
       setRecharges((prev) =>
         prev.map((r) => (r.id === transactionId ? { ...r, status: 'approved', processedAt, processedBy } : r))
       );
 
-      setUsers((prev) =>
-        prev.map((u) => {
-          if (u.id === targetUserId) {
-            const balBefore = u.availableBalance;
-            const balAfter = balBefore + targetAmount;
-
-            setLedger((l) => [
-              {
-                id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-                userId: u.id,
-                userName: u.name,
-                type: 'recharge',
-                amountVes: targetAmount,
-                balanceBefore: balBefore,
-                balanceAfter: balAfter,
-                description: `Recarga aprobada (Ref: ${target.referenceNumber || (target as any).reference_number})`,
-                referenceId: target.id,
-                createdAt: processedAt,
-              },
-              ...l,
-            ]);
-
-            return { ...u, availableBalance: balAfter };
-          }
-          return u;
-        })
-      );
-
-      // 1. Cuando estado pasa a APROBADO:
-      // a) Ejecutar sincronización en backend API dedicada (/api/recargas/aprobar)
+      // 2. SOLO 1 PATCH a recargas_pago_movil con UPDATE estado='APROBADO'
+      // Sin actualizar saldo en jugadores_bingo, jugadores, users ni recharges (se acreditará manual)
       try {
-        fetch('/api/recargas/aprobar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: transactionId,
-            transactionId,
-            amount: targetAmount,
-            monto: targetAmount,
-            userId: targetUserId,
-            user_id: targetUserId,
-            referencia: target.referenceNumber || (target as any).reference_number,
-            processedBy,
-          }),
-        }).catch(() => {});
-      } catch {}
-
-      // b) Actualizar recharges y recargas_pago_movil en Supabase
-      try {
-        supabase
-          .from('recharges')
-          .update({ status: 'approved', processed_at: processedAt, processed_by: processedBy })
-          .eq('id', transactionId)
-          .then(({ error }) => {
-            if (error) console.warn('[GameContext] Error updating recharge in Supabase:', error);
-          });
-
         supabase
           .from('recargas_pago_movil')
-          .update({ estado: 'aprobada', estatus: 'aprobada', fecha_procesado: processedAt, procesado_por: processedBy })
+          .update({
+            estado: 'APROBADO',
+            estatus: 'APROBADO',
+            fecha_procesado: processedAt,
+            procesado_por: processedBy,
+          })
           .eq('id', transactionId)
-          .then(() => {});
-      } catch {}
-
-      // c) Acreditar saldo en el balance del usuario en Supabase (users, jugadores_bingo, jugadores)
-      if (targetUserId) {
-        // En users (available_balance)
-        supabase
-          .from('users')
-          .select('available_balance')
-          .eq('id', targetUserId)
-          .maybeSingle()
-          .then(({ data: uData }) => {
-            const currentBal = Number(uData?.available_balance || 0);
-            supabase
-              .from('users')
-              .update({ available_balance: currentBal + targetAmount })
-              .eq('id', targetUserId)
-              .then(() => {});
+          .then(({ error }) => {
+            if (error) console.warn('[GameContext] Error updating recargas_pago_movil:', error);
           });
-
-        // En jugadores_bingo (saldo)
-        supabase
-          .from('jugadores_bingo')
-          .select('saldo')
-          .eq('id', targetUserId)
-          .maybeSingle()
-          .then(({ data: jData }) => {
-            const saldo_actual = Number(jData?.saldo || 0);
-            supabase
-              .from('jugadores_bingo')
-              .update({ saldo: saldo_actual + targetAmount })
-              .eq('id', targetUserId)
-              .then(() => {});
-          });
-
-        try {
-          supabase
-            .from('jugadores')
-            .select('saldo')
-            .eq('id', targetUserId)
-            .maybeSingle()
-            .then(({ data: jData }) => {
-              if (jData) {
-                const saldo_actual = Number(jData?.saldo || 0);
-                supabase
-                  .from('jugadores')
-                  .update({ saldo: saldo_actual + targetAmount })
-                  .eq('id', targetUserId)
-                  .then(() => {});
-              }
-            });
-        } catch {}
-
-        // Registrar en el libro mayor (ledger)
-        try {
-          supabase.from('ledger').insert({
-            id: `led-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            user_id: targetUserId,
-            user_name: target.userName || 'Jugador',
-            type: 'recharge_approved',
-            amount_ves: targetAmount,
-            description: `Recarga aprobada (Ref: ${target.referenceNumber || (target as any).reference_number})`,
-            reference_id: target.id,
-            created_at: processedAt,
-          }).then(() => {});
-        } catch {}
+      } catch (err) {
+        console.warn('[GameContext] Excepción updating recargas_pago_movil:', err);
       }
 
-      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(targetAmount)} aprobada para ${target.userName}`);
+      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(targetAmount)} marcada como APROBADA en recargas_pago_movil`);
       try {
         soundService.playCoin();
       } catch {}
 
-      return { success: true, message: 'Recarga aprobada y saldo acreditado con éxito.' };
+      return { success: true, message: 'Recarga aprobada exitosamente (estado: APROBADO).' };
     },
     [recharges, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
   );
@@ -1054,46 +983,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!target) return { success: false, message: 'Transacción no encontrada.' };
 
       const processedAt = new Date().toISOString();
-      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
+      const processedBy = loggedUsername || activeCredential?.displayName || operatorRole || 'Auditor';
 
+      // 1. Actualización local inmediata del estado en la UI
       setRecharges((prev) =>
         prev.map((r) => (r.id === transactionId ? { ...r, status: 'rejected', rejectionReason: reason, processedAt, processedBy } : r))
       );
 
-      // Llamada al backend para persistencia robusta
+      // 2. SOLO 1 PATCH a recargas_pago_movil con UPDATE estado='RECHAZADO'
+      // Sin actualizar saldo en jugadores_bingo, jugadores, users ni recharges
       try {
-        fetch('/api/recargas/rechazar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: transactionId,
-            transactionId,
-            reason,
-            motivo: reason,
-            processedBy,
-          }),
-        }).catch(() => {});
-      } catch {}
-
-      // Asegúrate que rechazarRecarga solo cambie estado, no toque saldo.
-      try {
-        supabase
-          .from('recharges')
-          .update({ status: 'rejected', rejection_reason: reason, processed_at: processedAt, processed_by: processedBy })
-          .eq('id', transactionId)
-          .then(({ error }) => {
-            if (error) console.warn('[GameContext] Error rejecting recharge in Supabase:', error);
-          });
-
         supabase
           .from('recargas_pago_movil')
-          .update({ estado: 'rechazada', estatus: 'rechazada', motivo_rechazo: reason, fecha_procesado: processedAt, procesado_por: processedBy })
+          .update({
+            estado: 'RECHAZADO',
+            estatus: 'RECHAZADO',
+            motivo_rechazo: reason,
+            fecha_procesado: processedAt,
+            procesado_por: processedBy,
+          })
           .eq('id', transactionId)
-          .then(() => {});
-      } catch {}
+          .then(({ error }) => {
+            if (error) console.warn('[GameContext] Error rejecting recargas_pago_movil:', error);
+          });
+      } catch (err) {
+        console.warn('[GameContext] Excepción rejecting recargas_pago_movil:', err);
+      }
 
-      addAuditLog('RECHAZAR_RECARGA', `Recarga ${transactionId} rechazada. Motivo: ${reason}`);
-      return { success: true, message: 'Recarga rechazada.' };
+      addAuditLog('RECHAZAR_RECARGA', `Recarga ${transactionId} rechazada (estado: RECHAZADO). Motivo: ${reason}`);
+      return { success: true, message: 'Recarga rechazada exitosamente (estado: RECHAZADO).' };
     },
     [recharges, loggedUsername, activeCredential, operatorRole, addAuditLog]
   );
