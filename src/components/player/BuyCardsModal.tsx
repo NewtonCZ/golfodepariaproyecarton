@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { MatrixCardView } from '../cards/MatrixCardView';
-import { X, Sparkles, AlertCircle, ShoppingCart, Check, ShieldCheck, KeyRound, ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
+import { X, Sparkles, AlertCircle, ShoppingCart, Check, ShieldCheck, Loader2 } from 'lucide-react';
 import { MatrixCard } from '../../types';
-import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
 
 interface BuyCardsModalProps {
   isOpen: boolean;
@@ -33,10 +32,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
   const selectedRound = (targetRoundId ? rounds.find((r) => r.id === targetRoundId) : null) || activeRound;
 
   const [selectedPack, setSelectedPack] = useState<2 | 4 | 6>(2);
-  const [step, setStep] = useState<'select' | 'otp'>('select');
-  const [otpCode, setOtpCode] = useState('');
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [boughtCardsPreview, setBoughtCardsPreview] = useState<MatrixCard[] | null>(null);
 
@@ -54,109 +50,30 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
   const totalPrice = getPackPrice(selectedPack);
   const hasEnoughBalance = currentUser.availableBalance >= totalPrice;
 
-  // Paso 1: Enviar OTP al backend
-  const handleInitiatePurchase = async () => {
+  // Compra directa sin OTP ni verificación requerida
+  const handleDirectPurchase = () => {
     setErrorMessage(null);
-    setIsSendingOtp(true);
-
-    const payload = {
-      email: 'niutoncaraballo3@gmail.com',
-      pack: selectedPack,
-      roundId: selectedRound.id,
-      amountVes: totalPrice,
-      user: currentUser.name || currentUser.email || 'Player',
-    };
+    setIsProcessing(true);
 
     try {
-      let response = await fetch(API_ENDPOINTS.SEND_OTP, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).catch(() => null);
-
-      if (!response || !response.ok) {
-        // Fallback a Supabase Edge Function
-        response = await fetch(API_ENDPOINTS.SUPABASE_SEND_OTP, {
-          method: 'POST',
-          headers: getSupabaseFunctionHeaders(),
-          body: JSON.stringify(payload),
-        }).catch((err) => {
-          console.warn('[Supabase Fallback Send Error]:', err);
-          return null;
-        });
-      }
-
-      if (!response || !response.ok) {
-        throw new Error('No se pudo enviar el código de verificación.');
-      }
-
-      setStep('otp');
-      setOtpCode('');
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Error al enviar el código de seguridad.');
-    } finally {
-      setIsSendingOtp(false);
-    }
-  };
-
-  // Paso 2: Verificar OTP y generar cartones
-  const handleVerifyOtp = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (otpCode.trim().length !== 6) {
-      setErrorMessage('Por favor ingresa el código de 6 dígitos.');
-      return;
-    }
-
-    setErrorMessage(null);
-    setIsVerifyingOtp(true);
-
-    const payload = { code: otpCode.trim() };
-
-    try {
-      let response = await fetch(API_ENDPOINTS.VERIFY_OTP, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).catch(() => null);
-
-      if (!response || !response.ok) {
-        // Fallback a Supabase Edge Function
-        response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
-          method: 'POST',
-          headers: getSupabaseFunctionHeaders(),
-          body: JSON.stringify(payload),
-        }).catch((err) => {
-          console.warn('[Supabase Fallback Verify Error]:', err);
-          return null;
-        });
-      }
-
-      const data = await response?.json().catch(() => ({}));
-
-      if (data && data.valid === true) {
-        // Código válido -> Proseguir con la generación normal del cartón
-        const result = purchaseCards(selectedPack, selectedRound.id);
-        if (result.success && result.cards) {
-          setBoughtCardsPreview(result.cards);
-          if (onSuccessBuy) onSuccessBuy();
-        } else {
-          setErrorMessage(result.message);
-        }
+      const result = purchaseCards(selectedPack, selectedRound.id);
+      if (result.success && result.cards) {
+        setBoughtCardsPreview(result.cards);
+        if (onSuccessBuy) onSuccessBuy();
       } else {
-        setErrorMessage('Código incorrecto o expirado');
+        setErrorMessage(result.message || 'No se pudo procesar la compra.');
       }
     } catch (err: any) {
-      setErrorMessage('Error al conectar con el servidor de verificación.');
+      setErrorMessage(err?.message || 'Error al procesar la compra.');
     } finally {
-      setIsVerifyingOtp(false);
+      setIsProcessing(false);
     }
   };
 
   const handleReset = () => {
     setBoughtCardsPreview(null);
     setErrorMessage(null);
-    setStep('select');
-    setOtpCode('');
+    setIsProcessing(false);
     onClose();
   };
 
@@ -215,92 +132,6 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
               Entendido, Ir a Mis Cartones
             </button>
           </div>
-        ) : step === 'otp' ? (
-          /* OTP Verification Step */
-          <form onSubmit={handleVerifyOtp} className="pt-5 space-y-4">
-            <div className="p-4 bg-indigo-950 rounded-2xl border border-indigo-900 text-white space-y-2">
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-5 h-5 text-amber-400" />
-                <h3 className="text-sm font-black text-amber-300">
-                  Verificación de Seguridad Requerida
-                </h3>
-              </div>
-              <p className="text-xs text-indigo-200">
-                Se ha enviado un código de 6 dígitos al correo del administrador para autorizar la compra de <strong>{selectedPack} cartones</strong> ({formatMoney(totalPrice)}).
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1.5">
-                Ingresa el Código de 6 Dígitos *
-              </label>
-              <input
-                type="text"
-                required
-                maxLength={6}
-                autoFocus
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                placeholder="123456"
-                className="w-full bg-slate-50 border-2 border-slate-300 focus:border-amber-500 text-indigo-950 tracking-widest text-center py-3 rounded-2xl text-xl font-black focus:outline-none transition-colors"
-              />
-            </div>
-
-            {/* Error banner */}
-            {errorMessage && (
-              <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold p-3 rounded-xl flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{errorMessage}</span>
-              </div>
-            )}
-
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('select');
-                  setErrorMessage(null);
-                }}
-                className="w-1/3 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-all text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Atrás</span>
-              </button>
-              <button
-                type="submit"
-                disabled={isVerifyingOtp || otpCode.length !== 6}
-                className={`w-2/3 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  otpCode.length !== 6 || isVerifyingOtp
-                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/25 active:scale-98'
-                }`}
-              >
-                {isVerifyingOtp ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verificando...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-4 h-4 stroke-[3]" />
-                    <span>Verificar</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            <div className="text-center pt-1">
-              <button
-                type="button"
-                onClick={handleInitiatePurchase}
-                disabled={isSendingOtp}
-                className="text-xs text-amber-700 hover:text-amber-800 font-bold inline-flex items-center gap-1 cursor-pointer"
-              >
-                <RefreshCw className={`w-3 h-3 ${isSendingOtp ? 'animate-spin' : ''}`} />
-                <span>{isSendingOtp ? 'Enviando código al admin...' : 'Reenviar código de verificación'}</span>
-              </button>
-            </div>
-          </form>
         ) : (
           /* Purchase Selection View */
           <div className="pt-5">
@@ -423,18 +254,18 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
               </button>
               <button
                 type="button"
-                disabled={!hasEnoughBalance || isSendingOtp || maxAllowedToBuy === 0}
-                onClick={handleInitiatePurchase}
+                disabled={!hasEnoughBalance || isProcessing || maxAllowedToBuy === 0}
+                onClick={handleDirectPurchase}
                 className={`w-2/3 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  !hasEnoughBalance || maxAllowedToBuy === 0 || isSendingOtp
+                  !hasEnoughBalance || maxAllowedToBuy === 0 || isProcessing
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/25 active:scale-98'
                 }`}
               >
-                {isSendingOtp ? (
+                {isProcessing ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Enviando código al admin...</span>
+                    <span>Generando Cartones...</span>
                   </>
                 ) : (
                   <>
