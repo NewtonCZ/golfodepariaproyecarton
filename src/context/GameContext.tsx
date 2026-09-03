@@ -816,12 +816,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // 1. Auditoría debe leer de Supabase directo de recargas_pago_movil
       try {
         if (supabase) {
-          const { data: rpmData, error: rpmError } = await supabase
-            .from('recargas_pago_movil')
-            .select('*')
-            .order('created_at', { ascending: false });
+          const [{ data: rpmData, error: rpmError }, { data: jugadoresData }] = await Promise.all([
+            supabase.from('recargas_pago_movil').select('*').order('created_at', { ascending: false }),
+            supabase.from('jugadores_bingo').select('*'),
+          ]);
 
           if (!rpmError && Array.isArray(rpmData) && rpmData.length > 0) {
+            const cleanDoc = (doc?: string) => (doc || '').replace(/\D/g, '');
+            const cleanPhone = (ph?: string) => (ph || '').replace(/\D/g, '');
+
             const mappedRpm: RechargeTransaction[] = rpmData.map((item: any) => {
               const rawStatus = (item.estatus || item.status || '').toLowerCase();
               const status: 'pending' | 'approved' | 'rejected' =
@@ -833,19 +836,50 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
               const monto = Number(item.monto_ves ?? item.monto ?? item.amount_ves ?? item.amountVes) || 0;
               const correo = item.correo || item.email || '';
+              const itemUid = item.usuario_id || item.user_id || item.userId || '';
+              const itemDoc = cleanDoc(item.cedula_pagador || item.payer_document_id || item.payerDocumentId);
+              const itemPh = cleanPhone(item.telefono_pagador || item.user_phone || item.userPhone || item.payer_phone);
+              const itemEmail = (correo || '').toLowerCase().trim();
+
+              // Buscar jugador registrado en la plataforma por ID, correo, cédula o teléfono
+              const matchedPlayer = (jugadoresData || []).find((j: any) => {
+                if (itemUid && itemUid !== 'anon' && j.id === itemUid) return true;
+                if (itemEmail && j.correo && j.correo.toLowerCase().trim() === itemEmail) return true;
+                if (itemDoc && j.cedula && cleanDoc(j.cedula) === itemDoc) return true;
+                if (itemPh && itemPh.length >= 7 && j.telefono && cleanPhone(j.telefono).includes(itemPh.slice(-7))) return true;
+                return false;
+              });
+
+              const resolvedUserName = matchedPlayer
+                ? `${matchedPlayer.nombre || ''} ${matchedPlayer.apellido || ''}`.trim() || matchedPlayer.nombre || item.nombre_usuario || 'Jugador'
+                : (item.nombre_usuario || item.user_name || item.userName || 'Jugador');
+
+              const resolvedUserPhone = matchedPlayer?.telefono || item.telefono_pagador || item.user_phone || item.userPhone || '';
+              const resolvedUserId = matchedPlayer?.id || itemUid || '';
+              const resolvedEmail = matchedPlayer?.correo || correo || '';
+
+              const resolvedPayerName =
+                item.payer_name ||
+                item.nombre_pagador ||
+                item.payerName ||
+                (item.nombre_usuario && item.nombre_usuario !== resolvedUserName ? item.nombre_usuario : '') ||
+                resolvedUserName;
+
+              const resolvedPayerDoc = item.cedula_pagador || item.payer_document_id || item.payerDocumentId || matchedPlayer?.cedula || '';
+              const resolvedPayerPhone = item.telefono_pagador || item.payer_phone || item.payerPhone || matchedPlayer?.telefono || '';
 
               return {
                 id: item.id ? String(item.id) : `rpm-${item.referencia || Date.now()}`,
-                userId: item.usuario_id || item.user_id || item.userId || '',
-                userName: item.nombre_usuario || item.user_name || item.userName || 'Jugador',
-                userPhone: item.telefono_pagador || item.user_phone || item.userPhone || '',
-                correo,
-                email: correo,
+                userId: resolvedUserId,
+                userName: resolvedUserName,
+                userPhone: resolvedUserPhone,
+                correo: resolvedEmail,
+                email: resolvedEmail,
                 amountVes: monto,
                 monto,
-                payerPhone: item.telefono_pagador || item.payer_phone || item.payerPhone || '',
-                payerName: item.nombre_usuario || item.payer_name || item.payerName || '',
-                payerDocumentId: item.cedula_pagador || item.payer_document_id || item.payerDocumentId || '',
+                payerPhone: resolvedPayerPhone,
+                payerName: resolvedPayerName,
+                payerDocumentId: resolvedPayerDoc,
                 bankOrigin: item.banco_origen || item.bank_origin || item.bankOrigin || 'Banco de Venezuela',
                 referenceNumber: item.referencia || item.reference_number || item.referenceNumber || '',
                 referencia: item.referencia || item.reference_number || item.referenceNumber || '',
@@ -866,10 +900,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (allItems.length > 0) {
-        allItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setRecharges(allItems);
+        // Deduplicar registros conservando la versión más completa por referencia e ID
+        const dedupMap = new Map<string, RechargeTransaction>();
+        for (const r of allItems) {
+          const key = r.referenceNumber ? `ref_${r.referenceNumber.trim().toLowerCase()}` : `id_${r.id}`;
+          if (!dedupMap.has(key)) {
+            dedupMap.set(key, r);
+          } else {
+            const existing = dedupMap.get(key)!;
+            if (r.id && !r.id.startsWith('rch-')) {
+              dedupMap.set(key, { ...existing, ...r });
+            }
+          }
+        }
+        const finalItems = Array.from(dedupMap.values());
+        finalItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setRecharges(finalItems);
         try {
-          localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(allItems));
+          localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(finalItems));
         } catch {}
       }
     } catch (err) {
@@ -915,27 +963,40 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data, error } = await supabase.from('jugadores_bingo').select('*');
         if (!error && Array.isArray(data) && data.length > 0) {
           setUsers((prevUsers) => {
+            const cleanDoc = (doc?: string) => (doc || '').replace(/\D/g, '');
             const userMap = new Map(prevUsers.map((u) => [u.id, u]));
             for (const j of data) {
               const jSaldo = Number(j.saldo) || 0;
+              const jCedClean = cleanDoc(j.cedula);
+              const jEmail = (j.correo || '').toLowerCase().trim();
+
               const existing = prevUsers.find(
                 (u) =>
                   u.id === j.id ||
-                  (j.correo && u.email?.toLowerCase() === j.correo.toLowerCase()) ||
-                  (j.cedula && u.documentId === j.cedula)
+                  (jEmail && u.email?.toLowerCase().trim() === jEmail) ||
+                  (jCedClean && cleanDoc(u.documentId) === jCedClean)
               );
+
+              const fullName = j.nombre ? (j.apellido ? `${j.nombre} ${j.apellido}`.trim() : j.nombre) : 'Jugador';
+
               if (existing) {
                 userMap.set(existing.id, {
                   ...existing,
+                  name: fullName || existing.name,
+                  firstName: j.nombre || existing.firstName,
+                  lastName: j.apellido || existing.lastName,
+                  email: j.correo || existing.email,
+                  phone: j.telefono || existing.phone,
+                  documentId: j.cedula || existing.documentId,
                   availableBalance: jSaldo,
                   balance: jSaldo,
                 });
               } else {
                 const newAppUser: AppUser = {
                   id: j.id || `usr-${j.cedula || Date.now()}`,
-                  name: j.nombre || 'Jugador',
+                  name: fullName,
                   firstName: (j.nombre || 'Jugador').split(' ')[0],
-                  lastName: (j.nombre || '').split(' ').slice(1).join(' '),
+                  lastName: (j.apellido || (j.nombre || '').split(' ').slice(1).join(' ')),
                   email: j.correo || '',
                   phone: j.telefono || '',
                   documentId: j.cedula || '',
@@ -954,7 +1015,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 userMap.set(newAppUser.id, newAppUser);
               }
             }
-            return Array.from(userMap.values());
+            const updatedUsers = Array.from(userMap.values());
+            try {
+              localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(updatedUsers));
+            } catch {}
+            return updatedUsers;
           });
         }
       }
@@ -1272,18 +1337,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (payload?.new) {
             const j = payload.new;
             const jSaldo = Number(j.saldo) || 0;
-            setUsers((prev) =>
-              prev.map((u) => {
+            const cleanDoc = (doc?: string) => (doc || '').replace(/\D/g, '');
+            const jCedClean = cleanDoc(j.cedula);
+            setUsers((prev) => {
+              const updated = prev.map((u) => {
                 if (
                   u.id === j.id ||
                   (j.correo && u.email?.toLowerCase() === j.correo?.toLowerCase()) ||
-                  (j.cedula && u.documentId === j.cedula)
+                  (jCedClean && cleanDoc(u.documentId) === jCedClean)
                 ) {
                   return { ...u, availableBalance: jSaldo, balance: jSaldo };
                 }
                 return u;
-              })
-            );
+              });
+              try {
+                localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(updated));
+              } catch {}
+              return updated;
+            });
           } else {
             fetchJugadores();
           }
@@ -1471,7 +1542,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   //... (todo tu syncEngine, realtimeService, lifecycle, etc lo mantengo igual que me enviaste, sin cambios)...
   // Para no hacer el mensaje gigante, te dejo el resto de funciones tal cual las enviaste, pero con los fixes de activeRounds/activeRound:
 
-  const currentUser = users.find(u => u.id === currentUserId) || users[0];
+  const currentUser = useMemo(() => {
+    let found = users.find((u) => u.id === currentUserId);
+    if (!found && loggedUsername) {
+      const cleanLogged = loggedUsername.toLowerCase().trim();
+      found = users.find(
+        (u) =>
+          (u.email && u.email.toLowerCase().trim() === cleanLogged) ||
+          (u.name && u.name.toLowerCase().trim() === cleanLogged) ||
+          (u.documentId && u.documentId.toUpperCase().trim() === cleanLogged.toUpperCase())
+      );
+    }
+    return found || users[0] || INITIAL_USERS[0];
+  }, [users, currentUserId, loggedUsername]);
   const userCards = cards.filter(c => c.userId === currentUser.id);
 
   useEffect(() => {
@@ -1661,23 +1744,30 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const monto = Number(data.amountVes) || 0;
       const referencia = (data.referenceNumber || '').trim();
       const banco = data.bankOrigin || 'Banco de Venezuela';
-      const telefono = (data.payerPhone || currentUser.phone || '').trim();
-      const cedula = (data.payerDocumentId || '').trim();
-      const nombre = (data.payerName || currentUser.name || 'Jugador').trim();
+      const payerName = (data.payerName || currentUser.name || 'Pagador').trim();
+      const payerDoc = (data.payerDocumentId || currentUser.documentId || '').trim();
+      const payerPhone = (data.payerPhone || currentUser.phone || '').trim();
+      const userPhone = (currentUser.phone || data.userPhone || payerPhone || '').trim();
+      const userName = (currentUser.name || data.userName || 'Jugador').trim();
+      const userEmail = (currentUser.email || data.email || '').trim();
       const voucher = data.voucherImageUrl || '';
       const createdAt = new Date().toISOString();
 
       let newRecharge: RechargeTransaction = {
         id: `rch-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         userId: currentUser.id,
-        userName: nombre,
-        userPhone: telefono,
+        userName,
+        userPhone,
+        correo: userEmail,
+        email: userEmail,
         amountVes: monto,
-        payerPhone: telefono,
-        payerName: nombre,
-        payerDocumentId: cedula,
+        monto,
+        payerPhone,
+        payerName,
+        payerDocumentId: payerDoc,
         bankOrigin: banco,
         referenceNumber: referencia,
+        referencia: referencia,
         voucherImageUrl: voucher,
         status: 'pending',
         createdAt,
@@ -1687,22 +1777,38 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let supabaseRecord: any = null;
       try {
         if (supabase) {
-          const { data: insertedData, error: dbError } = await supabase
+          const insertPayload: any = {
+            usuario_id: currentUser.id,
+            nombre_usuario: userName,
+            monto_ves: monto,
+            referencia: referencia,
+            banco_origen: banco,
+            telefono_pagador: payerPhone,
+            cedula_pagador: payerDoc,
+            comprobante_url: voucher,
+            estatus: 'pendiente',
+            created_at: createdAt,
+          };
+          if (userEmail) {
+            insertPayload.correo = userEmail;
+          }
+
+          let { data: insertedData, error: dbError } = await supabase
             .from('recargas_pago_movil')
-            .insert({
-              usuario_id: currentUser.id,
-              nombre_usuario: nombre,
-              monto_ves: monto,
-              referencia: referencia,
-              banco_origen: banco,
-              telefono_pagador: telefono,
-              cedula_pagador: cedula,
-              comprobante_url: voucher,
-              estatus: 'pendiente',
-              created_at: createdAt,
-            })
+            .insert(insertPayload)
             .select()
             .maybeSingle();
+
+          if (dbError && userEmail) {
+            delete insertPayload.correo;
+            const retryRes = await supabase
+              .from('recargas_pago_movil')
+              .insert(insertPayload)
+              .select()
+              .maybeSingle();
+            insertedData = retryRes.data;
+            dbError = retryRes.error;
+          }
 
           if (dbError) {
             console.warn('[GameContext] Supabase insert recargas_pago_movil warning:', dbError.message);
@@ -1757,7 +1863,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const target = recharges.find((r) => r.id === transactionId);
       if (!target) return { success: false, message: 'Transacción no encontrada.' };
       if (target.status === 'approved' || target.estatus === 'aprobada') {
-        console.log('Ya estaba aprobada');
         return { success: true, message: 'La recarga ya estaba aprobada.' };
       }
 
@@ -1765,100 +1870,158 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const processedBy = loggedUsername || activeCredential?.displayName || operatorRole || 'limitlessmarketve@gmail.com';
       const montoVes = Number(target.monto || target.amountVes) || 0;
 
-      // Actualizar estado local reactivo de recargas
-      setRecharges((prev) =>
-        prev.map((r) => (r.id === transactionId ? { ...r, status: 'approved', estatus: 'aprobada', processedAt, processedBy } : r))
-      );
+      // 1. Identificar al usuario destinatario exhaustivamente
+      const cleanDoc = (target.payerDocumentId || target.cedula_pagador || '').replace(/\D/g, '');
+      const cleanPhone = (target.userPhone || target.payerPhone || '').replace(/\D/g, '');
+      const targetEmail = (target.correo || target.email || '').toLowerCase().trim();
 
-      // Actualizar balance en el listado de usuarios local
-      setUsers((prev) =>
-        prev.map((u) => {
-          if (u.id === target.userId || (target.correo && u.email === target.correo)) {
-            const balBefore = u.availableBalance;
-            const balAfter = balBefore + montoVes;
+      const matchedUser = users.find((u) => {
+        if (target.userId && u.id === target.userId) return true;
+        if (targetEmail && u.email?.toLowerCase().trim() === targetEmail) return true;
+        if (cleanDoc && u.documentId && u.documentId.replace(/\D/g, '') === cleanDoc) return true;
+        if (cleanPhone && cleanPhone.length >= 7 && u.phone && u.phone.replace(/\D/g, '').includes(cleanPhone.slice(-7))) return true;
+        if (target.userName && u.name && u.name.toLowerCase().trim() === target.userName.toLowerCase().trim()) return true;
+        return false;
+      });
 
-            setLedger((l) => [
-              {
-                id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-                userId: u.id,
-                userName: u.name,
-                type: 'recharge',
-                amountVes: montoVes,
-                balanceBefore: balBefore,
-                balanceAfter: balAfter,
-                description: `Recarga aprobada (Ref: ${target.referenceNumber || target.referencia})`,
-                referenceId: target.id,
-                createdAt: processedAt,
-              },
-              ...l,
-            ]);
+      const effectiveUserId = matchedUser?.id || target.userId || '';
+      const effectiveUserName = matchedUser?.name || target.userName || 'Jugador';
+      const effectiveEmail = matchedUser?.email || targetEmail;
 
-            return { ...u, availableBalance: balAfter, balance: (u.balance ?? balBefore) + montoVes };
+      // 2. Actualizar estado local reactivo de recargas
+      const updatedRecharge: RechargeTransaction = {
+        ...target,
+        status: 'approved',
+        estatus: 'aprobada',
+        confirmedBankArrival: true,
+        processedAt,
+        processedBy,
+      };
+
+      setRecharges((prev) => {
+        const next = prev.map((r) => (r.id === transactionId ? updatedRecharge : r));
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_recharges`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 3. Acreditar saldo en el listado de usuarios local y persistir
+      let balBefore = 0;
+      let balAfter = montoVes;
+
+      setUsers((prev) => {
+        let found = false;
+        const next = prev.map((u) => {
+          const isTarget =
+            (effectiveUserId && u.id === effectiveUserId) ||
+            (target.userId && u.id === target.userId) ||
+            (effectiveEmail && u.email?.toLowerCase().trim() === effectiveEmail.toLowerCase().trim()) ||
+            (cleanDoc && u.documentId && u.documentId.replace(/\D/g, '') === cleanDoc) ||
+            (cleanPhone && cleanPhone.length >= 7 && u.phone && u.phone.replace(/\D/g, '').includes(cleanPhone.slice(-7)));
+
+          if (isTarget) {
+            found = true;
+            balBefore = Number(u.availableBalance || 0);
+            balAfter = balBefore + montoVes;
+            return {
+              ...u,
+              availableBalance: balAfter,
+              balance: (Number(u.balance) || balBefore) + montoVes,
+            };
           }
           return u;
-        })
-      );
+        });
 
-      // FIX SEGURO - Solo actualiza recargas_pago_movil y suma saldo por correo
+        if (!found && matchedUser) {
+          balBefore = Number(matchedUser.availableBalance || 0);
+          balAfter = balBefore + montoVes;
+          next.push({
+            ...matchedUser,
+            availableBalance: balAfter,
+            balance: (Number(matchedUser.balance) || balBefore) + montoVes,
+          });
+        }
+
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 4. Registrar movimiento en Billetera / Libro Mayor (Ledger)
+      const newLedgerEntry: WalletLedgerEntry = {
+        id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        userId: effectiveUserId,
+        userName: effectiveUserName,
+        type: 'recharge',
+        amountVes: montoVes,
+        balanceBefore: balBefore,
+        balanceAfter: balAfter,
+        description: `Recarga aprobada por administración (Ref: ${target.referenceNumber || target.referencia || 'N/A'})`,
+        referenceId: target.id,
+        createdAt: processedAt,
+      };
+
+      setLedger((l) => {
+        const nextLedger = [newLedgerEntry, ...l];
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_ledger`, JSON.stringify(nextLedger));
+        } catch {}
+        return nextLedger;
+      });
+
+      // 5. Persistencia y sincronización en Supabase
       try {
         if (supabase) {
-          const correoUsuario = target.correo || target.email;
+          let jugadorEncontrado: any = null;
 
-          // 1. Sumar saldo por correo
-          if (correoUsuario) {
-            const { data: jugador } = await supabase
+          if (effectiveUserId) {
+            const { data } = await supabase.from('jugadores_bingo').select('*').eq('id', effectiveUserId).maybeSingle();
+            if (data) jugadorEncontrado = data;
+          }
+
+          if (!jugadorEncontrado && effectiveEmail) {
+            const { data } = await supabase.from('jugadores_bingo').select('*').ilike('correo', effectiveEmail).maybeSingle();
+            if (data) jugadorEncontrado = data;
+          }
+
+          if (!jugadorEncontrado && cleanDoc) {
+            const { data } = await supabase
               .from('jugadores_bingo')
-              .select('saldo')
-              .eq('correo', correoUsuario)
+              .select('*')
+              .or(`cedula.eq.${cleanDoc},cedula.eq.V-${cleanDoc},cedula.eq.E-${cleanDoc}`)
               .maybeSingle();
+            if (data) jugadorEncontrado = data;
+          }
 
-            if (jugador) {
-              const nuevoSaldo = (Number(jugador.saldo) || 0) + montoVes;
-              await supabase
-                .from('jugadores_bingo')
-                .update({ saldo: nuevoSaldo, updated_at: new Date().toISOString() })
-                .eq('correo', correoUsuario);
+          if (!jugadorEncontrado && cleanPhone && cleanPhone.length >= 7) {
+            const { data } = await supabase
+              .from('jugadores_bingo')
+              .select('*')
+              .ilike('telefono', `%${cleanPhone.slice(-7)}%`)
+              .maybeSingle();
+            if (data) jugadorEncontrado = data;
+          }
 
-              console.log('SALDO ACREDITADO OK por correo a:', correoUsuario, 'Nuevo saldo:', nuevoSaldo);
+          if (jugadorEncontrado) {
+            const saldoActual = Number(jugadorEncontrado.saldo) || 0;
+            const nuevoSaldoDb = saldoActual + montoVes;
+            balAfter = nuevoSaldoDb;
+
+            const { error: errSaldo } = await supabase
+              .from('jugadores_bingo')
+              .update({ saldo: nuevoSaldoDb, updated_at: new Date().toISOString() })
+              .eq('id', jugadorEncontrado.id);
+
+            if (errSaldo) {
+              console.warn('[GameContext] Error actualizando saldo en jugadores_bingo:', errSaldo);
             } else {
-              // Fallback por cédula si no se encontró por correo
-              const cedula = (target.payerDocumentId || target.cedula_pagador || '').trim();
-              if (cedula) {
-                const { data: jCed } = await supabase
-                  .from('jugadores_bingo')
-                  .select('id, saldo')
-                  .eq('cedula', cedula)
-                  .maybeSingle();
-                if (jCed) {
-                  const nuevoSaldo = (Number(jCed.saldo) || 0) + montoVes;
-                  await supabase
-                    .from('jugadores_bingo')
-                    .update({ saldo: nuevoSaldo, updated_at: new Date().toISOString() })
-                    .eq('id', jCed.id);
-                  console.log('SALDO ACREDITADO OK por cédula a:', jCed.id);
-                }
-              }
-            }
-          } else {
-            // Fallback por cédula si no hay correo
-            const cedula = (target.payerDocumentId || target.cedula_pagador || '').trim();
-            if (cedula) {
-              const { data: jCed } = await supabase
-                .from('jugadores_bingo')
-                .select('id, saldo')
-                .eq('cedula', cedula)
-                .maybeSingle();
-              if (jCed) {
-                const nuevoSaldo = (Number(jCed.saldo) || 0) + montoVes;
-                await supabase
-                  .from('jugadores_bingo')
-                  .update({ saldo: nuevoSaldo, updated_at: new Date().toISOString() })
-                  .eq('id', jCed.id);
-              }
+              console.log('✅ [GameContext] Saldo acreditado exitosamente en jugadores_bingo:', jugadorEncontrado.id, 'Nuevo saldo:', nuevoSaldoDb);
             }
           }
 
-          // 2. Marcar como aprobada SOLO en recargas_pago_movil
+          // Marcar como aprobada en recargas_pago_movil
           const isNumericOrUuid = target.id && !target.id.startsWith('rch-') && !target.id.startsWith('rpm-');
           if (isNumericOrUuid) {
             await supabase
@@ -1876,12 +2039,41 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               .update({ estatus: 'aprobada', fecha_procesado: processedAt, procesado_por: processedBy })
               .eq('id', target.id);
           }
+
+          // Insertar en ledger de Supabase si la tabla existe
+          try {
+            await supabase.from('ledger').insert([formatLedgerForSupabase(newLedgerEntry)]);
+          } catch {}
         }
       } catch (e) {
         console.error('[GameContext] Error en persistencia al aprobar recarga:', e);
       }
 
-      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(montoVes)} aprobada para ${target.userName}`);
+      // 6. Endpoint de respaldo en el servidor (/api/recargas/aprobar)
+      try {
+        fetch(`${getApiBaseUrl()}/api/recargas/aprobar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: target.id,
+            transactionId: target.id,
+            userId: effectiveUserId,
+            usuario_id: effectiveUserId,
+            monto_ves: montoVes,
+            amountVes: montoVes,
+            referencia: target.referenceNumber || target.referencia,
+            correo: effectiveEmail,
+            cedula_pagador: target.payerDocumentId || target.cedula_pagador || cleanDoc,
+            telefono_pagador: target.userPhone || target.payerPhone || cleanPhone,
+            nombre_usuario: effectiveUserName,
+            procesado_por: processedBy,
+            fecha_procesado: processedAt,
+          }),
+        }).catch((err) => console.warn('[GameContext] Server backup /api/recargas/aprobar error:', err));
+      } catch {}
+
+      // 7. Auditoría, sonido y sincronización en tiempo real
+      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(montoVes)} aprobada para ${effectiveUserName}. Saldo acreditado: ${formatMoney(balAfter)}`);
       try {
         soundService.playCoin();
       } catch {}
@@ -1890,14 +2082,26 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         syncEngine.broadcastRechargeStatus({
           transactionId: target.id,
           status: 'approved',
-          userId: target.userId,
-          recharge: { ...target, status: 'approved', estatus: 'aprobada' },
+          userId: effectiveUserId,
+          recharge: { ...updatedRecharge, newBalance: balAfter },
         });
       } catch {}
 
-      return { success: true, message: 'Recarga aprobada y saldo acreditado con éxito.' };
+      try {
+        window.dispatchEvent(new CustomEvent('jugadores_bingo_updated'));
+        window.dispatchEvent(
+          new CustomEvent('supercarton_balance_updated', {
+            detail: { userId: effectiveUserId, balance: balAfter, email: effectiveEmail },
+          })
+        );
+      } catch {}
+
+      fetchJugadores();
+      fetchPendingRecharges();
+
+      return { success: true, message: `Recarga aprobada y ${formatMoney(montoVes)} acreditados al saldo del usuario.` };
     },
-    [recharges, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
+    [recharges, users, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog, fetchJugadores, fetchPendingRecharges]
   );
 
   const rejectRecharge = useCallback(

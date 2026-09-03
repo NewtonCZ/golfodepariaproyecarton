@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useGame } from '../../context/GameContext';
 import { supabase } from '../../services/realtimeService';
 import { saveCommercialConfigToDb } from '../../services/configService';
@@ -117,6 +117,26 @@ export const AdminPortal: React.FC = () => {
   const [rechargeRejectReason, setRechargeRejectReason] = useState('Comprobante no coincide con extracto bancario.');
   const [rejectWithdrawalId, setRejectWithdrawalId] = useState<string | null>(null);
   const [withdrawalRejectReason, setWithdrawalRejectReason] = useState('Datos de cuenta inválidos o no corresponden al titular.');
+
+  // Helper para resolver el usuario real de la plataforma vinculado a la recarga
+  const resolveRechargeUser = useCallback(
+    (rec: RechargeTransaction | null) => {
+      if (!rec) return null;
+      const cleanCedula = (rec.payerDocumentId || '').replace(/\D/g, '');
+      const cleanPhone = (rec.userPhone || rec.payerPhone || '').replace(/\D/g, '');
+      const targetEmail = (rec.correo || rec.email || '').toLowerCase().trim();
+
+      return users.find((u) => {
+        if (rec.userId && u.id === rec.userId) return true;
+        if (targetEmail && u.email?.toLowerCase().trim() === targetEmail) return true;
+        if (cleanCedula && u.documentId && u.documentId.replace(/\D/g, '') === cleanCedula) return true;
+        if (cleanPhone && cleanPhone.length >= 7 && u.phone && u.phone.replace(/\D/g, '').includes(cleanPhone.slice(-7))) return true;
+        if (rec.userName && u.name && u.name.toLowerCase().trim() === rec.userName.toLowerCase().trim()) return true;
+        return false;
+      }) || null;
+    },
+    [users]
+  );
 
   // Create round form
   const [newRoundTitle, setNewRoundTitle] = useState('');
@@ -805,14 +825,18 @@ export const AdminPortal: React.FC = () => {
                     const matchesStatus =
                       rechargeFilterStatus === 'all' || rec.status === rechargeFilterStatus;
                     const searchLower = rechargeSearchTerm.toLowerCase();
+                    const regUser = resolveRechargeUser(rec);
                     const matchesSearch =
                       !rechargeSearchTerm ||
-                      rec.referenceNumber.toLowerCase().includes(searchLower) ||
-                      rec.userName.toLowerCase().includes(searchLower) ||
+                      (rec.referenceNumber && rec.referenceNumber.toLowerCase().includes(searchLower)) ||
+                      (rec.userName && rec.userName.toLowerCase().includes(searchLower)) ||
+                      (regUser && regUser.name && regUser.name.toLowerCase().includes(searchLower)) ||
+                      (regUser && regUser.email && regUser.email.toLowerCase().includes(searchLower)) ||
                       (rec.payerName && rec.payerName.toLowerCase().includes(searchLower)) ||
                       (rec.payerDocumentId && rec.payerDocumentId.toLowerCase().includes(searchLower)) ||
                       (rec.bankOrigin && rec.bankOrigin.toLowerCase().includes(searchLower)) ||
-                      rec.userPhone.includes(searchLower);
+                      (rec.userPhone && rec.userPhone.includes(searchLower)) ||
+                      (rec.payerPhone && rec.payerPhone.includes(searchLower));
                     return matchesStatus && matchesSearch;
                   });
 
@@ -832,43 +856,68 @@ export const AdminPortal: React.FC = () => {
                     );
                   }
 
-                  return filteredList.map((rec) => (
-                    <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-3">
-                        <div className="relative group">
-                          <img
-                            src={rec.voucherImageUrl}
-                            alt="Comprobante"
-                            onClick={() => setSelectedVoucherForModal(rec.voucherImageUrl)}
-                            className="w-12 h-12 object-cover rounded-xl border border-slate-300 cursor-pointer group-hover:scale-105 transition-transform shadow-xs"
-                            title="Clic para ampliar comprobante"
-                          />
-                          <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center pointer-events-none transition-opacity">
-                            <Eye className="w-4 h-4 text-white" />
+                  return filteredList.map((rec) => {
+                    const regUser = resolveRechargeUser(rec);
+                    const displayUserName = regUser?.name || rec.userName || 'Jugador';
+                    const displayUserContact = regUser?.phone || rec.userPhone || regUser?.email || rec.correo || '';
+                    const displayPayerName = rec.payerName || rec.userName || 'Pagador';
+                    const displayPayerDoc = rec.payerDocumentId
+                      ? `CI: ${rec.payerDocumentId}`
+                      : regUser?.documentId
+                      ? `CI: ${regUser.documentId}`
+                      : 'No especificada';
+
+                    return (
+                      <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3">
+                          <div className="relative group">
+                            <img
+                              src={rec.voucherImageUrl}
+                              alt="Comprobante"
+                              onClick={() => setSelectedVoucherForModal(rec.voucherImageUrl)}
+                              className="w-12 h-12 object-cover rounded-xl border border-slate-300 cursor-pointer group-hover:scale-105 transition-transform shadow-xs"
+                              title="Clic para ampliar comprobante"
+                            />
+                            <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center pointer-events-none transition-opacity">
+                              <Eye className="w-4 h-4 text-white" />
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-3 font-semibold text-slate-900">
-                        <div className="font-bold text-slate-900">{rec.userName}</div>
-                        <div className="text-[10px] text-slate-500 font-mono">{rec.userPhone}</div>
-                      </td>
-                      <td className="py-3 text-slate-700">
-                        <div className="font-medium text-slate-900">{rec.payerName || rec.userName}</div>
-                        <div className="text-[10px] text-slate-500 font-mono">
-                          {rec.payerDocumentId ? `CI: ${rec.payerDocumentId}` : 'No especificada'}
-                        </div>
-                      </td>
-                      <td className="py-3">
-                        <div className="font-bold text-slate-800">{rec.bankOrigin}</div>
-                        <div className="font-mono text-indigo-900 font-bold bg-indigo-50 px-1.5 py-0.5 rounded inline-block text-[11px]">
-                          Ref: {rec.referenceNumber}
-                        </div>
-                        {rec.updatedAt && (
-                          <div className="text-[9px] text-amber-700 font-semibold mt-0.5">
-                            (Actualizada por usuario)
+                        </td>
+                        <td className="py-3 font-semibold text-slate-900">
+                          <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                            <span>{displayUserName}</span>
+                            {regUser?.id && (
+                              <span className="text-[9px] font-mono px-1 py-0.2 bg-slate-100 text-slate-600 rounded font-normal" title={`ID: ${regUser.id}`}>
+                                #{String(regUser.id).slice(-4)}
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </td>
+                          {displayUserContact && (
+                            <div className="text-[10px] text-slate-500 font-mono">{displayUserContact}</div>
+                          )}
+                          {regUser?.email && regUser.email !== displayUserContact && (
+                            <div className="text-[9px] text-indigo-600 truncate max-w-[130px]" title={regUser.email}>
+                              {regUser.email}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 text-slate-700">
+                          <div className="font-medium text-slate-900">{displayPayerName}</div>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            {displayPayerDoc}
+                          </div>
+                        </td>
+                        <td className="py-3">
+                          <div className="font-bold text-slate-800">{rec.bankOrigin}</div>
+                          <div className="font-mono text-indigo-900 font-bold bg-indigo-50 px-1.5 py-0.5 rounded inline-block text-[11px]">
+                            Ref: {rec.referenceNumber}
+                          </div>
+                          {rec.updatedAt && (
+                            <div className="text-[9px] text-amber-700 font-semibold mt-0.5">
+                              (Actualizada por usuario)
+                            </div>
+                          )}
+                        </td>
                       <td className="py-3 font-mono font-black text-sm text-emerald-600">
                         {formatMoney(rec.amountVes)}
                       </td>
@@ -937,8 +986,9 @@ export const AdminPortal: React.FC = () => {
                         )}
                       </td>
                     </tr>
-                  ));
-                })()}
+                  );
+                });
+              })()}
               </tbody>
             </table>
           </div>
@@ -1989,9 +2039,26 @@ export const AdminPortal: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 block">Usuario en Plataforma:</span>
-                    <span className="font-bold text-indigo-900">
-                      {selectedRechargeForReview.userName}
-                    </span>
+                    {(() => {
+                      const regUser = resolveRechargeUser(selectedRechargeForReview);
+                      return (
+                        <div>
+                          <span className="font-bold text-indigo-900 block">
+                            {regUser?.name || selectedRechargeForReview.userName}
+                          </span>
+                          {regUser?.email && (
+                            <span className="text-[10px] text-slate-500 block font-mono">
+                              {regUser.email}
+                            </span>
+                          )}
+                          {regUser && (
+                            <span className="text-[10px] text-emerald-700 font-bold block mt-0.5">
+                              Saldo actual: {formatMoney(regUser.availableBalance)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 

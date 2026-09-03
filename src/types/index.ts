@@ -90,6 +90,9 @@ export interface RechargeTransaction {
   processedAt?: string;
   processedBy?: string;
   confirmedBankArrival?: boolean;
+  correo?: string;
+  email?: string;
+  [key: string]: any;
 }
 
 export interface WithdrawalTransaction {
