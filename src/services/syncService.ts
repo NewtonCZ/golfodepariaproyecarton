@@ -312,6 +312,9 @@ class LotterySyncEngine {
 
   public broadcastRoundDeleted(roundId: string): void {
     this.broadcast('ROUND_DELETED', { roundId });
+    try {
+      realtimeService.send('round_deleted', { roundId, id: roundId });
+    } catch (e) {}
   }
 
   public broadcastRoundStatus(roundId: string, status: GameRound['status'], roundTitle?: string, roundNumber?: number): void {
@@ -321,6 +324,14 @@ class LotterySyncEngine {
       roundTitle,
       roundNumber,
     });
+    try {
+      realtimeService.broadcastRoundUpdated({
+        id: roundId,
+        status,
+        title: roundTitle,
+        roundNumber,
+      });
+    } catch (e) {}
   }
 
   public broadcastLiveDrawStarted(roundId: string): void {

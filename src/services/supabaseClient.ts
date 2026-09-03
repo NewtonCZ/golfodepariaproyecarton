@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient, User, Session, AuthChangeEvent } from '@supabase/supabase-js';
+import { realtimeService } from './realtimeService';
 
 // Retrieve Supabase environment variables safely using VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env || {} : {};
@@ -13,7 +14,9 @@ const SUPABASE_URL =
 
 const SUPABASE_ANON_KEY =
   metaEnv.VITE_SUPABASE_ANON_KEY ||
+  metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY ||
   (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : '') ||
+  (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_PUBLISHABLE_KEY : '') ||
   metaEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY : '') ||
   (typeof process !== 'undefined' ? process.env?.SUPABASE_ANON_KEY : '') ||
@@ -311,19 +314,16 @@ export const supabase = {
 
   channel(channelName: string): any {
     if (realSupabaseClient) {
+      try {
+        const existing = realSupabaseClient.getChannels().find((c) => c.topic === `realtime:${channelName}`);
+        if (existing) {
+          return existing;
+        }
+      } catch {}
       return realSupabaseClient.channel(channelName);
     }
 
-    const mockChannel: any = {
-      on: (_event: any, _filter: any, _callback?: any) => mockChannel,
-      subscribe: (cb?: (status: string) => void) => {
-        if (cb) cb('SUBSCRIBED');
-        return mockChannel;
-      },
-      unsubscribe: () => {},
-    };
-
-    return mockChannel;
+    return realtimeService.channel(channelName);
   },
 
   removeChannel(channel: any) {
@@ -331,8 +331,11 @@ export const supabase = {
       try {
         realSupabaseClient.removeChannel(channel);
       } catch (e) {}
-    } else if (channel && typeof channel.unsubscribe === 'function') {
-      channel.unsubscribe();
+    }
+    if (channel && typeof channel.unsubscribe === 'function') {
+      try {
+        channel.unsubscribe();
+      } catch {}
     }
   },
 };

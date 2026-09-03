@@ -390,6 +390,13 @@ export class LotteryStorageService {
   }
 
   /**
+   * Forcibly invalidate rounds and schedule cache
+   */
+  static invalidateRoundsCache(roundId?: string): void {
+    mobileCacheManager.invalidateRoundsCache(roundId);
+  }
+
+  /**
    * Browser Cache API helper: Warm up and cache core static resources for instant offline/reconnection stability
    */
   static async warmAssetCache(): Promise<void> {

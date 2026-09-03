@@ -90,6 +90,7 @@ interface GameContextType {
   isRealtimeSyncConnected: boolean; lastSyncTimestamp: number;
   fetchActiveRounds: (options?: { bypassCache?: boolean; limit?: number }) => Promise<void>;
   fetchFinishedRounds: (options?: { bypassCache?: boolean; limit?: number }) => Promise<void>;
+  forceInvalidateRoundsCache: () => Promise<void>;
   fetchPendingRecharges: () => Promise<void>; fetchWithdrawals: () => Promise<void>;
   archiveCard: (cardId: string) => void; unarchiveCard: (cardId: string) => void; archiveCardsBatch: (cardIds: string[]) => void;
 }
@@ -623,112 +624,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     created_at: w.createdAt,
   });
 
-  // CONSULTA FILTRADA DE SORTEOS: Solo recupera 'open'/'activo' o 'scheduled'/'SCHEDULED', excluyendo estrictamente 'finished'
-  // REGLA AUTOMÁTICA: Mantiene un máximo de 6 sorteos activos/programados, depurando automáticamente los excedentes
-  const fetchActiveRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
-    try {
-      if (!supabase) return;
-      const queryLimit = options?.limit || 12;
-      const { data: rawRounds, error } = await supabase
-        .from('rounds')
-        .select('*')
-        .in('status', ['open', 'scheduled', 'active', 'activo', 'OPEN', 'SCHEDULED', 'ACTIVO', 'drawing', 'closed'])
-        .neq('status', 'finished')
-        .neq('status', 'FINISHED')
-        .neq('status', 'finalizado')
-        .neq('status', 'FINALIZADO')
-        .order('starts_at', { ascending: true })
-        .limit(queryLimit);
-
-      if (error) {
-        console.warn('[GameContext] Supabase fetchActiveRounds error:', error);
-      }
-
-      const activeOnly: GameRound[] = (rawRounds || [])
-        .map(normalizeGameRound)
-        .filter((r) => {
-          const st = String(r.status || '').toLowerCase().trim();
-          return st === 'open' || st === 'scheduled' || st === 'active' || st === 'activo' || st === 'drawing' || st === 'closed';
-        });
-
-      setRounds((prev) => {
-        // Filtrar y purgar sorteos finalizados o antiguos de la memoria local
-        const cleanPrev = prev.filter((r) => {
-          const st = String(r.status || '').toLowerCase().trim();
-          return st !== 'finished' && st !== 'finalizado';
-        });
-
-        if (activeOnly.length === 0) {
-          const keptPrev = cleanPrev.slice(0, MAX_ACTIVE_ROUNDS);
-          try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(keptPrev)); } catch {}
-          return keptPrev;
-        }
-
-        const fetchedMap = new Map<string, GameRound>(activeOnly.map((r) => [r.id, r]));
-        const updated = cleanPrev.map((r) => {
-          const serverR = fetchedMap.get(r.id);
-          if (serverR) return { ...r, ...serverR, drawnFichas: r.drawnFichas && r.drawnFichas.length > 0 ? r.drawnFichas : serverR.drawnFichas || [] };
-          return r;
-        });
-
-        const existingIds = new Set(cleanPrev.map((r) => r.id));
-        const newServerRounds = activeOnly.filter((r) => !existingIds.has(r.id));
-        const combined = [...newServerRounds, ...updated];
-
-        // Deduplicar y ordenar ascendentemente por fecha de inicio / orden
-        const sorted = Array.from(new Map(combined.map((r) => [r.id, r])).values())
-          .filter((r) => {
-            const st = String(r.status || '').toLowerCase().trim();
-            return st !== 'finished' && st !== 'finalizado';
-          })
-          .sort((a, b) => {
-            const isDrawingA = String(a.status || '').toLowerCase() === 'drawing' ? -1 : 1;
-            const isDrawingB = String(b.status || '').toLowerCase() === 'drawing' ? -1 : 1;
-            if (isDrawingA !== isDrawingB) return isDrawingA - isDrawingB;
-
-            const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
-            const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
-            if (timeA !== timeB) return timeA - timeB;
-            return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
-          });
-
-        const finalClean = sorted.slice(0, MAX_ACTIVE_ROUNDS);
-        const excess = sorted.slice(MAX_ACTIVE_ROUNDS);
-
-        // Depurar de la base de datos Supabase cualquier sorteo excedente más allá del límite de 6
-        if (excess.length > 0 && supabase) {
-          const excessIds = excess.map((r) => r.id).filter(Boolean);
-          try {
-            supabase
-              .from('rounds')
-              .delete()
-              .in('id', excessIds)
-              .then(({ error: delErr }) => {
-                if (!delErr) {
-                  excessIds.forEach((id) => {
-                    try { syncEngine.broadcastRoundDeleted(id); } catch {}
-                  });
-                }
-              });
-          } catch {}
-        }
-
-        mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, finalClean, 'high');
-        return finalClean;
-      });
-
-      // Sincronizar también el historial de sorteos finalizados (máximo 6)
-      fetchFinishedRounds({ bypassCache: options?.bypassCache });
-    } catch (err) {
-      console.warn('[GameContext] fetchActiveRounds exception:', err);
-    }
-  }, []);
-
   // CONSULTA Y RETENCIÓN DE SORTEOS FINALIZADOS: Mantiene únicamente los últimos 6 sorteos más recientes
   // y depura/elimina automáticamente de la base de datos Supabase los registros anteriores para evitar saturación
   const fetchFinishedRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
     try {
       if (!supabase) return;
+      if (options?.bypassCache) {
+        mobileCacheManager.invalidateRoundsCache();
+      }
       const queryLimit = options?.limit || 12;
       const { data: rawFinished, error } = await supabase
         .from('rounds')
@@ -776,6 +679,135 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('[GameContext] fetchFinishedRounds exception:', err);
     }
   }, []);
+
+  // CONSULTA FILTRADA DE SORTEOS: Solo recupera 'open'/'activo' o 'scheduled'/'SCHEDULED', excluyendo estrictamente 'finished'
+  // REGLA AUTOMÁTICA: Mantiene un máximo de 6 sorteos activos/programados, depurando automáticamente los excedentes
+  const fetchActiveRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
+    try {
+      if (!supabase) return;
+      if (options?.bypassCache) {
+        mobileCacheManager.invalidateRoundsCache();
+      }
+      const queryLimit = options?.limit || 12;
+      const { data: rawRounds, error } = await supabase
+        .from('rounds')
+        .select('*')
+        .in('status', ['open', 'scheduled', 'active', 'activo', 'OPEN', 'SCHEDULED', 'ACTIVO', 'drawing', 'closed'])
+        .neq('status', 'finished')
+        .neq('status', 'FINISHED')
+        .neq('status', 'finalizado')
+        .neq('status', 'FINALIZADO')
+        .order('starts_at', { ascending: true })
+        .limit(queryLimit);
+
+      if (error) {
+        console.warn('[GameContext] Supabase fetchActiveRounds error:', error);
+      }
+
+      const activeOnly: GameRound[] = (rawRounds || [])
+        .map(normalizeGameRound)
+        .filter((r) => {
+          const st = String(r.status || '').toLowerCase().trim();
+          return st === 'open' || st === 'scheduled' || st === 'active' || st === 'activo' || st === 'drawing' || st === 'closed';
+        });
+
+      setRounds((prev) => {
+        // Filtrar y purgar sorteos finalizados o antiguos de la memoria local
+        const cleanPrev = prev.filter((r) => {
+          const st = String(r.status || '').toLowerCase().trim();
+          return st !== 'finished' && st !== 'finalizado';
+        });
+
+        let finalClean: GameRound[];
+
+        if (!error && rawRounds) {
+          // Supabase respondió con datos frescos: fuente de verdad autoritativa
+          if (activeOnly.length === 0) {
+            if (options?.bypassCache) {
+              mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, [], 'high');
+              return [];
+            }
+            const kept = cleanPrev.slice(0, MAX_ACTIVE_ROUNDS);
+            mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, kept, 'high');
+            return kept;
+          }
+
+          const prevMap = new Map<string, GameRound>(cleanPrev.map((r) => [r.id, r]));
+          const merged = activeOnly.map((serverR) => {
+            const localR = prevMap.get(serverR.id);
+            if (localR && localR.drawnFichas && localR.drawnFichas.length > (serverR.drawnFichas?.length || 0)) {
+              return { ...serverR, drawnFichas: localR.drawnFichas };
+            }
+            return serverR;
+          });
+
+          // En bypassCache forzado, descartamos sorteos locales que ya no existen en la BD
+          const serverIds = new Set(merged.map((m) => m.id));
+          const pendingLocal = options?.bypassCache
+            ? []
+            : cleanPrev.filter((r) => (r as any).isLocalOnly && !serverIds.has(r.id));
+
+          const combined = [...merged, ...pendingLocal];
+
+          const sorted = combined
+            .filter((r) => {
+              const st = String(r.status || '').toLowerCase().trim();
+              return st !== 'finished' && st !== 'finalizado';
+            })
+            .sort((a, b) => {
+              const isDrawingA = String(a.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+              const isDrawingB = String(b.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+              if (isDrawingA !== isDrawingB) return isDrawingA - isDrawingB;
+
+              const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
+              const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
+              if (timeA !== timeB) return timeA - timeB;
+              return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+            });
+
+          finalClean = sorted.slice(0, MAX_ACTIVE_ROUNDS);
+          const excess = sorted.slice(MAX_ACTIVE_ROUNDS);
+
+          if (excess.length > 0 && supabase) {
+            const excessIds = excess.map((r) => r.id).filter(Boolean);
+            try {
+              supabase
+                .from('rounds')
+                .delete()
+                .in('id', excessIds)
+                .then(({ error: delErr }) => {
+                  if (!delErr) {
+                    excessIds.forEach((id) => {
+                      try { syncEngine.broadcastRoundDeleted(id); } catch {}
+                    });
+                  }
+                });
+            } catch {}
+          }
+        } else {
+          // Si hubo error de red, retener lo local como contingencia
+          finalClean = cleanPrev.slice(0, MAX_ACTIVE_ROUNDS);
+        }
+
+        mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, finalClean, 'high');
+        return finalClean;
+      });
+
+      // Sincronizar también el historial de sorteos finalizados (máximo 6)
+      fetchFinishedRounds({ bypassCache: options?.bypassCache });
+    } catch (err) {
+      console.warn('[GameContext] fetchActiveRounds exception:', err);
+    }
+  }, [fetchFinishedRounds]);
+
+  // Invalidación forzada quirúrgica de caché de sorteos
+  const forceInvalidateRoundsCache = useCallback(async () => {
+    mobileCacheManager.invalidateRoundsCache();
+    await Promise.all([
+      fetchActiveRounds({ bypassCache: true }),
+      fetchFinishedRounds({ bypassCache: true }),
+    ]);
+  }, [fetchActiveRounds, fetchFinishedRounds]);
 
   const fetchPendingRecharges = useCallback(async () => {
     try {
@@ -1123,6 +1155,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const { round } = event.payload || {};
           if (round && round.id) {
             mobileCacheManager.surgicalInvalidate('ROUND_CREATED', { roundId: round.id });
+            mobileCacheManager.invalidateRoundsCache(round.id);
             const st = String(round.status || '').toLowerCase().trim();
             if (st !== 'finished' && st !== 'finalizado') {
               setRounds((prev) => {
@@ -1147,6 +1180,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return finalKept;
               });
             }
+            fetchActiveRounds({ bypassCache: true });
           }
           break;
         }
@@ -1155,11 +1189,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const { roundId } = event.payload || {};
           if (roundId) {
             mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId });
+            mobileCacheManager.invalidateRoundsCache(roundId);
             setRounds((prev) => {
               const filtered = prev.filter((r) => r.id !== roundId);
               mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, filtered, 'high');
               return filtered;
             });
+            fetchActiveRounds({ bypassCache: true });
           }
           break;
         }
@@ -1172,6 +1208,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               st === 'finished' || st === 'finalizado' ? 'ROUND_FINISHED' : 'ROUND_STATUS_CHANGED',
               { roundId }
             );
+            mobileCacheManager.invalidateRoundsCache(roundId);
             setRounds((prev) => {
               if (st === 'finished' || st === 'finalizado') {
                 const filtered = prev.filter((r) => r.id !== roundId);
@@ -1182,6 +1219,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, updated, 'high');
               return updated;
             });
+            fetchActiveRounds({ bypassCache: true });
+            if (st === 'finished' || st === 'finalizado') {
+              fetchFinishedRounds({ bypassCache: true });
+            }
           }
           break;
         }
@@ -1207,6 +1248,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Supabase Realtime channel subscription for postgres changes
     let sbChannel: any = null;
+    let unsubRtRoundUpdated = () => {};
+    let unsubRtRoundStatus = () => {};
+    let unsubRtRoundCreated = () => {};
+    let unsubRtRoundDeleted = () => {};
     try {
       fetchPendingRecharges();
       fetchWithdrawals();
@@ -1270,77 +1315,158 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } else {
             fetchLedger();
           }
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
-          if (payload?.eventType === 'DELETE' || payload?.event === 'DELETE' || (payload?.old && !payload?.new)) {
-            const deletedId = payload?.old?.id;
-            if (deletedId) {
-              setRounds((prev) => {
-                const filtered = prev.filter((r) => r.id !== deletedId);
-                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(filtered)); } catch {}
-                return filtered;
-              });
-            } else {
-              fetchActiveRounds({ bypassCache: true });
-            }
-            return;
-          }
+        });
 
-          if (payload?.new) {
-            const item = normalizeGameRound(payload.new);
-            const st = String(item.status || '').toLowerCase().trim();
-            if (st === 'finished' || st === 'finalizado') {
-              // Si el sorteo pasa a finalizado, se remueve inmediatamente de la lista y del almacenamiento local
-              setRounds((prev) => {
-                const filtered = prev.filter((r) => r.id !== item.id && r.roundNumber !== item.roundNumber);
-                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(filtered)); } catch {}
-                return filtered;
-              });
-            } else {
-              setRounds((prev) => {
-                const exists = prev.some((r) => r.id === item.id || (r.roundNumber && r.roundNumber === item.roundNumber));
-                const updated = exists
-                  ? prev.map((r) =>
-                      r.id === item.id || (r.roundNumber && r.roundNumber === item.roundNumber)
-                        ? { ...r, ...item }
-                        : r
-                    )
-                  : [item, ...prev];
-                const clean = updated.filter((r) => {
-                  const s = String(r.status || '').toLowerCase().trim();
-                  return s !== 'finished' && s !== 'finalizado';
-                });
-                const sorted = clean.sort((a, b) => {
-                  const isDrawingA = String(a.status || '').toLowerCase() === 'drawing' ? -1 : 1;
-                  const isDrawingB = String(b.status || '').toLowerCase() === 'drawing' ? -1 : 1;
-                  if (isDrawingA !== isDrawingB) return isDrawingA - isDrawingB;
+    // Manejador centralizado y quirúrgico para eventos de sorteos desde la base de datos Supabase Realtime
+    const handleRoundRealtimeEvent = (payload: any) => {
+      const eventType = String(payload?.eventType || payload?.event || '').toUpperCase();
+      const oldRecord = payload?.old;
+      const newRecord = payload?.new;
+      const roundId = newRecord?.id || oldRecord?.id;
 
-                  const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
-                  const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
-                  if (timeA !== timeB) return timeA - timeB;
-                  return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
-                });
-                const finalKept = sorted.slice(0, MAX_ACTIVE_ROUNDS);
-                try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(finalKept)); } catch {}
-                return finalKept;
-              });
-            }
-          } else {
-            fetchActiveRounds({ bypassCache: true });
-          }
-        })
-        .subscribe();
-    } catch (e) {
-      console.warn('[GameContext] Supabase realtime subscription fallback:', e);
-    }
+      // 1. Invalidación quirúrgica forzada inmediata de caché del lado del cliente
+      const isFinished = newRecord && (
+        String(newRecord.status).toLowerCase() === 'finished' ||
+        String(newRecord.status).toLowerCase() === 'finalizado'
+      );
+      mobileCacheManager.surgicalInvalidate(
+        isFinished ? 'ROUND_FINISHED' : 'ROUND_STATUS_CHANGED',
+        { roundId }
+      );
+      mobileCacheManager.invalidateRoundsCache(roundId);
 
-    return () => {
-      unsubSync();
-      if (sbChannel) {
-        try { supabase.removeChannel(sbChannel); } catch {}
+      // 2. Actualización síncrona en memoria para reflejar instantáneamente el cambio en pantalla
+      if (eventType === 'DELETE' || (!newRecord && oldRecord)) {
+        const deletedId = oldRecord?.id;
+        if (deletedId) {
+          setRounds((prev) => {
+            const filtered = prev.filter((r) => r.id !== deletedId);
+            mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, filtered, 'high');
+            return filtered;
+          });
+          setFinishedRounds((prev) => {
+            const filtered = prev.filter((r) => r.id !== deletedId);
+            mobileCacheManager.safeSetItem(`${STORAGE_KEY}_finished_rounds`, filtered, 'high');
+            return filtered;
+          });
+        }
+        fetchActiveRounds({ bypassCache: true });
+        return;
+      }
+
+      if (newRecord) {
+        const item = normalizeGameRound(newRecord);
+        const st = String(item.status || '').toLowerCase().trim();
+        if (st === 'finished' || st === 'finalizado') {
+          // Si el sorteo culminó, se remueve inmediatamente de activos y se agrega a historial
+          setRounds((prev) => {
+            const filtered = prev.filter((r) => r.id !== item.id && r.roundNumber !== item.roundNumber);
+            mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, filtered, 'high');
+            return filtered;
+          });
+          setFinishedRounds((prev) => {
+            const exists = prev.some((r) => r.id === item.id);
+            const updated = exists ? prev.map((r) => (r.id === item.id ? { ...r, ...item } : r)) : [item, ...prev];
+            const sorted = updated.sort((a, b) => {
+              const timeA = timeSync.parseIsoToEpochMs(a.resultSubmittedAt || a.ends_at || a.drawAt || a.updatedAt || 0);
+              const timeB = timeSync.parseIsoToEpochMs(b.resultSubmittedAt || b.ends_at || b.drawAt || b.updatedAt || 0);
+              if (timeA !== timeB) return timeB - timeA;
+              return (b.roundNumber || 0) - (a.roundNumber || 0);
+            });
+            const kept = sorted.slice(0, MAX_FINISHED_ROUNDS_HISTORY);
+            mobileCacheManager.safeSetItem(`${STORAGE_KEY}_finished_rounds`, kept, 'high');
+            return kept;
+          });
+        } else {
+          // Sorteo activo, abierto o programado
+          setRounds((prev) => {
+            const exists = prev.some((r) => r.id === item.id || (r.roundNumber && r.roundNumber === item.roundNumber));
+            const updated = exists
+              ? prev.map((r) =>
+                  r.id === item.id || (r.roundNumber && r.roundNumber === item.roundNumber)
+                    ? { ...r, ...item }
+                    : r
+                )
+              : [item, ...prev];
+            const clean = updated.filter((r) => {
+              const s = String(r.status || '').toLowerCase().trim();
+              return s !== 'finished' && s !== 'finalizado';
+            });
+            const sorted = clean.sort((a, b) => {
+              const isDrawingA = String(a.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+              const isDrawingB = String(b.status || '').toLowerCase() === 'drawing' ? -1 : 1;
+              if (isDrawingA !== isDrawingB) return isDrawingA - isDrawingB;
+
+              const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
+              const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
+              if (timeA !== timeB) return timeA - timeB;
+              return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+            });
+            const finalKept = sorted.slice(0, MAX_ACTIVE_ROUNDS);
+            mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, finalKept, 'high');
+            return finalKept;
+          });
+        }
+      }
+
+      // 3. Sincronización forzada asíncrona de fondo garantizando paridad exacta con la BD
+      fetchActiveRounds({ bypassCache: true });
+      if (newRecord && (String(newRecord.status).toLowerCase() === 'finished' || String(newRecord.status).toLowerCase() === 'finalizado')) {
+        fetchFinishedRounds({ bypassCache: true });
       }
     };
-  }, [formatMoney, addAuditLog]);
+
+    // Subscripción a eventos internos de realtimeService para sorteos
+    unsubRtRoundUpdated = realtimeService.on('round_updated', (data) => {
+      const r = data?.round || data;
+      if (r && r.id) {
+        handleRoundRealtimeEvent({ eventType: 'UPDATE', new: r });
+      }
+    });
+    unsubRtRoundStatus = realtimeService.on('round_status_changed', (data) => {
+      const r = data?.round || data;
+      if (r && (r.id || r.roundId)) {
+        handleRoundRealtimeEvent({ eventType: 'UPDATE', new: { ...r, id: r.id || r.roundId } });
+      }
+    });
+    unsubRtRoundCreated = realtimeService.on('new_round_created', (data) => {
+      const r = data?.round || data;
+      if (r && r.id) {
+        handleRoundRealtimeEvent({ eventType: 'INSERT', new: r });
+      }
+    });
+    unsubRtRoundDeleted = realtimeService.on('round_deleted', (data) => {
+      const roundId = data?.roundId || data?.id;
+      if (roundId) {
+        handleRoundRealtimeEvent({ eventType: 'DELETE', old: { id: roundId } });
+      }
+    });
+
+    if (sbChannel) {
+      sbChannel
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, handleRoundRealtimeEvent)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sorteos' }, handleRoundRealtimeEvent)
+        .subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            fetchActiveRounds({ bypassCache: true });
+          }
+        });
+    }
+  } catch (e) {
+    console.warn('[GameContext] Supabase realtime subscription fallback:', e);
+  }
+
+  return () => {
+    unsubSync();
+    unsubRtRoundUpdated();
+    unsubRtRoundStatus();
+    unsubRtRoundCreated();
+    unsubRtRoundDeleted();
+    if (sbChannel) {
+      try { supabase.removeChannel(sbChannel); } catch {}
+    }
+  };
+}, [formatMoney, addAuditLog, fetchActiveRounds, fetchFinishedRounds, fetchPendingRecharges, fetchWithdrawals, fetchLedger, fetchJugadores]);
 
   //... (todo tu syncEngine, realtimeService, lifecycle, etc lo mantengo igual que me enviaste, sin cambios)...
   // Para no hacer el mensaje gigante, te dejo el resto de funciones tal cual las enviaste, pero con los fixes de activeRounds/activeRound:
@@ -2156,7 +2282,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } catch {}
         }
 
-        try { localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(kept)); } catch {}
+        mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, kept, 'high');
+        mobileCacheManager.surgicalInvalidate('ROUND_CREATED', { roundId: newRoundId });
+        mobileCacheManager.invalidateRoundsCache(newRoundId);
         return kept;
       });
       try {
@@ -2177,9 +2305,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateRoundConfig = useCallback(
     (roundId: string, data: any): { success: boolean; message: string } => {
-      setRounds((prev) =>
-        prev.map((r) => (r.id === roundId ? { ...r, ...data } : r))
-      );
+      setRounds((prev) => {
+        const updated = prev.map((r) => (r.id === roundId ? { ...r, ...data } : r));
+        mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, updated, 'high');
+        return updated;
+      });
+      mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId });
+      mobileCacheManager.invalidateRoundsCache(roundId);
       try {
         safeUpdateRoundInSupabase(roundId, data);
       } catch {}
@@ -2191,9 +2323,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const setRoundStatus = useCallback(
     (roundId: string, status: GameRound['status']) => {
-      setRounds((prev) =>
-        prev.map((r) => (r.id === roundId ? { ...r, status } : r))
+      setRounds((prev) => {
+        const updated = prev.map((r) => (r.id === roundId ? { ...r, status } : r));
+        mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, updated, 'high');
+        return updated;
+      });
+      mobileCacheManager.surgicalInvalidate(
+        status === 'finished' ? 'ROUND_FINISHED' : 'ROUND_STATUS_CHANGED',
+        { roundId }
       );
+      mobileCacheManager.invalidateRoundsCache(roundId);
       try {
         safeUpdateRoundInSupabase(roundId, { status });
       } catch {}
@@ -2318,11 +2457,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Remover de los sorteos activos (el panel solo muestra abiertos o programados)
       setRounds((prev) => {
         const filtered = prev.filter((r) => r.id !== roundId);
-        try {
-          localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(filtered));
-        } catch {}
+        mobileCacheManager.safeSetItem(`${STORAGE_KEY}_rounds`, filtered, 'high');
         return filtered;
       });
+
+      // Invalidación quirúrgica del sorteo finalizado
+      mobileCacheManager.surgicalInvalidate('ROUND_FINISHED', { roundId });
+      mobileCacheManager.invalidateRoundsCache(roundId);
 
       // Agregar a finishedRounds reteniendo un historial visible de únicamente los últimos 6 sorteos
       setFinishedRounds((prev) => {
@@ -2350,9 +2491,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } catch {}
         }
 
-        try {
-          localStorage.setItem(`${STORAGE_KEY}_finished_rounds`, JSON.stringify(kept));
-        } catch {}
+        mobileCacheManager.safeSetItem(`${STORAGE_KEY}_finished_rounds`, kept, 'high');
         return kept;
       });
 
@@ -2717,7 +2856,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     createRound, updateRoundConfig, setRoundStatus, submitRoundResult,
     updateCommercialConfig, fetchCommercialConfig, resetToInitialData,
     liveDrawingRound, isLiveDrawing, liveDrawnFichas, startLiveDrawSimulation, stopLiveDrawSimulation,
-    quickAddBalance, adjustUserBalance, updateUserStatus, isRealtimeSyncConnected, lastSyncTimestamp, fetchActiveRounds, fetchFinishedRounds, fetchPendingRecharges, fetchWithdrawals,
+    quickAddBalance, adjustUserBalance, updateUserStatus, isRealtimeSyncConnected, lastSyncTimestamp, fetchActiveRounds, fetchFinishedRounds, forceInvalidateRoundsCache, fetchPendingRecharges, fetchWithdrawals,
     archiveCard, unarchiveCard, archiveCardsBatch,
   };
 

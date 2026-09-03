@@ -104,13 +104,9 @@ class MobileCacheManager {
       this.memoryCache.delete(`live_draw_${payload.roundId}`);
     }
 
-    // 3. Round status or finish: clean ephemeral live draw progress & preview keys
-    if (reason === 'ROUND_FINISHED' || reason === 'ROUND_STATUS_CHANGED') {
-      try {
-        if (typeof sessionStorage !== 'undefined') {
-          sessionStorage.removeItem('supermillonario_live_draw_progress_v1');
-        }
-      } catch {}
+    // 3. Round status, creation or finish: clean ephemeral live draw progress & wipe round schedule caches
+    if (reason === 'ROUND_FINISHED' || reason === 'ROUND_STATUS_CHANGED' || reason === 'ROUND_CREATED') {
+      this.invalidateRoundsCache(payload?.roundId);
     }
 
     // 4. Invalidate user cards cache on purchase or balance update
@@ -125,6 +121,30 @@ class MobileCacheManager {
     if (this.isLowMemoryDevice()) {
       this.runSoftGarbageCollection();
     }
+  }
+
+  /**
+   * Forcibly invalidates all cached rounds and schedule data
+   */
+  public invalidateRoundsCache(roundId?: string): void {
+    this.versionCounter++;
+    this.memoryCache.delete('lucky_fichas_db_v1_rounds');
+    this.memoryCache.delete('lucky_fichas_db_v1_finished_rounds');
+    this.memoryCache.delete('Millioneire_Destiny_Lottery_v1_rounds');
+    this.memoryCache.delete('Millioneire_Destiny_Lottery_v1_finished_rounds');
+    this.evaluatedCardCache.clear();
+
+    if (roundId) {
+      this.memoryCache.delete(`round_${roundId}`);
+      this.memoryCache.delete(`round_cards_${roundId}`);
+      this.memoryCache.delete(`live_draw_${roundId}`);
+    }
+
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('supermillonario_live_draw_progress_v1');
+      }
+    } catch {}
   }
 
   /**

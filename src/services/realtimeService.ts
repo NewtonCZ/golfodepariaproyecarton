@@ -409,7 +409,7 @@ class RealtimeService {
         unsubs.push(unregPostgres);
 
         // Also listen to direct event names: 'INSERT', 'UPDATE', 'recharge_created', 'new_round_created'
-        if (eventFilter === 'INSERT' || typeOrEvent === 'INSERT') {
+        if (eventFilter === '*' || eventFilter === 'INSERT' || typeOrEvent === 'INSERT') {
           const unregInsert = this.on('recharge_created', (data) => {
             if (!tableFilter || tableFilter === 'recharges' || tableFilter === 'auditoria_pago_movil') {
               callback({ eventType: 'INSERT', new: data.recharge || data, old: null });
@@ -418,7 +418,7 @@ class RealtimeService {
           unsubs.push(unregInsert);
 
           const unregRound = this.on('new_round_created', (data) => {
-            if (!tableFilter || tableFilter === 'rounds') {
+            if (!tableFilter || tableFilter === 'rounds' || tableFilter === 'sorteos') {
               callback({ eventType: 'INSERT', new: data.round || data, old: null });
             }
           });
@@ -432,7 +432,7 @@ class RealtimeService {
           unsubs.push(unregWithdrawalInsert);
         }
 
-        if (eventFilter === 'UPDATE' || typeOrEvent === 'UPDATE') {
+        if (eventFilter === '*' || eventFilter === 'UPDATE' || typeOrEvent === 'UPDATE') {
           const unregUpdate = this.on('recharge_updated', (data) => {
             if (!tableFilter || tableFilter === 'recharges' || tableFilter === 'auditoria_pago_movil') {
               callback({ eventType: 'UPDATE', new: data.recharge || data, old: null });
@@ -454,12 +454,28 @@ class RealtimeService {
           });
           unsubs.push(unregRoundUpdate);
 
+          const unregRoundStatus = this.on('round_status_changed', (data) => {
+            if (!tableFilter || tableFilter === 'rounds' || tableFilter === 'sorteos') {
+              callback({ eventType: 'UPDATE', new: data.round || data, old: null });
+            }
+          });
+          unsubs.push(unregRoundStatus);
+
           const unregDrawResult = this.on('draw_result_published', (data) => {
             if (!tableFilter || tableFilter === 'rounds' || tableFilter === 'sorteos') {
               callback({ eventType: 'UPDATE', new: data.round || data, updatedRound: data.updatedRound, old: null });
             }
           });
           unsubs.push(unregDrawResult);
+        }
+
+        if (eventFilter === '*' || eventFilter === 'DELETE' || typeOrEvent === 'DELETE') {
+          const unregRoundDelete = this.on('round_deleted', (data) => {
+            if (!tableFilter || tableFilter === 'rounds' || tableFilter === 'sorteos') {
+              callback({ eventType: 'DELETE', old: { id: data.roundId || data.id }, new: null });
+            }
+          });
+          unsubs.push(unregRoundDelete);
         }
 
         // Wildcard or table-specific custom event
