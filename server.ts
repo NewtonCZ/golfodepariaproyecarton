@@ -597,7 +597,7 @@ app.post(['/api/rounds', '/api/sorteos'], async (req, res) => {
 
     const price = Number(cardPriceVes) || 25;
     const prizePct = Number(prizePercentage) || 70;
-    const roundId = `round-${newRoundNumber}`;
+    const roundId = `round-${Date.now()}`;
 
     const newRound: any = {
       id: roundId,
@@ -652,6 +652,7 @@ app.post(['/api/rounds', '/api/sorteos'], async (req, res) => {
           close_bet_at: closeDate.toISOString(),
           created_at: new Date().toISOString(),
         };
+        await supabaseServerClient.from('rounds').delete().eq('id', roundId);
         await supabaseServerClient.from('rounds').upsert(dbRoundPayload, { onConflict: 'id' });
       } catch (err) {
         console.warn('[Supabase Round Insert Notice]:', err);

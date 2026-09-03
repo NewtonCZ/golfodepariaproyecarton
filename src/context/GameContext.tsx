@@ -1328,7 +1328,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const createRound = useCallback(
-    (title: string, drawAt: string, cardPriceVes?: number, prizePercentage?: number, order?: number, manualJackpotVes?: number) => {
+    async (title: string, drawAt: string, cardPriceVes?: number, prizePercentage?: number, order?: number, manualJackpotVes?: number) => {
       const maxNum = rounds.reduce((max, r) => Math.max(max, r.roundNumber || 0), 100);
       const newRoundNumber = maxNum + 1;
       const drawDate = new Date(drawAt);
@@ -1338,8 +1338,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const price = cardPriceVes || commercialConfig.singleCardPriceVes || 25;
       const prizePct = prizePercentage || 70;
 
+      // 1- Generación de ID siempre único con timestamp y sufijo aleatorio
+      const roundId = `round-${Date.now()}`;
+
       const newRound: GameRound = {
-        id: `round-${newRoundNumber}`,
+        id: roundId,
         roundNumber: newRoundNumber,
         order: order || rounds.length + 1,
         title: title || `Sorteo #${newRoundNumber}`,
@@ -1360,7 +1363,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resultLocked: false,
       };
 
-      setRounds((prev) => [newRound, ...prev]);
+      setRounds((prev) => {
+        const filtered = prev.filter((r) => r.id !== roundId);
+        return [newRound, ...filtered];
+      });
 
       // Mapeo exacto de Supabase en snake_case para prevenir error PGRST204
       const roundPayload = {
@@ -1386,13 +1392,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         created_at: new Date().toISOString(),
       };
 
-      console.log('[GameContext] Supabase insert round payload:', roundPayload);
+      console.log('[GameContext] Supabase upsert round payload:', roundPayload);
 
       try {
-        supabase.from('rounds').insert([roundPayload]).then(({ error }) => {
-          if (error) console.warn('[GameContext] Supabase insert round error:', error);
-        });
-      } catch {}
+        // 3- DELETE automático de rounds duplicados antes de insertar
+        await supabase.from('rounds').delete().eq('id', roundId);
+
+        // 2- Cambiar insert por upsert con onConflict: 'id'
+        const { error } = await supabase.from('rounds').upsert([roundPayload], { onConflict: 'id' });
+        if (error) {
+          console.warn('[GameContext] Supabase upsert round error:', error);
+        }
+      } catch (err) {
+        console.warn('[GameContext] Error upserting round in Supabase:', err);
+      }
 
       addAuditLog('CREAR_SORTEO', `Nuevo sorteo programado: ${newRound.title} (#${newRound.roundNumber}) para ${drawAt}`);
       try {
