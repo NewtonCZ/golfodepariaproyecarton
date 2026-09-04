@@ -62,10 +62,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     return () => clearInterval(pollingInterval);
   }, [fetchActiveRounds]);
 
-  // Compute the 6 sequential rounds ('open' or 'scheduled') sorted by starts_at ASC
+  // Compute the sequential rounds ('open' or 'scheduled') sorted by starts_at ASC (max 6 to 7)
   const displayRounds = React.useMemo(() => {
     if (upcomingRounds && upcomingRounds.length > 0) {
-      return upcomingRounds.slice(0, 6);
+      return upcomingRounds.slice(0, 7);
     }
     return rounds
       .filter((r) => {
@@ -80,7 +80,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         if (timeA !== timeB) return timeA - timeB;
         return ((a?.order || a?.roundNumber || 0) - (b?.order || b?.roundNumber || 0));
       })
-      .slice(0, 6);
+      .slice(0, 7);
   }, [upcomingRounds, rounds]);
 
   const activeDisplayRound = displayRounds.find((r) => r.id === selectedRoundTabId) || displayRounds[0] || activeRound;

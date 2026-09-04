@@ -363,7 +363,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * ('live', 'drawing', 'replay') para garantizar que no se interrumpa el juego activo.
    */
   const enforceAutoCleanupRounds = useCallback((currentRounds: GameRound[]): GameRound[] => {
-    const MAX_ACTIVE_ROUNDS = 6;
+    const MAX_ACTIVE_ROUNDS = 7;
 
     // Filtrar sorteos programados o en curso (no concluidos)
     const activeOrScheduled = currentRounds.filter((r) => {
@@ -977,12 +977,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setRounds(cleaned);
         mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
       } else {
-        // Verificación proactiva de la regla de mantener visibles únicamente los últimos 6 sorteos programados o en curso
+        // Verificación proactiva de la regla de mantener visibles únicamente un máximo de 6 a 7 sorteos programados o en curso
         const activeCount = rounds.filter(r => {
           const st = String(r.status || '').toLowerCase();
           return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay';
         }).length;
-        if (activeCount > 6) {
+        if (activeCount > 7) {
           const cleaned = enforceAutoCleanupRounds(rounds);
           setRounds(cleaned);
         }
@@ -1000,7 +1000,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
        const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
        if (timeA !== timeB) return timeA - timeB;
        return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
-     }).slice(0, 6);
+     }).slice(0, 7);
   }, [rounds]);
 
   const activeRounds = upcomingRounds;
