@@ -133,32 +133,23 @@ export const AdminPortal: React.FC = () => {
 
   // Result submission
   // =========================================================================
-  // REGLA DE LIMPIEZA AUTOMÁTICA Y ARCHIVADO DE SORTEOS FINALIZADOS
+  // ELIMINACIÓN DIRECTA Y PERMANENTE DE SORTEOS FINALIZADOS
   // Módulo de Gestión de Sorteos - Listado de Rondas y Monitor Financiero en Tiempo Real
   //
-  // Mantiene y renderiza estrictamente un máximo de seis (6) o siete (7) sorteos visibles.
-  // Los sorteos finalizados o antiguos que superen este límite son archivados automáticamente
-  // de la vista activa de la tabla para optimizar el rendimiento y la limpieza del DOM.
+  // Mantiene y renderiza estrictamente un máximo de hasta siete (7) sorteos visibles prioritarios o programados.
+  // Cualquier sorteo que figure con estado finalizado ('finished', 'completado') o cerrado ('closed') es eliminado
+  // de forma directa y permanente de la interfaz visual, eliminando por completo la funcionalidad de archivo
+  // y cualquier botón de "Ver archivados".
   //
-  // GARANTÍA ESTRICTA: NO borra ni altera ningún registro histórico en Supabase.
-  // =========================================================================
-  // =========================================================================
-  // CONTROL DE VENTANA VISUAL DE SORTEOS ACTIVOS Y PROGRAMADOS (6 A 7 MÁXIMO)
-  // =========================================================================
-  // Regla solicitada:
-  // Al finalizar ('finished', 'completado') o cerrarse ('closed') una ronda, esta es
-  // eliminada de la interfaz visual en lugar de archivarse.
-  // Se mantiene un máximo estricto de 6 a 7 sorteos activos o programados.
-  //
-  // GARANTÍA ESTRICTA: Todos los datos permanecen 100% íntegros y resguardados en Supabase.
-  // No se ejecuta ninguna eliminación en base de datos; la depuración es estrictamente visual en el frontend.
+  // GARANTÍA ESTRICTA: Todos los datos históricos y registros de auditoría permanecen intactos en Supabase.
   // =========================================================================
   const [roundsWindowLimit, setRoundsWindowLimit] = useState<6 | 7>(7);
 
   // Filtrado de rondas para la interfaz visual
   const visibleActiveRounds = useMemo(() => {
-    // 1. Filtrar estrictamente sorteos activos o programados.
-    // Sorteos en estado 'closed', 'finished' o 'completado' son eliminados inmediatamente de la interfaz visual.
+    // 1. Eliminación directa y permanente:
+    // Sorteos en estado 'finished', 'completado' o 'closed' son purgados de raíz de la interfaz visual.
+    // No existe almacenamiento ni visualización de archivados en esta sección.
     const activeList = rounds.filter((r) => {
       const st = String(r.status || '').toLowerCase().trim();
       if (st === 'closed' || st === 'finished' || st === 'completado') {
@@ -189,8 +180,9 @@ export const AdminPortal: React.FC = () => {
       return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
     });
 
-    // 3. Mantener un máximo estricto de 6 a 7 sorteos activos o programados visibles
-    return activeList.slice(0, roundsWindowLimit);
+    // 3. Mantener únicamente visibles en pantalla los sorteos más prioritarios o programados,
+    //    sin superar el límite de siete (7) elementos en total.
+    return activeList.slice(0, Math.min(roundsWindowLimit, 7));
   }, [rounds, roundsWindowLimit]);
 
   // Próximo orden calculado globalmente para garantizar que la creación y publicación no se altere
@@ -1220,11 +1212,11 @@ export const AdminPortal: React.FC = () => {
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Muestra la recaudación en vivo, el pozo de premios calculado y la ganancia de la casa. Los sorteos finalizados que superan el límite se archivan automáticamente de esta tabla garantizando la integridad de Supabase.
+                  Muestra la recaudación en vivo, el pozo de premios calculado y la ganancia de la casa. Todos los sorteos finalizados son eliminados directa y permanentemente de la vista sin funcionalidad de archivo, conservando únicamente los sorteos prioritarios o programados (máximo 7).
                 </p>
               </div>
 
-              {/* Controles de ventana de sorteos activos y programados (6 o 7 máx) */}
+              {/* Controles de ventana de sorteos activos y programados (máximo 7) */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold border border-slate-200">
                   <div className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 bg-indigo-950 text-amber-300 shadow-xs">
@@ -1235,7 +1227,7 @@ export const AdminPortal: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Selector de límite (6 o 7 sorteos visibles) */}
+                {/* Selector de límite (hasta 7 sorteos visibles) */}
                 <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold border border-slate-200">
                   <span className="text-[10px] text-slate-400 uppercase font-black px-1.5 hidden sm:inline">Límite:</span>
                   <button
@@ -1266,12 +1258,12 @@ export const AdminPortal: React.FC = () => {
               </div>
             </div>
 
-            {/* Banner informativo de depuración visual */}
+            {/* Banner informativo de eliminación directa y permanente */}
             <div className="bg-emerald-50/70 border border-emerald-200/80 px-4 py-2.5 rounded-2xl flex items-center justify-between gap-2 text-xs text-emerald-900 font-medium">
               <div className="flex items-center gap-2">
                 <span className="text-sm">⚡</span>
                 <span>
-                  <strong>Depuración Visual Automática:</strong> Las rondas al cerrarse o finalizarse son eliminadas de la interfaz visual en lugar de archivarse, conservando un monitor limpio de máximo {roundsWindowLimit} sorteos activos o programados. Todos los datos históricos permanecen intactos en Supabase.
+                  <strong>Eliminación Directa y Permanente:</strong> Todos los sorteos que ya figuren con el estado finalizado son eliminados permanentemente de la interfaz visual sin funcionalidad de archivo. Se mantienen únicamente visibles en pantalla los sorteos más prioritarios o programados, sin superar el límite de siete ({roundsWindowLimit}) elementos en total.
                 </span>
               </div>
             </div>

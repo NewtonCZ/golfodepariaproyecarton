@@ -105,7 +105,6 @@ const INITIAL_USERS: AppUser[] = [
 ];
 
 const INITIAL_ROUNDS: GameRound[] = [
-  { id: 'round-101', roundNumber: 101, order: 1, title: 'Sorteo Mediodía #101', openBetAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), status: 'finished', drawnFichas: [1,5,12,19,23,26,28,30,31,35,40,44,49,51,52,55,59,60,62,65,66,67,70,2,8,14,27,33,42,53,58,69], totalCardsSold: 48, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 12500, winningCardsCount: 6, totalPrizesPaidVes: 2150, resultLocked: true, resultSubmittedBy: 'Carlos Admin', resultSubmittedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
   { id: 'round-102', roundNumber: 102, order: 2, title: 'Sorteo Estelar Tarde #102', openBetAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 45 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 48 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 45 * 60 * 1000).toISOString(), status: 'open', drawnFichas: [], totalCardsSold: 36, cardPriceVes: 25, card_price: 25, prize_percentage: 70, jackpotVes: 15000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
   { id: 'round-103', roundNumber: 103, order: 3, title: 'Gran Sorteo Nocturno #103', openBetAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 3.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 30, card_price: 30, prize_percentage: 75, jackpotVes: 25000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
   { id: 'round-104', roundNumber: 104, order: 4, title: 'Sorteo Madrugada Millonario #104', openBetAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 6.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 20, card_price: 20, prize_percentage: 80, jackpotVes: 20000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
@@ -120,7 +119,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [rounds, setRounds] = useState<GameRound[]>(() => {
     const p: GameRound[] = mobileCacheManager.safeGetItem(`${STORAGE_KEY}_rounds`, INITIAL_ROUNDS);
     const seen = new Set<string>();
-    return p.filter(r => { if (!r.id || seen.has(r.id)) return false; seen.add(r.id); return true; });
+    return p.filter(r => {
+      if (!r.id || seen.has(r.id)) return false;
+      const st = String(r.status || '').toLowerCase().trim();
+      if (st === 'finished' || st === 'completado') return false;
+      seen.add(r.id);
+      return true;
+    });
   });
   const [cards, setCards] = useState<MatrixCard[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_cards`, []));
   const [recharges, setRecharges] = useState<RechargeTransaction[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_recharges`, []));
@@ -365,14 +370,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const enforceAutoCleanupRounds = useCallback((currentRounds: GameRound[]): GameRound[] => {
     const MAX_ACTIVE_ROUNDS = 7;
 
+    // Lógica de eliminación directa y permanente: purgar de raíz cualquier sorteo finalizado
+    const nonFinished = currentRounds.filter((r) => {
+      const st = String(r.status || '').toLowerCase().trim();
+      return st !== 'finished' && st !== 'completado';
+    });
+
     // Filtrar sorteos programados o en curso (no concluidos)
-    const activeOrScheduled = currentRounds.filter((r) => {
-      const st = String(r.status || '').toLowerCase();
+    const activeOrScheduled = nonFinished.filter((r) => {
+      const st = String(r.status || '').toLowerCase().trim();
       return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay';
     });
 
     if (activeOrScheduled.length <= MAX_ACTIVE_ROUNDS) {
-      return currentRounds;
+      if (nonFinished.length !== currentRounds.length) {
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, nonFinished, 'high');
+      }
+      return nonFinished;
     }
 
     // Ordenar cronológicamente ascendente: más antiguos primero
@@ -383,7 +397,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
     });
 
-    // Cantidad de sorteos que exceden el límite de 6 a eliminar progresivamente
+    // Cantidad de sorteos que exceden el límite de 7 a eliminar progresivamente
     const excessCount = activeOrScheduled.length - MAX_ACTIVE_ROUNDS;
 
     const toDelete: GameRound[] = [];
@@ -397,14 +411,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (toDelete.length === 0) {
-      return currentRounds;
+      return nonFinished;
     }
 
     const deleteIds = toDelete.map((r) => r.id);
     const deleteIdsSet = new Set(deleteIds);
 
     // Lista limpia de sorteos resultante en memoria local del cliente
-    const cleanedRounds = currentRounds.filter((r) => !deleteIdsSet.has(r.id));
+    const cleanedRounds = nonFinished.filter((r) => !deleteIdsSet.has(r.id));
 
     // Optimización exclusiva en caché local de frontend (sin tocar la BD de Supabase)
     mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleanedRounds, 'high');
@@ -972,14 +986,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         return round;
       });
-      if (hasChanges) {
+      const hasFinished = rounds.some(r => {
+        const st = String(r.status || '').toLowerCase().trim();
+        return st === 'finished' || st === 'completado';
+      });
+
+      if (hasChanges || hasFinished) {
         const cleaned = enforceAutoCleanupRounds(updated);
         setRounds(cleaned);
         mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
       } else {
-        // Verificación proactiva de la regla de mantener visibles únicamente un máximo de 6 a 7 sorteos programados o en curso
+        // Verificación proactiva de la regla de mantener visibles únicamente un máximo de 7 sorteos programados o en curso
         const activeCount = rounds.filter(r => {
-          const st = String(r.status || '').toLowerCase();
+          const st = String(r.status || '').toLowerCase().trim();
           return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay';
         }).length;
         if (activeCount > 7) {
