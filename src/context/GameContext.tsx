@@ -83,6 +83,7 @@ interface GameContextType {
   startLiveDrawSimulation: (roundId: string) => void; stopLiveDrawSimulation: () => void;
   quickAddBalance: (amountVes: number) => void;
   adjustUserBalance: (userId: string, amountVes: number, reason: string) => { success: boolean; message: string };
+  purgeCompletedRounds: () => void;
   updateUserStatus: (userId: string, status: 'active' | 'suspended' | 'banned', reason?: string) => { success: boolean; message: string };
   isRealtimeSyncConnected: boolean; lastSyncTimestamp: number;
   fetchActiveRounds: (options?: { bypassCache?: boolean; limit?: number }) => Promise<void>;
@@ -109,6 +110,50 @@ const INITIAL_ROUNDS: GameRound[] = [
   { id: 'round-103', roundNumber: 103, order: 3, title: 'Gran Sorteo Nocturno #103', openBetAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 3.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 30, card_price: 30, prize_percentage: 75, jackpotVes: 25000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
   { id: 'round-104', roundNumber: 104, order: 4, title: 'Sorteo Madrugada Millonario #104', openBetAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 6.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 20, card_price: 20, prize_percentage: 80, jackpotVes: 20000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
 ];
+
+export const isRoundCompletedOrExpired = (r: GameRound, nowMs?: number): boolean => {
+  const now = nowMs || timeSync.getServerNow();
+  const st = String(r.status || '').toLowerCase().trim();
+  if (st === 'finished' || st === 'completado') return true;
+
+  const rawDraw = r.drawAt || r.starts_at || r.openBetAt;
+  const drawMs = rawDraw ? timeSync.parseIsoToEpochMs(rawDraw) : 0;
+  const rawStart = r.starts_at || r.openBetAt || r.drawAt;
+  const startMs = rawStart ? timeSync.parseIsoToEpochMs(rawStart) : drawMs;
+  const effectiveStartMs = startMs || drawMs;
+  const transmissionEndMs = r.transmission_ends_at ? new Date(r.transmission_ends_at).getTime() : 0;
+
+  // 1. Sorteo con figuras ya guardadas y validadas
+  if (r.resultLocked) {
+    if (transmissionEndMs > 0 && now >= transmissionEndMs) return true;
+    if (effectiveStartMs > 0 && now > effectiveStartMs + 10 * 60 * 1000) return true;
+  }
+
+  // 2. Retransmisión concluida (7 minutos)
+  if (st === 'replay') {
+    if (transmissionEndMs > 0 && now >= transmissionEndMs) return true;
+    if (effectiveStartMs > 0 && now > effectiveStartMs + 15 * 60 * 1000) return true;
+  }
+
+  // 3. Sorteos antiguos con estado 'live' o 'drawing' cuya hora de inicio ya expiró
+  // Una emisión en vivo dura entre 5 y 10 minutos. Si ya pasaron más de 15 minutos desde el inicio,
+  // el sorteo finalizó por completo.
+  if (st === 'live' || st === 'drawing') {
+    if (transmissionEndMs > 0 && now >= transmissionEndMs) return true;
+    if (effectiveStartMs > 0 && now > effectiveStartMs + 15 * 60 * 1000) return true;
+  }
+
+  // 4. Sorteos antiguos con estado 'closed' o 'cerrado' cuya hora de inicio ya expiró
+  // Si las apuestas cerraron y ya pasaron más de 15 minutos de su hora de sorteo/inicio, ya concluyó.
+  if (st === 'closed' || st === 'cerrado') {
+    if (effectiveStartMs > 0 && now > effectiveStartMs + 15 * 60 * 1000) return true;
+    const rawClose = r.ends_at || r.closeBetAt;
+    const closeMs = rawClose ? timeSync.parseIsoToEpochMs(rawClose) : 0;
+    if (closeMs > 0 && now > closeMs + 25 * 60 * 1000) return true;
+  }
+
+  return false;
+};
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
@@ -359,27 +404,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [commercialConfig]);
 
   /**
-   * REGLA DE LIMPIEZA AUTOMÁTICA DE SORTEOS:
-   * El sistema mantiene visibles únicamente los últimos seis (6) sorteos programados o en curso.
-   * Si se supera el límite de 6, elimina progresivamente los más antiguos en tiempo real
-   * tanto en la base de datos Supabase como en la interfaz del usuario.
-   *
-   * Garantía de integridad: Protege cualquier sorteo que esté actualmente en emisión/transmisión
-   * ('live', 'drawing', 'replay') para garantizar que no se interrumpa el juego activo.
+   * REGLA DE LIMPIEZA AUTOMÁTICA Y PURGA DE SORTEOS:
+   * Elimina automáticamente de la vista los sorteos que ya hayan finalizado por completo
+   * o cuya hora de inicio ya expiró (sorteos antiguos con estado 'LIVE' o 'Cerrado').
+   * Mantiene visibles únicamente los sorteos prioritarios o programados (máximo 7).
    */
   const enforceAutoCleanupRounds = useCallback((currentRounds: GameRound[]): GameRound[] => {
     const MAX_ACTIVE_ROUNDS = 7;
+    const now = timeSync.getServerNow();
 
-    // Lógica de eliminación directa y permanente: purgar de raíz cualquier sorteo finalizado
-    const nonFinished = currentRounds.filter((r) => {
-      const st = String(r.status || '').toLowerCase().trim();
-      return st !== 'finished' && st !== 'completado';
-    });
+    // Lógica de purga directa y permanente: purgar de raíz cualquier sorteo finalizado o expirado
+    const nonFinished = currentRounds.filter((r) => !isRoundCompletedOrExpired(r, now));
 
-    // Filtrar sorteos programados o en curso (no concluidos)
+    // Filtrar sorteos válidos para la vista operativa
     const activeOrScheduled = nonFinished.filter((r) => {
       const st = String(r.status || '').toLowerCase().trim();
-      return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay';
+      return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay' || st === 'closed' || st === 'cerrado';
     });
 
     if (activeOrScheduled.length <= MAX_ACTIVE_ROUNDS) {
@@ -397,34 +437,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
     });
 
-    // Cantidad de sorteos que exceden el límite de 7 a eliminar progresivamente
-    const excessCount = activeOrScheduled.length - MAX_ACTIVE_ROUNDS;
+    // Mantener los 7 sorteos más prioritarios
+    const preservedRounds = sorted.slice(0, MAX_ACTIVE_ROUNDS);
+    const preservedIds = new Set(preservedRounds.map(r => r.id));
 
-    const toDelete: GameRound[] = [];
-    for (const r of sorted) {
-      if (toDelete.length >= excessCount) break;
-      const st = String(r.status || '').toLowerCase();
-      // Protección de integridad: NUNCA eliminar un sorteo en curso de emisión activa
-      if (st !== 'live' && st !== 'drawing' && st !== 'replay') {
-        toDelete.push(r);
-      }
-    }
-
-    if (toDelete.length === 0) {
-      return nonFinished;
-    }
-
-    const deleteIds = toDelete.map((r) => r.id);
-    const deleteIdsSet = new Set(deleteIds);
-
-    // Lista limpia de sorteos resultante en memoria local del cliente
-    const cleanedRounds = nonFinished.filter((r) => !deleteIdsSet.has(r.id));
-
-    // Optimización exclusiva en caché local de frontend (sin tocar la BD de Supabase)
+    const cleanedRounds = nonFinished.filter(r => preservedIds.has(r.id));
     mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleanedRounds, 'high');
-    deleteIds.forEach((id) => {
-      mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: id });
-    });
 
     return cleanedRounds;
   }, []);
@@ -946,12 +964,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const now = timeSync.getServerNow(); let hasChanges = false;
       const updated = rounds.map(round => {
         const st = String(round.status || '').toLowerCase();
-        if (st === 'finished') return round;
+        if (st === 'finished' || st === 'completado') return round;
 
         // CAMBIO 2: Verificar fin de los 7 minutos de retransmisión
         if (st === 'replay') {
           const replayEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
-          if (replayEndMs > 0 && now >= replayEndMs) {
+          const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
+          if ((replayEndMs > 0 && now >= replayEndMs) || (!isNaN(drawMs) && now > drawMs + 15 * 60 * 1000)) {
             hasChanges = true;
             mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
             return { ...round, status: 'finished' as RoundStatus };
@@ -959,11 +978,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return round;
         }
 
-        if (st === 'drawing' || st === 'live') return round;
+        // Sorteo en vivo / extracción: si su tiempo concluyó o su hora de inicio ya expiró hace más de 15 minutos:
+        if (st === 'drawing' || st === 'live') {
+          const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
+          const transmissionEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
+          const isExpiredLive = (transmissionEndMs > 0 && now >= transmissionEndMs) ||
+                                (!isNaN(drawMs) && now > drawMs + 15 * 60 * 1000);
+          if (isExpiredLive) {
+            hasChanges = true;
+            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
+            return { ...round, status: 'finished' as RoundStatus };
+          }
+          return round;
+        }
 
         const openMs = timeSync.parseIsoToEpochMs(round.starts_at || round.openBetAt);
         const closeMs = timeSync.parseIsoToEpochMs(round.ends_at || round.closeBetAt);
         const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
+
+        // Si está en 'closed' o 'cerrado', verificar si ya concluyó su sorteo (hora de inicio expirada > 15 min o figuras validadas)
+        if (st === 'closed' || st === 'cerrado') {
+          const isExpiredClosed = (!isNaN(drawMs) && now > drawMs + 15 * 60 * 1000) || round.resultLocked;
+          if (isExpiredClosed) {
+            hasChanges = true;
+            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
+            return { ...round, status: 'finished' as RoundStatus };
+          }
+        }
 
         // CAMBIO 2: Al llegar la hora start_at / drawAt, si tiene bolas_cantadas pasa a live
         const hasBolas = (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length > 0) ||
@@ -986,21 +1027,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         return round;
       });
-      const hasFinished = rounds.some(r => {
-        const st = String(r.status || '').toLowerCase().trim();
-        return st === 'finished' || st === 'completado';
-      });
+      const hasFinishedOrExpired = rounds.some(r => isRoundCompletedOrExpired(r, now));
 
-      if (hasChanges || hasFinished) {
+      if (hasChanges || hasFinishedOrExpired) {
         const cleaned = enforceAutoCleanupRounds(updated);
         setRounds(cleaned);
         mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
       } else {
         // Verificación proactiva de la regla de mantener visibles únicamente un máximo de 7 sorteos programados o en curso
-        const activeCount = rounds.filter(r => {
-          const st = String(r.status || '').toLowerCase().trim();
-          return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay';
-        }).length;
+        const activeCount = rounds.filter(r => !isRoundCompletedOrExpired(r, now)).length;
         if (activeCount > 7) {
           const cleaned = enforceAutoCleanupRounds(rounds);
           setRounds(cleaned);
@@ -1010,10 +1045,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [rounds, enforceAutoCleanupRounds]);
 
   const upcomingRounds = useMemo(() => {
-    return rounds.filter(r => {
-      const st = String(r.status || '').toLowerCase();
-      return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay';
-    })
+    return rounds.filter(r => !isRoundCompletedOrExpired(r))
      .sort((a, b) => {
        const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
        const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt);
@@ -2475,6 +2507,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Para no alargar, asumo que pegas aquí tus funciones grandes de purchaseCards, submitRecharge, approveRecharge, etc que ya tengo guardadas de tus partes 5 y 6.
   // Si quieres te mando el archivo.tsx listo para descargar, dímelo y te lo genero.
 
+  const purgeCompletedRounds = useCallback(() => {
+    setRounds((prev) => {
+      const cleaned = enforceAutoCleanupRounds(prev);
+      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
+      return cleaned;
+    });
+  }, [enforceAutoCleanupRounds]);
+
   const value: GameContextType = {
     currentUser, currentRole, setCurrentRole, operatorRole, setOperatorRole, isAuthenticated, sessionToken, loggedUsername, permissions, activeCredential,
     login, logout, requestPasswordRecovery, verifyRecoveryCode, resetPasswordWithCode, registerUser, updateUserKyc, verifyCurrentAccount,
@@ -2487,7 +2527,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     updateCommercialConfig, fetchCommercialConfig, resetToInitialData,
     liveDrawingRound, isLiveDrawing, liveDrawnFichas, startLiveDrawSimulation, stopLiveDrawSimulation,
     quickAddBalance, adjustUserBalance, updateUserStatus, isRealtimeSyncConnected, lastSyncTimestamp, fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals,
-    archiveCard, unarchiveCard, archiveCardsBatch,
+    archiveCard, unarchiveCard, archiveCardsBatch, purgeCompletedRounds,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

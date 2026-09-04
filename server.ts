@@ -586,6 +586,20 @@ app.get(['/api/rounds', '/api/sorteos'], async (req, res) => {
       }
     }
 
+    // Purga de sorteos que ya hayan finalizado por completo o cuya hora ya expiró
+    const nowServerMs = Date.now();
+    roundsToReturn = roundsToReturn.filter((r) => {
+      const st = String(r.status || '').toLowerCase().trim();
+      if (st === 'finished' || st === 'completado') return false;
+      const rawStart = r.starts_at || r.startsAt || r.draw_at || r.drawAt || r.open_bet_at || r.openBetAt;
+      const startMs = rawStart ? new Date(rawStart).getTime() : 0;
+      // Si está en 'live', 'drawing', 'closed' o 'cerrado', pero su hora de inicio ya expiró hace más de 15 minutos:
+      if ((st === 'live' || st === 'drawing' || st === 'closed' || st === 'cerrado') && startMs > 0 && nowServerMs > startMs + 15 * 60 * 1000) {
+        return false;
+      }
+      return true;
+    });
+
     return res.status(200).json(roundsToReturn);
   } catch (error: any) {
     console.error('[Error in GET /api/rounds]:', error);

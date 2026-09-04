@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useGame } from '../../context/GameContext';
+import { useGame, isRoundCompletedOrExpired } from '../../context/GameContext';
 import { GameRound } from '../../types';
 import { supabase } from '../../services/realtimeService';
 import { saveCommercialConfigToDb } from '../../services/configService';
@@ -67,6 +67,7 @@ export const AdminPortal: React.FC = () => {
     fetchWithdrawals,
     logout,
     loggedUsername,
+    purgeCompletedRounds,
   } = useGame();
 
   const currentRoleConfig = ROLE_PERMISSIONS[operatorRole] || ROLE_PERMISSIONS['Super Admin'];
@@ -145,30 +146,35 @@ export const AdminPortal: React.FC = () => {
   // =========================================================================
   const [roundsWindowLimit, setRoundsWindowLimit] = useState<6 | 7>(7);
 
-  // Filtrado de rondas para la interfaz visual
+  // Filtrado de rondas para la interfaz visual con lógica de purga automática
   const visibleActiveRounds = useMemo(() => {
-    // 1. Eliminación directa y permanente:
-    // Sorteos en estado 'finished', 'completado' o 'closed' son purgados de raíz de la interfaz visual.
-    // No existe almacenamiento ni visualización de archivados en esta sección.
+    const now = Date.now();
+
+    // 1. Lógica de Purga Automática y Permanente:
+    // Eliminar automáticamente de la vista cualquier sorteo que ya haya finalizado por completo
+    // o cuya hora de inicio ya expiró (eliminando sorteos antiguos con estado 'LIVE' o 'Cerrado').
     const activeList = rounds.filter((r) => {
-      const st = String(r.status || '').toLowerCase().trim();
-      if (st === 'closed' || st === 'finished' || st === 'completado') {
+      // Purga si el sorteo ya completó o su horario ya expiró
+      if (isRoundCompletedOrExpired(r, now)) {
         return false;
       }
-      return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay';
+      const st = String(r.status || '').toLowerCase().trim();
+      return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay' || st === 'closed' || st === 'cerrado';
     });
 
     // 2. Ordenar activos por prioridad operativa:
     //    1) live / drawing / replay (en transmisión activa en este instante)
     //    2) open (abierto a recepción de apuestas)
-    //    3) scheduled (programados ordenados cronológicamente)
+    //    3) closed / cerrado (apuestas cerradas recientes a la espera inminente de extracción)
+    //    4) scheduled (programados ordenados cronológicamente)
     activeList.sort((a, b) => {
       const getPriority = (status: string) => {
-        const s = String(status || '').toLowerCase();
+        const s = String(status || '').toLowerCase().trim();
         if (s === 'live' || s === 'drawing' || s === 'replay') return 1;
         if (s === 'open') return 2;
-        if (s === 'scheduled') return 3;
-        return 4;
+        if (s === 'closed' || s === 'cerrado') return 3;
+        if (s === 'scheduled') return 4;
+        return 5;
       };
       const prioA = getPriority(a.status);
       const prioB = getPriority(b.status);
@@ -181,7 +187,7 @@ export const AdminPortal: React.FC = () => {
     });
 
     // 3. Mantener únicamente visibles en pantalla los sorteos más prioritarios o programados,
-    //    sin superar el límite de siete (7) elementos en total.
+    //    sin superar el límite de siete (7) elementos en total, liberando espacio para nuevos sorteos.
     return activeList.slice(0, Math.min(roundsWindowLimit, 7));
   }, [rounds, roundsWindowLimit]);
 
@@ -1255,15 +1261,26 @@ export const AdminPortal: React.FC = () => {
                     7 Máx
                   </button>
                 </div>
+
+                {/* Botón de Purga Inmediata de Expirados */}
+                <button
+                  type="button"
+                  onClick={() => purgeCompletedRounds()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold border border-slate-200 transition-all cursor-pointer shadow-xs"
+                  title="Purgar de inmediato sorteos finalizados o antiguos con hora expirada para liberar espacio en la tabla"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Purgar Expirados</span>
+                </button>
               </div>
             </div>
 
-            {/* Banner informativo de eliminación directa y permanente */}
+            {/* Banner informativo de purga automática de sorteos finalizados o expirados */}
             <div className="bg-emerald-50/70 border border-emerald-200/80 px-4 py-2.5 rounded-2xl flex items-center justify-between gap-2 text-xs text-emerald-900 font-medium">
               <div className="flex items-center gap-2">
                 <span className="text-sm">⚡</span>
                 <span>
-                  <strong>Eliminación Directa y Permanente:</strong> Todos los sorteos que ya figuren con el estado finalizado son eliminados permanentemente de la interfaz visual sin funcionalidad de archivo. Se mantienen únicamente visibles en pantalla los sorteos más prioritarios o programados, sin superar el límite de siete ({roundsWindowLimit}) elementos en total.
+                  <strong>Purga Automática en Tiempo Real:</strong> Cualquier sorteo que ya figure con estado finalizado o cuya hora de inicio ya haya expirado (incluyendo sorteos antiguos en estado 'LIVE' o 'Cerrado') es eliminado automáticamente de la vista. Esto libera espacio de forma permanente para nuevos sorteos programados, respetando estrictamente el límite visual configurado (máximo {roundsWindowLimit}).
                 </span>
               </div>
             </div>
@@ -1335,13 +1352,17 @@ export const AdminPortal: React.FC = () => {
                                   ? 'bg-emerald-100 text-emerald-800 animate-pulse'
                                   : statusLower === 'scheduled'
                                   ? 'bg-indigo-100 text-indigo-900'
-                                  : statusLower === 'closed'
+                                  : statusLower === 'closed' || statusLower === 'cerrado'
                                   ? 'bg-amber-100 text-amber-900'
+                                  : statusLower === 'live' || statusLower === 'drawing'
+                                  ? 'bg-rose-100 text-rose-800 animate-pulse'
                                   : 'bg-slate-200 text-slate-700'
                               }`}
                             >
-                              {statusLower === 'open' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
-                              {round.status}
+                              {(statusLower === 'open' || statusLower === 'live' || statusLower === 'drawing') && (
+                                <span className={`w-1.5 h-1.5 rounded-full ${statusLower === 'open' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                              )}
+                              {statusLower === 'closed' || statusLower === 'cerrado' ? 'CERRADO' : round.status}
                             </span>
                           </div>
                         </td>
