@@ -111,10 +111,44 @@ const INITIAL_ROUNDS: GameRound[] = [
   { id: 'round-104', roundNumber: 104, order: 4, title: 'Sorteo Madrugada Millonario #104', openBetAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), closeBetAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), drawAt: new Date(Date.now() + 6.5 * 60 * 60 * 1000).toISOString(), starts_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), ends_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), status: 'scheduled', drawnFichas: [], totalCardsSold: 0, cardPriceVes: 20, card_price: 20, prize_percentage: 80, jackpotVes: 20000, winningCardsCount: 0, totalPrizesPaidVes: 0, resultLocked: false },
 ];
 
+export const isPermanentlyDeletedRound = (r: GameRound): boolean => {
+  if (!r) return false;
+  const title = String(r.title || '').toLowerCase().trim();
+  const orderStr = String(r.order || r.roundNumber || '').trim();
+  const idStr = String(r.id || '').toLowerCase().trim();
+
+  // Sorteo #7 sorteo de la mañana
+  if (
+    title.includes('sorteo de la ma') ||
+    title.includes('sorteo de la mañana') ||
+    title.includes('sorteo de la manana') ||
+    ((orderStr === '7' || idStr.includes('-7')) && (title.includes('mañana') || title.includes('manana') || title.includes('sorteo')))
+  ) {
+    return true;
+  }
+
+  // Sorteo #10 sorteo prueba iv
+  if (
+    title.includes('sorteo prueba iv') ||
+    title.includes('prueba iv') ||
+    ((orderStr === '10' || idStr.includes('-10')) && (title.includes('prueba') || title.includes('iv') || title.includes('sorteo')))
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 export const isRoundCompletedOrExpired = (r: GameRound, nowMs?: number): boolean => {
+  if (!r) return true;
+  // Eliminación directa y permanente de sorteos específicos solicitados (#7 y #10)
+  if (isPermanentlyDeletedRound(r)) return true;
+
   const now = nowMs || timeSync.getServerNow();
   const st = String(r.status || '').toLowerCase().trim();
-  if (st === 'finished' || st === 'completado') return true;
+
+  // Regla estricta de eliminación directa y permanente: sorteos cerrados o finalizados se purgan de inmediato de la memoria y la vista
+  if (st === 'finished' || st === 'completado' || st === 'closed' || st === 'cerrado') return true;
 
   const rawDraw = r.drawAt || r.starts_at || r.openBetAt;
   const drawMs = rawDraw ? timeSync.parseIsoToEpochMs(rawDraw) : 0;
@@ -143,15 +177,6 @@ export const isRoundCompletedOrExpired = (r: GameRound, nowMs?: number): boolean
     if (effectiveStartMs > 0 && now > effectiveStartMs + 15 * 60 * 1000) return true;
   }
 
-  // 4. Sorteos antiguos con estado 'closed' o 'cerrado' cuya hora de inicio ya expiró
-  // Si las apuestas cerraron y ya pasaron más de 15 minutos de su hora de sorteo/inicio, ya concluyó.
-  if (st === 'closed' || st === 'cerrado') {
-    if (effectiveStartMs > 0 && now > effectiveStartMs + 15 * 60 * 1000) return true;
-    const rawClose = r.ends_at || r.closeBetAt;
-    const closeMs = rawClose ? timeSync.parseIsoToEpochMs(rawClose) : 0;
-    if (closeMs > 0 && now > closeMs + 25 * 60 * 1000) return true;
-  }
-
   return false;
 };
 
@@ -164,13 +189,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [rounds, setRounds] = useState<GameRound[]>(() => {
     const p: GameRound[] = mobileCacheManager.safeGetItem(`${STORAGE_KEY}_rounds`, INITIAL_ROUNDS);
     const seen = new Set<string>();
-    return p.filter(r => {
+    const now = Date.now();
+    const filtered = p.filter(r => {
       if (!r.id || seen.has(r.id)) return false;
-      const st = String(r.status || '').toLowerCase().trim();
-      if (st === 'finished' || st === 'completado') return false;
+      if (isPermanentlyDeletedRound(r)) return false;
+      if (isRoundCompletedOrExpired(r, now)) return false;
       seen.add(r.id);
       return true;
     });
+    // Saneamiento y purga inmediata en almacenamiento local para liberar memoria
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, filtered, 'critical');
+    return filtered;
   });
   const [cards, setCards] = useState<MatrixCard[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_cards`, []));
   const [recharges, setRecharges] = useState<RechargeTransaction[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_recharges`, []));
@@ -214,6 +243,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => { fetchSystemCredentials(); }, [fetchSystemCredentials]);
   useEffect(() => { try { localStorage.setItem(`${STORAGE_KEY}_system_credentials`, JSON.stringify(systemCredentials)); } catch {} }, [systemCredentials]);
   useEffect(() => { LotteryStorageService.warmAssetCache(); }, []);
+
+  // Limpieza inicial forzada de memoria y almacenamiento local para eliminar #7 y #10 y sorteos cerrados
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`${STORAGE_KEY}_rounds`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const sanitized = parsed.filter(
+            (r: GameRound) => !isPermanentlyDeletedRound(r) && !isRoundCompletedOrExpired(r)
+          );
+          if (sanitized.length !== parsed.length) {
+            localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(sanitized));
+            mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, sanitized, 'critical');
+            setRounds(sanitized);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[GameContext] Startup round memory cleanup:', e);
+    }
+  }, []);
   useEffect(() => {
     if (isAuthenticated && sessionToken && currentUserId) {
       LotteryStorageService.saveSession({ token: sessionToken, userId: currentUserId, role: currentRole, username: loggedUsername, viewMode, lastActivity: Date.now() });
@@ -2510,7 +2561,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const purgeCompletedRounds = useCallback(() => {
     setRounds((prev) => {
       const cleaned = enforceAutoCleanupRounds(prev);
-      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
+      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'critical');
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_rounds`, JSON.stringify(cleaned));
+      } catch {}
       return cleaned;
     });
   }, [enforceAutoCleanupRounds]);

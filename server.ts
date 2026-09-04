@@ -586,15 +586,46 @@ app.get(['/api/rounds', '/api/sorteos'], async (req, res) => {
       }
     }
 
-    // Purga de sorteos que ya hayan finalizado por completo o cuya hora ya expiró
+    // Purga permanente de sorteos eliminados (#7 sorteo de la mañana y #10 sorteo prueba iv)
+    // y eliminación directa de sorteos que ya figuren con estado finalizado o cerrado
     const nowServerMs = Date.now();
+    const isTargetPermanentlyDeleted = (r: any): boolean => {
+      const title = String(r.title || '').toLowerCase().trim();
+      const orderStr = String(r.order || r.roundNumber || r.round_number || '').trim();
+      const idStr = String(r.id || '').toLowerCase().trim();
+
+      // #7 sorteo de la mañana
+      if (
+        title.includes('sorteo de la ma') ||
+        title.includes('sorteo de la mañana') ||
+        title.includes('sorteo de la manana') ||
+        ((orderStr === '7' || idStr.includes('-7')) && (title.includes('mañana') || title.includes('manana') || title.includes('sorteo')))
+      ) {
+        return true;
+      }
+
+      // #10 sorteo prueba iv
+      if (
+        title.includes('sorteo prueba iv') ||
+        title.includes('prueba iv') ||
+        ((orderStr === '10' || idStr.includes('-10')) && (title.includes('prueba') || title.includes('iv') || title.includes('sorteo')))
+      ) {
+        return true;
+      }
+
+      return false;
+    };
+
     roundsToReturn = roundsToReturn.filter((r) => {
+      if (isTargetPermanentlyDeleted(r)) return false;
       const st = String(r.status || '').toLowerCase().trim();
-      if (st === 'finished' || st === 'completado') return false;
+      // Regla de eliminación directa: sorteos cerrados o finalizados no se muestran
+      if (st === 'finished' || st === 'completado' || st === 'closed' || st === 'cerrado') return false;
+
       const rawStart = r.starts_at || r.startsAt || r.draw_at || r.drawAt || r.open_bet_at || r.openBetAt;
       const startMs = rawStart ? new Date(rawStart).getTime() : 0;
-      // Si está en 'live', 'drawing', 'closed' o 'cerrado', pero su hora de inicio ya expiró hace más de 15 minutos:
-      if ((st === 'live' || st === 'drawing' || st === 'closed' || st === 'cerrado') && startMs > 0 && nowServerMs > startMs + 15 * 60 * 1000) {
+      // Si está en 'live' o 'drawing', pero su hora de inicio ya expiró hace más de 15 minutos:
+      if ((st === 'live' || st === 'drawing') && startMs > 0 && nowServerMs > startMs + 15 * 60 * 1000) {
         return false;
       }
       return true;

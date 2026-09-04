@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useGame, isRoundCompletedOrExpired } from '../../context/GameContext';
+import { useGame, isRoundCompletedOrExpired, isPermanentlyDeletedRound } from '../../context/GameContext';
 import { GameRound } from '../../types';
 import { supabase } from '../../services/realtimeService';
 import { saveCommercialConfigToDb } from '../../services/configService';
@@ -154,12 +154,20 @@ export const AdminPortal: React.FC = () => {
     // Eliminar automáticamente de la vista cualquier sorteo que ya haya finalizado por completo
     // o cuya hora de inicio ya expiró (eliminando sorteos antiguos con estado 'LIVE' o 'Cerrado').
     const activeList = rounds.filter((r) => {
+      // Purga directa y permanente de sorteos específicos (#7 y #10)
+      if (isPermanentlyDeletedRound(r)) {
+        return false;
+      }
       // Purga si el sorteo ya completó o su horario ya expiró
       if (isRoundCompletedOrExpired(r, now)) {
         return false;
       }
       const st = String(r.status || '').toLowerCase().trim();
-      return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay' || st === 'closed' || st === 'cerrado';
+      // Cualquier sorteo cerrado o finalizado se purga directamente de la vista
+      if (st === 'closed' || st === 'cerrado' || st === 'finished' || st === 'completado') {
+        return false;
+      }
+      return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay';
     });
 
     // 2. Ordenar activos por prioridad operativa:
