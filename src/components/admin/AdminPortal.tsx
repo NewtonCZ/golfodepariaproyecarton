@@ -7,6 +7,7 @@ import { FICHAS_POOL, getFichaById } from '../../data/fichasPool';
 import { FichaBadge } from '../common/FichaBadge';
 import { OperatorManagementView } from './OperatorManagementView';
 import { SorteoForm } from './SorteoForm';
+import { AdminDashboardView } from './AdminDashboardView';
 import { ROLE_PERMISSIONS, AdminTab } from '../../config/permissions';
 import {
   LayoutDashboard,
@@ -36,7 +37,7 @@ import {
   Clock,
   X,
 } from 'lucide-react';
-import { Ficha, RechargeTransaction } from '../../types';
+import { Ficha, RechargeTransaction, WithdrawalTransaction } from '../../types';
 import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
 
 export const AdminPortal: React.FC = () => {
@@ -47,7 +48,9 @@ export const AdminPortal: React.FC = () => {
     users,
     cards,
     recharges,
+    setRecharges,
     withdrawals,
+    setWithdrawals,
     ledger,
     auditLogs,
     commercialConfig,
@@ -85,34 +88,120 @@ export const AdminPortal: React.FC = () => {
     }
   }, [operatorRole, currentRoleConfig, activeTab]);
 
-  // -- INICIO BLOQUE REALTIME SEGURO --
+  // -- INICIO BLOQUE REALTIME SEGURO (ACTUALIZACIÓN DIRECTA DE ESTADO) --
   useEffect(() => {
     fetchPendingRecharges();
     fetchWithdrawals();
 
     const channel = supabase
       .channel('realtime-finanzas-admin')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => {
-        fetchPendingRecharges();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharges' }, () => {
-        fetchPendingRecharges();
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recharges' }, () => {
-        fetchPendingRecharges();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'withdrawals' }, () => {
-        fetchWithdrawals();
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'withdrawals' }, () => {
-        fetchWithdrawals();
-      })
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'recharges' },
+        (payload) => {
+          if (payload.new) {
+            const raw = payload.new as any;
+            const newRecord: RechargeTransaction = {
+              ...raw,
+              id: String(raw.id),
+              userId: raw.user_id || raw.usuario_id || raw.userId || '',
+              userName: raw.usuario_nombre || raw.pagador_nombre || raw.user_name || raw.userName || 'Usuario',
+              userPhone: raw.usuario_telefono || raw.user_phone || raw.userPhone || raw.pagador_telefono || '',
+              amountVes: Number(raw.monto_ves ?? raw.monto ?? raw.amount_ves ?? raw.amountVes ?? 0),
+              payerPhone: raw.pagador_telefono || raw.payer_phone || raw.payerPhone || '',
+              payerName: raw.pagador_nombre || raw.payer_name || raw.payerName || '',
+              payerDocumentId: raw.pagador_ci || raw.payer_document_id || raw.payerDocumentId || '',
+              bankOrigin: raw.banco_origen || raw.banco || raw.bank_origin || raw.bankOrigin || 'Pago Móvil',
+              referenceNumber: raw.referencia || raw.reference_number || raw.referenceNumber || '',
+              voucherImageUrl: raw.comprobante_url || raw.voucher_image_url || raw.voucherImageUrl || '',
+              status: (raw.status || raw.estado || 'pending').toLowerCase() === 'aprobada' || (raw.status || raw.estado || '').toLowerCase() === 'approved' ? 'approved' : (raw.status || raw.estado || '').toLowerCase() === 'rechazada' || (raw.status || raw.estado || '').toLowerCase() === 'rejected' ? 'rejected' : 'pending',
+              createdAt: raw.created_at || raw.createdAt || new Date().toISOString(),
+              processedAt: raw.fecha_procesado || raw.processed_at || raw.processedAt || '',
+              processedBy: raw.procesado_por || raw.processed_by || raw.processedBy || '',
+            };
+            setRecharges((prev) => [newRecord, ...prev.filter((r) => r.id !== newRecord.id)]);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'recharges' },
+        (payload) => {
+          if (payload.new) {
+            const raw = payload.new as any;
+            setRecharges((prev) =>
+              prev.map((item) =>
+                item.id === String(raw.id)
+                  ? {
+                      ...item,
+                      ...raw,
+                      id: String(raw.id),
+                      amountVes: Number(raw.monto_ves ?? raw.monto ?? raw.amount_ves ?? raw.amountVes ?? item.amountVes),
+                      status: (raw.status || raw.estado || item.status).toLowerCase() === 'aprobada' || (raw.status || raw.estado || '').toLowerCase() === 'approved' ? 'approved' : (raw.status || raw.estado || '').toLowerCase() === 'rechazada' || (raw.status || raw.estado || '').toLowerCase() === 'rejected' ? 'rejected' : item.status,
+                      processedAt: raw.fecha_procesado || raw.processed_at || raw.processedAt || item.processedAt,
+                      processedBy: raw.procesado_por || raw.processed_by || raw.processedBy || item.processedBy,
+                      rejectionReason: raw.motivo_rechazo || raw.rejection_reason || raw.rejectionReason || item.rejectionReason,
+                    }
+                  : item
+              )
+            );
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'withdrawals' },
+        (payload) => {
+          if (payload.new) {
+            const raw = payload.new as any;
+            const newRecord: WithdrawalTransaction = {
+              ...raw,
+              id: String(raw.id),
+              userId: raw.user_id || raw.userId || '',
+              userName: raw.user_name || raw.userName || 'Usuario',
+              amountVes: Number(raw.amount_ves ?? raw.amountVes ?? raw.monto_ves ?? raw.monto ?? 0),
+              bankName: raw.bank_name || raw.bankName || raw.banco || '',
+              accountNumber: raw.account_number || raw.accountNumber || raw.cuenta || '',
+              idDocument: raw.id_document || raw.idDocument || raw.cedula || '',
+              phoneNumber: raw.phone_number || raw.phoneNumber || raw.telefono || '',
+              status: (raw.status || raw.estado || 'pending').toLowerCase() === 'completed' || (raw.status || raw.estado || '').toLowerCase() === 'completado' ? 'completed' : (raw.status || raw.estado || '').toLowerCase() === 'rejected' || (raw.status || raw.estado || '').toLowerCase() === 'rechazado' ? 'rejected' : 'pending',
+              createdAt: raw.created_at || raw.createdAt || new Date().toISOString(),
+              processedAt: raw.processed_at || raw.processedAt || '',
+            };
+            setWithdrawals((prev) => [newRecord, ...prev.filter((w) => w.id !== newRecord.id)]);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'withdrawals' },
+        (payload) => {
+          if (payload.new) {
+            const raw = payload.new as any;
+            setWithdrawals((prev) =>
+              prev.map((item) =>
+                item.id === String(raw.id)
+                  ? {
+                      ...item,
+                      ...raw,
+                      id: String(raw.id),
+                      amountVes: Number(raw.amount_ves ?? raw.amountVes ?? raw.monto_ves ?? raw.monto ?? item.amountVes),
+                      status: (raw.status || raw.estado || item.status).toLowerCase() === 'completed' || (raw.status || raw.estado || '').toLowerCase() === 'completado' ? 'completed' : (raw.status || raw.estado || '').toLowerCase() === 'rejected' || (raw.status || raw.estado || '').toLowerCase() === 'rechazado' ? 'rejected' : item.status,
+                      processedAt: raw.processed_at || raw.processedAt || item.processedAt,
+                      rejectionReason: raw.motivo_rechazo || raw.rejection_reason || raw.rejectionReason || item.rejectionReason,
+                    }
+                  : item
+              )
+            );
+          }
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchPendingRecharges, fetchWithdrawals]);
+  }, [fetchPendingRecharges, fetchWithdrawals, setRecharges, setWithdrawals]);
   // -- FIN BLOQUE REALTIME SEGURO --
 
   // Modal states
@@ -630,177 +719,20 @@ export const AdminPortal: React.FC = () => {
       {/* TAB 1: DASHBOARD & FINANCIAL KPIS */}
       {/* ======================================================== */}
       {activeTab === 'dashboard' && (
-        <div className="space-y-6">
-          {/* KPI Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Total Recharges */}
-            <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
-                  Total Recargas Aprobadas
-                </span>
-                <div className="text-2xl font-mono font-black text-emerald-600">
-                  {formatMoney(totalApprovedRechargesVes)}
-                </div>
-              </div>
-              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                <span>Comprobantes:</span>
-                <span className="font-bold text-slate-800">
-                  {recharges.filter((r) => r.status === 'approved').length} aprobados
-                </span>
-              </div>
-            </div>
-
-            {/* Total Card Bets */}
-            <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
-                  Ventas de Cartones 4×4
-                </span>
-                <div className="text-2xl font-mono font-black text-indigo-950">
-                  {formatMoney(totalCardsSalesVes)}
-                </div>
-              </div>
-              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                <span>Cartones Emitidas:</span>
-                <span className="font-bold text-slate-800">{cards.length} unidades</span>
-              </div>
-            </div>
-
-            {/* Total Prizes Paid */}
-            <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
-                  Premios Distribuidos
-                </span>
-                <div className="text-2xl font-mono font-black text-amber-600">
-                  {formatMoney(totalPrizesPaidVes)}
-                </div>
-              </div>
-              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                <span>Cartones Premiadas:</span>
-                <span className="font-bold text-slate-800">
-                  {cards.filter((c) => c.status === 'winner' || c.winningPatterns.length > 0).length} ganadoras
-                </span>
-              </div>
-            </div>
-
-            {/* Net Margin Profit */}
-            <div className="bg-gradient-to-br from-indigo-950 to-purple-950 text-white rounded-3xl p-5 shadow-xl border border-purple-800 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase text-amber-300 tracking-wider block mb-1">
-                  Margen Operativo Neto
-                </span>
-                <div className="text-2xl font-mono font-black text-amber-400">
-                  {formatMoney(netPlatformProfitVes)}
-                </div>
-              </div>
-              <div className="mt-3 pt-3 border-t border-purple-800/80 flex items-center justify-between text-xs text-indigo-200">
-                <span>Retención Casa:</span>
-                <span className="font-bold text-emerald-400">
-                  {totalCardsSalesVes > 0 ? `${((netPlatformProfitVes / totalCardsSalesVes) * 100).toFixed(1)}%` : '0%'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Pending Alerts Banner */}
-          {(pendingRechargesCount > 0 || pendingWithdrawalsCount > 0) && (
-            <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-black text-amber-950 text-sm">
-                    Atención: Hay Operaciones Financieras Pendientes
-                  </h3>
-                  <p className="text-xs text-amber-800">
-                    {pendingRechargesCount} recarga(s) por verificar y {pendingWithdrawalsCount} solicitud(es) de retiro en cola.
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                {pendingRechargesCount > 0 && (
-                  <button
-                    onClick={() => setActiveTab('recharges')}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-sm"
-                  >
-                    Ver Recargas ({pendingRechargesCount})
-                  </button>
-                )}
-                {pendingWithdrawalsCount > 0 && (
-                  <button
-                    onClick={() => setActiveTab('withdrawals')}
-                    className="bg-indigo-950 hover:bg-indigo-900 text-amber-300 font-bold text-xs px-3.5 py-2 rounded-xl shadow-sm"
-                  >
-                    Ver Retiros ({pendingWithdrawalsCount})
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Quick Round Overview */}
-          <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-              <h3 className="font-black text-slate-900 text-base">
-                Estado Actual de los Sorteos
-              </h3>
-              <button
-                onClick={() => setActiveTab('rounds')}
-                className="text-xs font-bold text-indigo-900 hover:underline"
-              >
-                Administrar Sorteos →
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {visibleActiveRounds.map((round) => (
-                <div
-                  key={round.id}
-                  className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-black text-slate-900 text-sm">
-                        #{round.roundNumber} - {round.title}
-                      </span>
-                      <span
-                        className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                          round.status === 'open'
-                            ? 'bg-emerald-100 text-emerald-800 animate-pulse'
-                            : round.status === 'finished'
-                            ? 'bg-slate-200 text-slate-700'
-                            : 'bg-indigo-100 text-indigo-900'
-                        }`}
-                      >
-                        {round.status}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Cartones vendidas: <strong>{round.totalCardsSold}</strong> • Premio mayor: <strong>{formatMoney(round.jackpotVes)}</strong>
-                    </p>
-                  </div>
-
-                  <div className="mt-3 pt-2 border-t border-slate-200 flex gap-2">
-                    {round.status === 'open' && (
-                      <button
-                        onClick={() => {
-                          setSelectedRoundForResult(round.id);
-                          setActiveTab('results');
-                        }}
-                        className="w-full py-1.5 bg-amber-500 hover:bg-amber-400 text-indigo-950 font-black text-xs rounded-xl shadow-sm"
-                      >
-                        Cerrar e Ingresar Resultados
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <AdminDashboardView
+          formatMoney={formatMoney}
+          totalApprovedRechargesVes={totalApprovedRechargesVes}
+          totalCardsSalesVes={totalCardsSalesVes}
+          totalPrizesPaidVes={totalPrizesPaidVes}
+          netPlatformProfitVes={netPlatformProfitVes}
+          pendingRechargesCount={pendingRechargesCount}
+          pendingWithdrawalsCount={pendingWithdrawalsCount}
+          recharges={recharges}
+          cards={cards}
+          visibleActiveRounds={visibleActiveRounds}
+          setActiveTab={setActiveTab}
+          setSelectedRoundForResult={setSelectedRoundForResult}
+        />
       )}
 
       {/* ======================================================== */}

@@ -41,25 +41,6 @@ if (SUPABASE_URL && SUPABASE_KEY) {
   }
 }
 
-// Almacén en memoria de códigos OTP (expiran en 30 minutos)
-interface OtpRecord {
-  code: string;
-  email: string;
-  createdAt: number;
-  expiresAt: number;
-}
-const otpStore = new Map<string, OtpRecord>();
-
-// Limpiar OTPs expirados periódicamente
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, record] of otpStore.entries()) {
-    if (now > record.expiresAt) {
-      otpStore.delete(key);
-    }
-  }
-}, 5 * 60 * 1000);
-
 // Helper para enviar correo con Resend o Nodemailer
 async function sendOtpEmail(toEmail: string, otpCode: string, contextTitle: string = 'Código de Verificación'): Promise<{ success: boolean; id?: string; error?: string }> {
   const apiKey = (process.env.RESEND_API_KEY || '').trim();
@@ -204,48 +185,33 @@ app.post(['/send-otp', '/api/send-otp', '/api/auth/send-recovery-code'], async (
     const { email, user, pack, amountVes } = req.body || {};
     const targetEmail = (email || 'niutoncaraballo3@gmail.com').toLowerCase().trim();
 
+    if (!supabaseServerClient) {
+      console.error('[Supabase Error in /send-otp]: Cliente de Supabase no inicializado');
+      return res.status(500).json({ success: false, error: 'Base de datos no disponible para registrar código OTP' });
+    }
+
     // Generar código numérico de 6 dígitos (100000 a 999999)
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const now = new Date();
     const expiresAtIso = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    const expiresAtMs = new Date(expiresAtIso).getTime();
 
-    // Guardar en almacén en memoria
-    otpStore.set(code, {
-      code,
+    // Inserción directa en tabla otp_codes de Supabase
+    const { error: dbErr } = await supabaseServerClient.from('otp_codes').insert({
       email: targetEmail,
-      createdAt: now.getTime(),
-      expiresAt: expiresAtMs,
-    });
-    otpStore.set(`email:${targetEmail}`, {
       code,
-      email: targetEmail,
-      createdAt: now.getTime(),
-      expiresAt: expiresAtMs,
+      created_at: now.toISOString(),
+      expires_at: expiresAtIso,
+      used: false,
     });
 
-    // Guardar en Supabase si está disponible (en UTC ISO)
-    if (supabaseServerClient) {
-      try {
-        const { error: dbErr } = await supabaseServerClient.from('otp_codes').insert({
-          email: targetEmail,
-          code,
-          created_at: now.toISOString(),
-          expires_at: expiresAtIso,
-          used: false,
-        });
-        if (dbErr) {
-          console.warn('[Supabase DB Save Notice]:', dbErr.message);
-        } else {
-          console.log(`[Supabase DB] OTP ${code} guardado en tabla otp_codes`);
-        }
-      } catch (dbErr) {
-        console.warn('[Supabase DB Save Warning]:', dbErr);
-      }
+    if (dbErr) {
+      console.error('[Supabase DB Insert Error in /send-otp]:', dbErr);
+      return res.status(500).json({ success: false, error: `Error al guardar OTP en base de datos: ${dbErr.message}` });
     }
 
-    console.log(`[OTP Generated] Código: ${code} | Para: ${targetEmail} | Server time: ${now.toISOString()} | Expiración: ${expiresAtIso} (30 min)`);
+    console.log(`[Supabase DB] OTP ${code} guardado en tabla otp_codes para ${targetEmail} (válido hasta: ${expiresAtIso})`);
 
+    // Mantener intacta la lógica de envío de correos
     const emailRes = await sendOtpEmail(
       targetEmail,
       code,
@@ -293,122 +259,85 @@ app.post(['/verify-otp', '/api/verify-otp', '/api/auth/verify-recovery-code'], a
       return res.status(200).json({ valid: false, success: false, message: 'El código debe tener exactamente 6 dígitos numéricos' });
     }
 
-    const now = Date.now();
-
-    // 1. Intentar verificación en Supabase
-    if (supabaseServerClient) {
-      try {
-        let query = supabaseServerClient
-          .from('otp_codes')
-          .select('*')
-          .eq('code', cleanCode)
-          .order('created_at', { ascending: false });
-
-        const { data: dbRecords, error: dbErr } = await query;
-        if (!dbErr && dbRecords && dbRecords.length > 0) {
-          console.log(`[Supabase DB Query] ${dbRecords.length} registro(s) encontrado(s) para código ${cleanCode}`);
-
-          // Buscar el registro no utilizado más reciente
-          const activeRecord = dbRecords.find((r) => r.used !== true) || dbRecords[0];
-          console.log('Server time:', new Date(now).toISOString(), '| DB created_at:', activeRecord.created_at, '| DB expires_at:', activeRecord.expires_at, '| used:', activeRecord.used);
-
-          if (activeRecord.used === true) {
-            console.log(`[OTP Used DB] Código ya fue utilizado previamente: ${cleanCode}`);
-            return res.status(200).json({
-              valid: false,
-              success: false,
-              message: 'Este código de seguridad ya fue utilizado previamente.',
-            });
-          }
-
-          // Cálculo robusto de expiración (30 minutos)
-          const createdTime = parseToUtcTime(activeRecord.created_at);
-          const expiresTime = parseToUtcTime(activeRecord.expires_at);
-          const effectiveExpiresTime = expiresTime || (createdTime ? createdTime + 30 * 60 * 1000 : 0);
-
-          const isExpired =
-            (effectiveExpiresTime > 0 && now > effectiveExpiresTime) ||
-            (createdTime > 0 && now - createdTime > 31 * 60 * 1000); // 31 min con buffer de 1 min
-
-          if (isExpired) {
-            console.log(`[OTP Expired DB] Código vencido en DB: ${cleanCode}`);
-            return res.status(200).json({
-              valid: false,
-              success: false,
-              message: 'Código vencido (ha superado los 30 minutos de vigencia)',
-            });
-          }
-
-          // Validar correo si se especificó
-          if (targetEmail && activeRecord.email) {
-            const dbEmailNorm = activeRecord.email.toLowerCase().trim();
-            if (dbEmailNorm !== targetEmail && dbEmailNorm !== 'niutoncaraballo3@gmail.com') {
-              console.log(`[OTP Email Mismatch DB] DB: ${dbEmailNorm} vs Input: ${targetEmail}`);
-              return res.status(200).json({
-                valid: false,
-                success: false,
-                message: 'El código no corresponde a este correo electrónico',
-              });
-            }
-          }
-
-          // Marcar como usado en DB
-          await supabaseServerClient.from('otp_codes').update({ used: true }).eq('id', activeRecord.id);
-
-          // Limpiar en memoria también
-          otpStore.delete(cleanCode);
-          if (activeRecord.email) {
-            otpStore.delete(`email:${activeRecord.email.toLowerCase().trim()}`);
-          }
-
-          console.log(`[OTP Verified via DB ✓] Código ${cleanCode} validado exitosamente para ${activeRecord.email || targetEmail}`);
-          return res.status(200).json({
-            valid: true,
-            success: true,
-            message: 'Código verificado correctamente',
-            email: activeRecord.email || targetEmail,
-          });
-        }
-      } catch (dbVerifyErr) {
-        console.warn('[Supabase DB Verify Warning]:', dbVerifyErr);
-      }
+    if (!supabaseServerClient) {
+      console.error('[Supabase Error in /verify-otp]: Cliente de Supabase no inicializado');
+      return res.status(500).json({ valid: false, success: false, error: 'Base de datos no disponible para verificar el código' });
     }
 
-    // 2. Verificación en almacén en memoria
-    const record = otpStore.get(cleanCode);
+    // Consulta directa a la tabla otp_codes de Supabase
+    const { data: dbRecords, error: dbErr } = await supabaseServerClient
+      .from('otp_codes')
+      .select('*')
+      .eq('code', cleanCode)
+      .order('created_at', { ascending: false });
 
-    if (!record) {
-      console.log(`[OTP Failed] Código no encontrado en memoria ni DB: ${cleanCode}`);
+    if (dbErr) {
+      console.error('[Supabase DB Query Error in /verify-otp]:', dbErr);
+      return res.status(500).json({ valid: false, success: false, error: `Error en consulta de base de datos: ${dbErr.message}` });
+    }
+
+    if (!dbRecords || dbRecords.length === 0) {
+      console.log(`[OTP Failed] Código no encontrado en DB: ${cleanCode}`);
       return res.status(200).json({ valid: false, success: false, message: 'Código incorrecto o no encontrado' });
     }
 
-    if (targetEmail && record.email && record.email.toLowerCase().trim() !== targetEmail && record.email !== 'niutoncaraballo3@gmail.com') {
-      console.log(`[OTP Failed] Email mismatch en memoria: ${record.email} vs ${targetEmail}`);
-      return res.status(200).json({ valid: false, success: false, message: 'Código no corresponde a este correo electrónico' });
+    // Seleccionar el registro activo no utilizado más reciente
+    const activeRecord = dbRecords.find((r) => r.used !== true) || dbRecords[0];
+
+    // Verificar si ya fue utilizado
+    if (activeRecord.used === true) {
+      console.log(`[OTP Used DB] Código ya fue utilizado previamente: ${cleanCode}`);
+      return res.status(200).json({
+        valid: false,
+        success: false,
+        message: 'Este código de seguridad ya fue utilizado previamente.',
+      });
     }
 
-    console.log('Server time (memory check):', new Date(now).toISOString(), '| Memory expires_at:', new Date(record.expiresAt).toISOString());
+    // Verificar expiración (30 minutos usando created_at)
+    const now = Date.now();
+    const createdTime = parseToUtcTime(activeRecord.created_at);
+    const THIRTY_MINUTES_MS = 30 * 60 * 1000;
 
-    const isMemExpired = (record.expiresAt && now > record.expiresAt) || (record.createdAt && now - record.createdAt > 31 * 60 * 1000);
-
-    if (isMemExpired) {
-      otpStore.delete(cleanCode);
-      console.log(`[OTP Expired Memory] Código vencido: ${cleanCode}`);
-      return res.status(200).json({ valid: false, success: false, message: 'Código vencido (expiró hace más de 30 minutos)' });
+    if (!createdTime || (now - createdTime > THIRTY_MINUTES_MS)) {
+      console.log(`[OTP Expired DB] Código vencido en DB: ${cleanCode}`);
+      return res.status(200).json({
+        valid: false,
+        success: false,
+        message: 'Código vencido (ha superado los 30 minutos de vigencia)',
+      });
     }
 
-    // Código válido -> consumirlo para evitar reuso
-    otpStore.delete(cleanCode);
-    if (record.email) {
-      otpStore.delete(`email:${record.email.toLowerCase().trim()}`);
+    // Validar correo si se envió en la petición
+    if (targetEmail && activeRecord.email) {
+      const dbEmailNorm = activeRecord.email.toLowerCase().trim();
+      if (dbEmailNorm !== targetEmail && dbEmailNorm !== 'niutoncaraballo3@gmail.com') {
+        console.log(`[OTP Email Mismatch DB] DB: ${dbEmailNorm} vs Input: ${targetEmail}`);
+        return res.status(200).json({
+          valid: false,
+          success: false,
+          message: 'El código no corresponde a este correo electrónico',
+        });
+      }
     }
 
-    console.log(`[OTP Verified via Memory ✓] Código ${cleanCode} verificado exitosamente para ${record.email}`);
+    // Actualizar campo used a true directamente en Supabase
+    const { error: updateErr } = await supabaseServerClient
+      .from('otp_codes')
+      .update({ used: true })
+      .eq('id', activeRecord.id);
+
+    if (updateErr) {
+      console.error('[Supabase DB Update Error in /verify-otp]:', updateErr);
+      return res.status(500).json({ valid: false, success: false, error: `Error al actualizar estado del código: ${updateErr.message}` });
+    }
+
+    console.log(`[OTP Verified via DB ✓] Código ${cleanCode} validado y marcado como used=true para ${activeRecord.email || targetEmail}`);
     return res.status(200).json({
       valid: true,
       success: true,
       message: 'Código verificado correctamente',
-      email: record.email,
+      email: activeRecord.email || targetEmail,
     });
   } catch (error: any) {
     console.error('[Error in /verify-otp]:', error);
@@ -948,6 +877,115 @@ app.post(['/api/recargas/rechazar', '/api/recharges/reject'], async (req, res) =
   } catch (error: any) {
     console.error('[Error in /api/recargas/rechazar]:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Error al rechazar recarga' });
+  }
+});
+
+// ======================================================================
+// 5.5. MÉTRICAS FINANCIERAS Y AGREGACIONES EN BASE DE DATOS
+// ======================================================================
+// GET /api/finances/metrics: Totales financieros agregados directamente en BD
+app.get('/api/finances/metrics', async (req, res) => {
+  res.header('Access-Control-Allow-Origin', (req.headers.origin as string) || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    if (!supabaseServerClient) {
+      return res.status(500).json({
+        success: false,
+        error: 'Cliente de Supabase no inicializado en el servidor',
+      });
+    }
+
+    // 1. Intento primario: Función RPC en PostgreSQL para agregación nativa directa
+    try {
+      const { data: rpcData, error: rpcError } = await supabaseServerClient.rpc('get_financial_metrics');
+      if (!rpcError && rpcData) {
+        const totalRecharges = Number(rpcData.totalRecharges ?? rpcData.total_recharges ?? 0);
+        const totalSales = Number(rpcData.totalSales ?? rpcData.total_sales ?? 0);
+        const totalPrizes = Number(rpcData.totalPrizes ?? rpcData.total_prizes ?? 0);
+        const netProfit = Number(rpcData.netProfit ?? rpcData.net_profit ?? (totalSales - totalPrizes));
+
+        return res.status(200).json({
+          totalRecharges: Number(totalRecharges.toFixed(2)),
+          totalSales: Number(totalSales.toFixed(2)),
+          totalPrizes: Number(totalPrizes.toFixed(2)),
+          netProfit: Number(netProfit.toFixed(2)),
+        });
+      }
+    } catch (rpcErr) {
+      console.warn('[RPC Notice] get_financial_metrics no disponible o falló, ejecutando agregación selectiva en tablas:', rpcErr);
+    }
+
+    // 2. Fallback de alta eficiencia: consultas paralelas trayendo únicamente columnas numéricas
+    const [rechargesResult, ledgerResult, cardsPrizesResult] = await Promise.all([
+      // A. Total Recargas Aprobadas
+      supabaseServerClient
+        .from('recharges')
+        .select('amount_ves, monto_ves, monto')
+        .or('status.ilike.approved,status.ilike.aprobada,estado.ilike.aprobada'),
+
+      // B. Ventas de Cartones desde Ledger Contable
+      supabaseServerClient
+        .from('ledger')
+        .select('amount_ves, amount')
+        .or('type.ilike.card_purchase,type.ilike.CARD_PURCHASE'),
+
+      // C. Premios Totales Distribuidos
+      supabaseServerClient
+        .from('cards')
+        .select('total_prize_ves')
+        .or('status.eq.winner,total_prize_ves.gt.0'),
+    ]);
+
+    // Sumatoria de Recargas Aprobadas
+    let totalRecharges = 0;
+    if (rechargesResult.data) {
+      for (const row of rechargesResult.data as any[]) {
+        totalRecharges += Number(row.amount_ves ?? row.monto_ves ?? row.monto ?? 0);
+      }
+    }
+
+    // Sumatoria de Ventas (Ledger o Fallback a Cards)
+    let totalSales = 0;
+    if (ledgerResult.data && ledgerResult.data.length > 0) {
+      for (const row of ledgerResult.data as any[]) {
+        totalSales += Math.abs(Number(row.amount_ves ?? row.amount ?? 0));
+      }
+    } else {
+      // Si el ledger no tiene registros de compras, consultar suma de precios de cartones emitidos
+      const { data: cardsPriceData } = await supabaseServerClient
+        .from('cards')
+        .select('price_ves');
+      if (cardsPriceData) {
+        for (const row of cardsPriceData as any[]) {
+          totalSales += Number(row.price_ves ?? 25);
+        }
+      }
+    }
+
+    // Sumatoria de Premios Distribuidos
+    let totalPrizes = 0;
+    if (cardsPrizesResult.data) {
+      for (const row of cardsPrizesResult.data as any[]) {
+        totalPrizes += Number(row.total_prize_ves ?? 0);
+      }
+    }
+
+    const netProfit = totalSales - totalPrizes;
+
+    return res.status(200).json({
+      totalRecharges: Number(totalRecharges.toFixed(2)),
+      totalSales: Number(totalSales.toFixed(2)),
+      totalPrizes: Number(totalPrizes.toFixed(2)),
+      netProfit: Number(netProfit.toFixed(2)),
+    });
+  } catch (error: any) {
+    console.error('[Error in GET /api/finances/metrics]:', error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Error al calcular métricas financieras',
+    });
   }
 });
 

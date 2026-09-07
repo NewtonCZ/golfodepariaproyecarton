@@ -57,6 +57,8 @@ export interface GameRound {
   starts_at?: string;
   ends_at?: string;
   transmission_ends_at?: string;
+  isBettingClosed?: boolean;
+  video_url?: string;
   bolas_cantadas?: number[];
   hasPreloadedResults?: boolean;
   status: RoundStatus;

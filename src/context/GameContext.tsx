@@ -58,7 +58,10 @@ interface GameContextType {
   users: AppUser[]; viewMode: 'player' | 'admin'; setViewMode: (mode: 'player' | 'admin') => void;
   activeRound: GameRound | null; activeRounds: GameRound[]; upcomingRounds: GameRound[];
   rounds: GameRound[]; cards: MatrixCard[]; userCards: MatrixCard[];
-  recharges: RechargeTransaction[]; withdrawals: WithdrawalTransaction[];
+  recharges: RechargeTransaction[];
+  setRecharges: React.Dispatch<React.SetStateAction<RechargeTransaction[]>>;
+  withdrawals: WithdrawalTransaction[];
+  setWithdrawals: React.Dispatch<React.SetStateAction<WithdrawalTransaction[]>>;
   ledger: WalletLedgerEntry[]; auditLogs: AuditLogEntry[]; commercialConfig: CommercialConfig;
   currencyDisplay: 'VES' | 'USD'; setCurrencyDisplay: (curr: 'VES' | 'USD') => void;
   formatMoney: (amountVes: number, options?: { showBoth?: boolean }) => string;
@@ -2573,7 +2576,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     currentUser, currentRole, setCurrentRole, operatorRole, setOperatorRole, isAuthenticated, sessionToken, loggedUsername, permissions, activeCredential,
     login, logout, requestPasswordRecovery, verifyRecoveryCode, resetPasswordWithCode, registerUser, updateUserKyc, verifyCurrentAccount,
     systemCredentials, fetchSystemCredentials, createSystemCredential, updateSystemCredential, deleteSystemCredential,
-    users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards, recharges, withdrawals, ledger, auditLogs, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
+    users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards, recharges, setRecharges, withdrawals, setWithdrawals, ledger, auditLogs, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
     purchaseCards, submitRecharge, approveRecharge, rejectRecharge,
     submitWithdrawal, completeWithdrawal, rejectWithdrawal,
     createRound, updateRoundConfig, setRoundStatus, submitRoundResult,
