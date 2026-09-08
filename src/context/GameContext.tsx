@@ -15,6 +15,7 @@ import { saveJugador, getJugadores, JugadorBingo } from '../services/playerStora
 import { supabase } from '../services/supabaseClient';
 import { hashPassword, normalizeAdminRole, toDbRole } from '../utils/crypto';
 import { mobileCacheManager } from '../services/mobileCacheManager';
+import { normalizeRechargeTransaction } from '../utils/rechargeNormalizer';
 
 export { getJugadores, saveJugador };
 export type { JugadorBingo };
@@ -63,6 +64,7 @@ interface GameContextType {
   withdrawals: WithdrawalTransaction[];
   setWithdrawals: React.Dispatch<React.SetStateAction<WithdrawalTransaction[]>>;
   ledger: WalletLedgerEntry[]; auditLogs: AuditLogEntry[]; commercialConfig: CommercialConfig;
+  addAuditLog: (action: string, details: string, customOperator?: { name?: string; role?: AdminRole }) => void;
   currencyDisplay: 'VES' | 'USD'; setCurrencyDisplay: (curr: 'VES' | 'USD') => void;
   formatMoney: (amountVes: number, options?: { showBoth?: boolean }) => string;
   purchaseCards: (packCount: 2 | 4 | 6, roundId: string) => { success: boolean; message: string; cards?: MatrixCard[] };
@@ -591,69 +593,72 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchPendingRecharges = useCallback(async () => {
     try {
-      // 1. Cargar desde la tabla principal recargas_pago_movil
+      const [res1, res2] = await Promise.all([
+        supabase.from('recargas_pago_movil').select('*').order('created_at', { ascending: false }).limit(200),
+        supabase.from('recharges').select('*').order('created_at', { ascending: false }).limit(200),
+      ]);
+
+      const itemsMap = new Map<string, RechargeTransaction>();
+
+      // Load from recargas_pago_movil
+      if (res1.data && Array.isArray(res1.data)) {
+        res1.data.forEach((raw) => {
+          const norm = normalizeRechargeTransaction(raw);
+          if (norm.id) itemsMap.set(norm.id, norm);
+        });
+      }
+
+      // Load from recharges (merge or add missing)
+      if (res2.data && Array.isArray(res2.data)) {
+        res2.data.forEach((raw) => {
+          const norm = normalizeRechargeTransaction(raw);
+          if (norm.id && !itemsMap.has(norm.id)) {
+            itemsMap.set(norm.id, norm);
+          }
+        });
+      }
+
+      const merged = Array.from(itemsMap.values()).sort((a, b) => {
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      });
+
+      if (merged.length > 0) {
+        setRecharges(merged);
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_recharges`, merged, 'normal');
+      }
+    } catch (err) {
+      console.warn('[GameContext] fetchPendingRecharges:', err);
+    }
+  }, []);
+
+  const fetchAuditLogs = useCallback(async () => {
+    try {
       const { data, error } = await supabase
-        .from('recargas_pago_movil')
+        .from('audit_logs')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('timestamp', { ascending: false })
+        .limit(100);
 
       if (!error && data && data.length > 0) {
-        const normalized = data.map((r: any) => {
-          const rawStatus = (r.estado || r.estatus || r.status || 'pending').toString().toUpperCase();
-          const isApproved = rawStatus === 'APROBADO' || rawStatus === 'APROBADA' || rawStatus === 'APPROVED';
-          const isRejected = rawStatus === 'RECHAZADO' || rawStatus === 'RECHAZADA' || rawStatus === 'REJECTED';
-          const status = isApproved ? 'approved' : isRejected ? 'rejected' : 'pending';
-
-          return {
-            ...r,
-            id: String(r.id),
-            userId: r.user_id || r.usuario_id || '',
-            userName: r.usuario_nombre || r.pagador_nombre || r.user_name || 'Usuario',
-            userPhone: r.usuario_telefono || r.user_phone || r.pagador_telefono || '',
-            amountVes: Number(r.monto_ves ?? r.monto ?? r.amount_ves ?? r.amountVes ?? 0),
-            payerPhone: r.pagador_telefono || r.payer_phone || '',
-            payerName: r.pagador_nombre || r.payer_name || '',
-            payerDocumentId: r.pagador_ci || r.payer_document_id || '',
-            bankOrigin: r.banco_origen || r.banco || r.bank_origin || 'Pago Móvil',
-            referenceNumber: r.referencia || r.reference_number || '',
-            voucherImageUrl: r.comprobante_url || r.voucher_image_url || '',
-            status,
-            createdAt: r.created_at || r.fecha || new Date().toISOString(),
-            processedAt: r.fecha_procesado || r.processed_at || '',
-            processedBy: r.procesado_por || r.processed_by || '',
-            rejectionReason: r.motivo_rechazo || r.rejection_reason || '',
-          };
-        });
-        setRecharges(normalized as any);
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_recharges`, normalized, 'normal');
-        return;
-      }
-
-      // Fallback a recharges si recargas_pago_movil no retorna datos
-      const { data: recData, error: recError } = await supabase.from('recharges').select('*').order('created_at', { ascending: false });
-      if (!recError && recData && recData.length > 0) {
-        const normalized = recData.map((r: any) => ({
-          ...r,
-          id: String(r.id),
-          userId: r.user_id || r.userId || '',
-          userName: r.user_name || r.userName || 'Usuario',
-          userPhone: r.user_phone || r.userPhone || '',
-          amountVes: Number(r.amount_ves ?? r.amountVes ?? r.monto_ves ?? r.monto ?? 0),
-          payerPhone: r.payer_phone || r.payerPhone || '',
-          payerName: r.payer_name || r.payerName || '',
-          payerDocumentId: r.payer_document_id || r.payerDocumentId || '',
-          bankOrigin: r.bank_origin || r.bankOrigin || 'Pago Móvil',
-          referenceNumber: r.reference_number || r.referenceNumber || '',
-          voucherImageUrl: r.voucher_image_url || r.voucherImageUrl || '',
-          status: (r.status || r.estado || 'pending').toLowerCase() === 'aprobada' ? 'approved' : (r.status || r.estado || 'pending').toLowerCase() === 'rechazada' ? 'rejected' : 'pending',
-          createdAt: r.created_at || r.createdAt || new Date().toISOString(),
-          processedAt: r.processed_at || r.processedAt || '',
-          processedBy: r.processed_by || r.processedBy || '',
+        const mapped: AuditLogEntry[] = data.map((raw: any) => ({
+          id: String(raw.id || `aud-${Date.now()}`),
+          timestamp: raw.timestamp || raw.created_at || new Date().toISOString(),
+          operatorRole: raw.operator_role || raw.operatorRole || 'Auditor Central',
+          operatorName: raw.operator_name || raw.operatorName || 'Auditor',
+          action: raw.action || 'ACCION',
+          details: raw.details || '',
+          ip: raw.ip || '127.0.0.1',
         }));
-        setRecharges(normalized as any);
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_recharges`, normalized, 'normal');
+        setAuditLogs((prev) => {
+          const existingIds = new Set(prev.map((l) => l.id));
+          const newEntries = mapped.filter((m) => !existingIds.has(m.id));
+          const combined = [...prev, ...newEntries].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          return combined.slice(0, 200);
+        });
       }
-    } catch (err) { console.warn('[GameContext] fetchPendingRecharges:', err); }
+    } catch (err) {
+      console.warn('[GameContext] fetchAuditLogs error:', err);
+    }
   }, []);
   const fetchWithdrawals = useCallback(async () => {
     try {
@@ -752,16 +757,63 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
-    fetchActiveRounds({ bypassCache: true }); fetchPendingRecharges(); fetchWithdrawals(); fetchCommercialConfig(); fetchUserCards();
-    const handleVis = () => { if (document.visibilityState === 'visible') { fetchCommercialConfig(); fetchActiveRounds({ bypassCache: true }); fetchPendingRecharges(); fetchWithdrawals(); fetchUserCards(); } };
-    window.addEventListener('visibilitychange', handleVis); window.addEventListener('focus', handleVis);
-    const intervalTimer = setInterval(() => { fetchCommercialConfig(); fetchWithdrawals(); fetchUserCards(); }, 30000);
-    return () => { clearInterval(intervalTimer); window.removeEventListener('visibilitychange', handleVis); window.removeEventListener('focus', handleVis); };
-  }, [fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals, fetchCommercialConfig, fetchUserCards]);
+    fetchActiveRounds({ bypassCache: true });
+    fetchPendingRecharges();
+    fetchWithdrawals();
+    fetchCommercialConfig();
+    fetchUserCards();
+    fetchAuditLogs();
+    const handleVis = () => {
+      if (document.visibilityState === 'visible') {
+        fetchCommercialConfig();
+        fetchActiveRounds({ bypassCache: true });
+        fetchPendingRecharges();
+        fetchWithdrawals();
+        fetchUserCards();
+        fetchAuditLogs();
+      }
+    };
+    window.addEventListener('visibilitychange', handleVis);
+    window.addEventListener('focus', handleVis);
+    const intervalTimer = setInterval(() => {
+      fetchCommercialConfig();
+      fetchWithdrawals();
+      fetchUserCards();
+      fetchPendingRecharges();
+    }, 30000);
+    return () => {
+      clearInterval(intervalTimer);
+      window.removeEventListener('visibilitychange', handleVis);
+      window.removeEventListener('focus', handleVis);
+    };
+  }, [fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals, fetchCommercialConfig, fetchUserCards, fetchAuditLogs]);
 
-  const addAuditLog = useCallback((action: string, details: string) => {
-    const newLog: AuditLogEntry = { id: `aud-${Date.now()}-${Math.floor(Math.random()*1000)}`, timestamp: new Date().toISOString(), operatorRole, operatorName: operatorRole === 'Super Admin'? 'SuperAdmin Master' : `${operatorRole} Panel`, action, details, ip: '190.202.45.12' };
-    setAuditLogs(prev => [newLog,...prev]);
+  const addAuditLog = useCallback((action: string, details: string, customOperator?: { name?: string; role?: AdminRole }) => {
+    const newLog: AuditLogEntry = {
+      id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      operatorRole: customOperator?.role || operatorRole,
+      operatorName: customOperator?.name || (operatorRole === 'Super Admin' ? 'SuperAdmin Master' : `${operatorRole} Panel`),
+      action,
+      details,
+      ip: '190.202.45.12',
+    };
+    setAuditLogs((prev) => [newLog, ...prev]);
+    try {
+      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_audit`, [newLog], 'normal');
+      supabase
+        .from('audit_logs')
+        .insert([{
+          id: newLog.id,
+          timestamp: newLog.timestamp,
+          operator_role: newLog.operatorRole,
+          operator_name: newLog.operatorName,
+          action: newLog.action,
+          details: newLog.details,
+          ip: newLog.ip,
+        }])
+        .then(() => {});
+    } catch {}
   }, [operatorRole]);
 
   const formatMoney = useCallback((amountVes?: number | null, options?: { showBoth?: boolean }): string => {
@@ -887,17 +939,63 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let sbChannel: any = null;
     try {
       sbChannel = supabase.channel('supercarton_realtime_db')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recargas_pago_movil' }, (payload: any) => {
+          if (payload?.new) {
+            const item = normalizeRechargeTransaction(payload.new);
+            setRecharges((prev) => {
+              const exists = prev.some((r) => r.id === item.id || (item.referenceNumber && r.referenceNumber === item.referenceNumber));
+              if (exists) {
+                return prev.map((r) => (r.id === item.id || (item.referenceNumber && r.referenceNumber === item.referenceNumber) ? { ...r, ...item } : r));
+              }
+              return [item, ...prev];
+            });
+            if (item.status === 'pending') {
+              try { soundService.playCoin(); } catch {}
+              addAuditLog('SOLICITUD_RECARGA', `Nueva solicitud de recarga Pago Móvil: ${formatMoney(item.amountVes)} de ${item.userName} (Ref: ${item.referenceNumber || 'N/A'})`);
+            }
+          }
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recargas_pago_movil' }, (payload: any) => {
+          if (payload?.new) {
+            const item = normalizeRechargeTransaction(payload.new);
+            setRecharges((prev) => prev.map((r) => (r.id === item.id ? { ...r, ...item } : r)));
+          }
+        })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'recharges' }, (payload: any) => {
           if (payload?.new) {
-            const item = payload.new as RechargeTransaction;
-            setRecharges((prev) => (prev.some((r) => r.id === item.id) ? prev : [item, ...prev]));
-            try { soundService.playCoin(); } catch {}
+            const item = normalizeRechargeTransaction(payload.new);
+            setRecharges((prev) => {
+              const exists = prev.some((r) => r.id === item.id || (item.referenceNumber && r.referenceNumber === item.referenceNumber));
+              if (exists) {
+                return prev.map((r) => (r.id === item.id || (item.referenceNumber && r.referenceNumber === item.referenceNumber) ? { ...r, ...item } : r));
+              }
+              return [item, ...prev];
+            });
+            if (item.status === 'pending') {
+              try { soundService.playCoin(); } catch {}
+              addAuditLog('SOLICITUD_RECARGA', `Nueva solicitud de recarga Pago Móvil: ${formatMoney(item.amountVes)} de ${item.userName} (Ref: ${item.referenceNumber || 'N/A'})`);
+            }
           }
         })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'recharges' }, (payload: any) => {
           if (payload?.new) {
-            const item = payload.new as RechargeTransaction;
+            const item = normalizeRechargeTransaction(payload.new);
             setRecharges((prev) => prev.map((r) => (r.id === item.id ? { ...r, ...item } : r)));
+          }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_logs' }, (payload: any) => {
+          if (payload?.new) {
+            const raw = payload.new as any;
+            const newLog: AuditLogEntry = {
+              id: String(raw.id || `aud-${Date.now()}`),
+              timestamp: raw.timestamp || raw.created_at || new Date().toISOString(),
+              operatorRole: raw.operator_role || raw.operatorRole || 'Auditor Central',
+              operatorName: raw.operator_name || raw.operatorName || 'Auditor',
+              action: raw.action || 'ACCION',
+              details: raw.details || '',
+              ip: raw.ip || '127.0.0.1',
+            };
+            setAuditLogs((prev) => (prev.some((l) => l.id === newLog.id) ? prev : [newLog, ...prev]));
           }
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cards' }, (payload: any) => {
@@ -2601,7 +2699,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     currentUser, currentRole, setCurrentRole, operatorRole, setOperatorRole, isAuthenticated, sessionToken, loggedUsername, permissions, activeCredential,
     login, logout, requestPasswordRecovery, verifyRecoveryCode, resetPasswordWithCode, registerUser, updateUserKyc, verifyCurrentAccount,
     systemCredentials, fetchSystemCredentials, createSystemCredential, updateSystemCredential, deleteSystemCredential,
-    users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards, recharges, setRecharges, withdrawals, setWithdrawals, ledger, auditLogs, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
+    users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards, recharges, setRecharges, withdrawals, setWithdrawals, ledger, auditLogs, addAuditLog, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
     purchaseCards, submitRecharge, approveRecharge, rejectRecharge,
     submitWithdrawal, completeWithdrawal, rejectWithdrawal,
     createRound, updateRoundConfig, setRoundStatus, submitRoundResult,

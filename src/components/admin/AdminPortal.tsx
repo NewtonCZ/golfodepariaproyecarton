@@ -40,6 +40,9 @@ import {
 } from 'lucide-react';
 import { Ficha, RechargeTransaction, WithdrawalTransaction } from '../../types';
 import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
+import { normalizeRechargeTransaction } from '../../utils/rechargeNormalizer';
+import { soundService } from '../../services/soundAndSpeech';
+import { syncEngine } from '../../services/syncService';
 
 export const AdminPortal: React.FC = () => {
   const {
@@ -54,6 +57,7 @@ export const AdminPortal: React.FC = () => {
     setWithdrawals,
     ledger,
     auditLogs,
+    addAuditLog,
     commercialConfig,
     formatMoney,
     approveRecharge,
@@ -90,64 +94,74 @@ export const AdminPortal: React.FC = () => {
   }, [operatorRole, currentRoleConfig, activeTab]);
 
   // -- INICIO BLOQUE REALTIME SEGURO (ACTUALIZACIÓN DIRECTA DE ESTADO) --
+  const [realtimeRechargeAlert, setRealtimeRechargeAlert] = useState<RechargeTransaction | null>(null);
+
   useEffect(() => {
     fetchPendingRecharges();
     fetchWithdrawals();
+
+    const handleNewRecharge = (raw: any) => {
+      if (!raw) return;
+      const newRecord = normalizeRechargeTransaction(raw);
+      setRecharges((prev) => {
+        const exists = prev.some(
+          (r) => r.id === newRecord.id || (newRecord.referenceNumber && r.referenceNumber === newRecord.referenceNumber)
+        );
+        if (exists) {
+          return prev.map((r) =>
+            r.id === newRecord.id || (newRecord.referenceNumber && r.referenceNumber === newRecord.referenceNumber)
+              ? { ...r, ...newRecord }
+              : r
+          );
+        }
+        return [newRecord, ...prev];
+      });
+
+      if (newRecord.status === 'pending') {
+        try {
+          soundService.playCoin();
+        } catch {}
+        addAuditLog(
+          'SOLICITUD_RECARGA',
+          `Nueva solicitud de recarga Pago Móvil: ${formatMoney(newRecord.amountVes)} de ${newRecord.userName} (Ref: ${newRecord.referenceNumber || 'N/A'})`
+        );
+        setRealtimeRechargeAlert(newRecord);
+      }
+    };
+
+    const handleUpdateRecharge = (raw: any) => {
+      if (!raw) return;
+      const updated = normalizeRechargeTransaction(raw);
+      setRecharges((prev) =>
+        prev.map((item) =>
+          item.id === updated.id || (updated.referenceNumber && item.referenceNumber === updated.referenceNumber)
+            ? { ...item, ...updated }
+            : item
+        )
+      );
+    };
 
     const channel = supabase
       .channel('realtime-finanzas-admin')
       .on(
         'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'recargas_pago_movil' },
+        (payload) => handleNewRecharge(payload.new)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'recargas_pago_movil' },
+        (payload) => handleUpdateRecharge(payload.new)
+      )
+      .on(
+        'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'recharges' },
-        (payload) => {
-          if (payload.new) {
-            const raw = payload.new as any;
-            const newRecord: RechargeTransaction = {
-              ...raw,
-              id: String(raw.id),
-              userId: raw.user_id || raw.usuario_id || raw.userId || '',
-              userName: raw.usuario_nombre || raw.pagador_nombre || raw.user_name || raw.userName || 'Usuario',
-              userPhone: raw.usuario_telefono || raw.user_phone || raw.userPhone || raw.pagador_telefono || '',
-              amountVes: Number(raw.monto_ves ?? raw.monto ?? raw.amount_ves ?? raw.amountVes ?? 0),
-              payerPhone: raw.pagador_telefono || raw.payer_phone || raw.payerPhone || '',
-              payerName: raw.pagador_nombre || raw.payer_name || raw.payerName || '',
-              payerDocumentId: raw.pagador_ci || raw.payer_document_id || raw.payerDocumentId || '',
-              bankOrigin: raw.banco_origen || raw.banco || raw.bank_origin || raw.bankOrigin || 'Pago Móvil',
-              referenceNumber: raw.referencia || raw.reference_number || raw.referenceNumber || '',
-              voucherImageUrl: raw.comprobante_url || raw.voucher_image_url || raw.voucherImageUrl || '',
-              status: (raw.status || raw.estado || 'pending').toLowerCase() === 'aprobada' || (raw.status || raw.estado || '').toLowerCase() === 'approved' ? 'approved' : (raw.status || raw.estado || '').toLowerCase() === 'rechazada' || (raw.status || raw.estado || '').toLowerCase() === 'rejected' ? 'rejected' : 'pending',
-              createdAt: raw.created_at || raw.createdAt || new Date().toISOString(),
-              processedAt: raw.fecha_procesado || raw.processed_at || raw.processedAt || '',
-              processedBy: raw.procesado_por || raw.processed_by || raw.processedBy || '',
-            };
-            setRecharges((prev) => [newRecord, ...prev.filter((r) => r.id !== newRecord.id)]);
-          }
-        }
+        (payload) => handleNewRecharge(payload.new)
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'recharges' },
-        (payload) => {
-          if (payload.new) {
-            const raw = payload.new as any;
-            setRecharges((prev) =>
-              prev.map((item) =>
-                item.id === String(raw.id)
-                  ? {
-                      ...item,
-                      ...raw,
-                      id: String(raw.id),
-                      amountVes: Number(raw.monto_ves ?? raw.monto ?? raw.amount_ves ?? raw.amountVes ?? item.amountVes),
-                      status: (raw.status || raw.estado || item.status).toLowerCase() === 'aprobada' || (raw.status || raw.estado || '').toLowerCase() === 'approved' ? 'approved' : (raw.status || raw.estado || '').toLowerCase() === 'rechazada' || (raw.status || raw.estado || '').toLowerCase() === 'rejected' ? 'rejected' : item.status,
-                      processedAt: raw.fecha_procesado || raw.processed_at || raw.processedAt || item.processedAt,
-                      processedBy: raw.procesado_por || raw.processed_by || raw.processedBy || item.processedBy,
-                      rejectionReason: raw.motivo_rechazo || raw.rejection_reason || raw.rejectionReason || item.rejectionReason,
-                    }
-                  : item
-              )
-            );
-          }
-        }
+        (payload) => handleUpdateRecharge(payload.new)
       )
       .on(
         'postgres_changes',
@@ -199,10 +213,22 @@ export const AdminPortal: React.FC = () => {
       )
       .subscribe();
 
+    const unsubSync = syncEngine.subscribe((event) => {
+      if (event.type === 'RECHARGE_STATUS_CHANGED') {
+        const { recharge, transactionId, status } = event.payload || {};
+        if (recharge) {
+          handleNewRecharge(recharge);
+        } else if (transactionId && status) {
+          setRecharges((prev) => prev.map((r) => (r.id === transactionId ? { ...r, status } : r)));
+        }
+      }
+    });
+
     return () => {
+      unsubSync();
       supabase.removeChannel(channel);
     };
-  }, [fetchPendingRecharges, fetchWithdrawals, setRecharges, setWithdrawals]);
+  }, [fetchPendingRecharges, fetchWithdrawals, setRecharges, setWithdrawals, addAuditLog, formatMoney]);
   // -- FIN BLOQUE REALTIME SEGURO --
 
   // Modal states
@@ -756,12 +782,59 @@ export const AdminPortal: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-xl flex items-center gap-1.5 shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Sincronización Automática en Vivo
+              </span>
               <span className="text-xs font-bold text-amber-900 bg-amber-100 border border-amber-300 px-3 py-1 rounded-xl flex items-center gap-1.5 animate-pulse">
                 <span className="w-2 h-2 rounded-full bg-amber-500"></span>
                 {pendingRechargesCount} pendientes de verificación
               </span>
             </div>
           </div>
+
+          {/* Realtime Alert Banner */}
+          {realtimeRechargeAlert && (
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-950 shadow-sm animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-200 flex items-center justify-center text-amber-900 font-bold shrink-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-600 animate-ping"></span>
+                </div>
+                <div>
+                  <h4 className="font-black text-xs uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                    ¡Nueva Solicitud de Recarga en Tiempo Real!
+                    <span className="bg-amber-200 text-amber-950 text-[10px] px-1.5 py-0.5 rounded font-bold">En Vivo</span>
+                  </h4>
+                  <p className="text-xs text-amber-800">
+                    <span className="font-bold">{realtimeRechargeAlert.userName}</span> reportó un pago de{' '}
+                    <span className="font-black">{formatMoney(realtimeRechargeAlert.amountVes)}</span> vía{' '}
+                    <span className="font-semibold">{realtimeRechargeAlert.bankOrigin || 'Pago Móvil'}</span> (Ref: {realtimeRechargeAlert.referenceNumber || 'S/R'}).
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 self-end sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRechargeForReview(realtimeRechargeAlert);
+                    setRealtimeRechargeAlert(null);
+                  }}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs px-3.5 py-1.5 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Revisar Ahora
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRealtimeRechargeAlert(null)}
+                  className="p-1.5 hover:bg-amber-100 text-amber-800 rounded-lg transition-all"
+                  title="Cerrar notificación"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Search and Filters Bar */}
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
@@ -847,12 +920,12 @@ export const AdminPortal: React.FC = () => {
                     const searchLower = rechargeSearchTerm.toLowerCase();
                     const matchesSearch =
                       !rechargeSearchTerm ||
-                      rec.referenceNumber.toLowerCase().includes(searchLower) ||
-                      rec.userName.toLowerCase().includes(searchLower) ||
-                      (rec.payerName && rec.payerName.toLowerCase().includes(searchLower)) ||
-                      (rec.payerDocumentId && rec.payerDocumentId.toLowerCase().includes(searchLower)) ||
-                      (rec.bankOrigin && rec.bankOrigin.toLowerCase().includes(searchLower)) ||
-                      rec.userPhone.includes(searchLower);
+                      (rec.referenceNumber || '').toLowerCase().includes(searchLower) ||
+                      (rec.userName || '').toLowerCase().includes(searchLower) ||
+                      (rec.payerName || '').toLowerCase().includes(searchLower) ||
+                      (rec.payerDocumentId || '').toLowerCase().includes(searchLower) ||
+                      (rec.bankOrigin || '').toLowerCase().includes(searchLower) ||
+                      (rec.userPhone || '').includes(searchLower);
                     return matchesStatus && matchesSearch;
                   });
 
