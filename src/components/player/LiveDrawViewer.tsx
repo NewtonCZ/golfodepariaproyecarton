@@ -327,17 +327,18 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   useEffect(() => {
     // If round is finished and was finished > 7 min ago (and no live draw active)
     if (isTargetFinished && diffMinutes > 7 && !isLiveDrawing) {
-      setRedirectCountdown(4);
-      const countdownInterval = setInterval(() => {
-        setRedirectCountdown((prev) => {
-          if (prev === null || prev <= 1) {
-            clearInterval(countdownInterval);
-            onOpenMyCards?.();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+      const targetTimeMs = Date.now() + 4000;
+      
+      const updateRedirect = () => {
+        const remaining = Math.max(0, Math.ceil((targetTimeMs - Date.now()) / 1000));
+        setRedirectCountdown(remaining);
+        if (remaining <= 0) {
+          onOpenMyCards?.();
+        }
+      };
+
+      updateRedirect();
+      const countdownInterval = setInterval(updateRedirect, 1000);
 
       return () => clearInterval(countdownInterval);
     } else {
@@ -383,9 +384,12 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   // =========================================================================
   // ARRANQUE AUTOMÁTICO DEL SORTEO AL FINALIZAR LA CUENTA REGRESIVA
   // =========================================================================
-  const drawTargetIso = useMemo(() => {
+  const drawTargetTimestamp = useMemo(() => {
     if (!targetRound || isTargetFinished) return null;
-    return targetRound.drawAt || targetRound.starts_at || targetRound.closeBetAt || null;
+    const raw = targetRound.drawAt || targetRound.starts_at || targetRound.closeBetAt || null;
+    if (!raw) return null;
+    const parsed = new Date(raw).getTime();
+    return isNaN(parsed) ? null : parsed;
   }, [targetRound, isTargetFinished]);
 
   const [secondsUntilAutoStart, setSecondsUntilAutoStart] = useState<number | null>(null);
@@ -405,45 +409,54 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
       return;
     }
 
-    const targetEpoch = drawTargetIso ? timeSync.parseIsoToEpochMs(drawTargetIso) : 0;
-    const currentServerNow = timeSync.getServerNow();
-    const remainingSec = targetEpoch > 0 ? Math.floor((targetEpoch - currentServerNow) / 1000) : 0;
-
-    if (remainingSec <= 0) {
-      // Si la cuenta regresiva llegó a 0 o ya finalizó su tiempo, arrancar automáticamente
-      if (autoStartInitiatedRef.current !== targetRound.id) {
-        autoStartInitiatedRef.current = targetRound.id;
-        setSecondsUntilAutoStart(0);
-        const timer = setTimeout(() => {
-          startLiveDrawSimulation(targetRound.id);
-        }, 800);
-        return () => clearTimeout(timer);
-      }
-    } else {
-      setSecondsUntilAutoStart(remainingSec);
-      const interval = setInterval(() => {
-        const nowMs = timeSync.getServerNow();
-        const diffSec = Math.floor((targetEpoch - nowMs) / 1000);
-        if (diffSec <= 0) {
-          clearInterval(interval);
-          setSecondsUntilAutoStart(0);
-          if (autoStartInitiatedRef.current !== targetRound.id) {
-            autoStartInitiatedRef.current = targetRound.id;
-            startLiveDrawSimulation(targetRound.id);
-          }
-        } else {
-          setSecondsUntilAutoStart(diffSec);
-        }
-      }, 1000);
-
-      return () => clearInterval(interval);
+    if (!drawTargetTimestamp) {
+      setSecondsUntilAutoStart(null);
+      return;
     }
-  }, [targetRound?.id, isTargetFinished, isLiveDrawing, drawTargetIso, startLiveDrawSimulation]);
 
-  // Helper for formatting mm:ss
+    // Recalcular el tiempo restante exacto comparando el timestamp objetivo contra Date.now()
+    const updateCountdown = () => {
+      const now = Date.now();
+      const diffMs = drawTargetTimestamp - now;
+      const diffSec = Math.max(0, Math.floor(diffMs / 1000));
+
+      setSecondsUntilAutoStart(diffSec);
+
+      if (diffSec <= 0) {
+        if (autoStartInitiatedRef.current !== targetRound.id) {
+          autoStartInitiatedRef.current = targetRound.id;
+          startLiveDrawSimulation(targetRound.id);
+        }
+      }
+    };
+
+    // Ejecutar cálculo inmediato para sincronización precisa
+    updateCountdown();
+
+    // En cada tick del intervalo se recalcula la diferencia exacta contra Date.now()
+    const interval = setInterval(updateCountdown, 1000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        updateCountdown();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', updateCountdown);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', updateCountdown);
+    };
+  }, [targetRound?.id, isTargetFinished, isLiveDrawing, drawTargetTimestamp, startLiveDrawSimulation]);
+
+  // Helper for formatting mm:ss (ej. 05:09)
   const formatTime = (totalSec: number) => {
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
+    const clamped = Math.max(0, Math.floor(totalSec));
+    const m = Math.floor(clamped / 60);
+    const s = clamped % 60;
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 

@@ -258,15 +258,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       </div>
                     </div>
 
-                    {/* Countdown Timer */}
-                    {round.closeBetAt && (
-                      <div className="mb-4">
-                        <CountdownTimer
-                          targetDate={round.closeBetAt}
-                          label={isOpen ? 'Cierre de Apuestas' : 'Inicio Estimado'}
-                        />
-                      </div>
-                    )}
+                    {/* Countdown Timer sincronizado con Sala en Vivo */}
+                    {(() => {
+                      const targetCountdownDate = round.drawAt || round.starts_at || round.closeBetAt || round.openBetAt;
+                      if (!targetCountdownDate) return null;
+                      return (
+                        <div className="mb-4">
+                          <CountdownTimer
+                            targetDate={targetCountdownDate}
+                            label={isOpen ? 'Cierre de Apuestas' : 'Inicio Estimado'}
+                          />
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Actions Area */}

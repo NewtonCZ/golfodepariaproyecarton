@@ -38,8 +38,8 @@ export const Contador: React.FC<ContadorProps> = ({
   });
 
   const calculateTime = useCallback(() => {
-    const now = timeSync.getServerNow();
-    const target = timeSync.parseIsoToEpochMs(targetDate);
+    const now = Date.now();
+    const target = new Date(targetDate).getTime();
 
     if (isNaN(target)) {
       setTimeLeft({
@@ -65,7 +65,7 @@ export const Contador: React.FC<ContadorProps> = ({
       year: 'numeric',
     });
 
-    // diff calculado normal
+    // Cálculo matemático exacto contra Date.now() sin acumulación de desfase
     const difference = target - now;
 
     if (difference <= 0) {
