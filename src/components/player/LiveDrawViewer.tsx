@@ -34,6 +34,7 @@ import {
   UserCheck,
   Clock,
   ExternalLink,
+  LogOut,
 } from 'lucide-react';
 import { Ficha, GameRound } from '../../types';
 
@@ -42,6 +43,7 @@ interface LiveDrawViewerProps {
   onOpenLogin?: (tab?: 'login' | 'register') => void;
   onOpenRecharge?: () => void;
   onOpenMyCards?: () => void;
+  onExit?: () => void;
 }
 
 export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
@@ -49,6 +51,7 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   onOpenLogin,
   onOpenRecharge,
   onOpenMyCards,
+  onExit,
 }) => {
   const {
     rounds,
@@ -69,8 +72,25 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [kycFeedback, setKycFeedback] = useState<string | null>(null);
   const [nowTimestamp, setNowTimestamp] = useState(Date.now());
+  const [lockedRoundId, setLockedRoundId] = useState<string | null>(null);
 
-  // Update clock every second for exact 7-minute countdown calculations
+  const handleExitRoom = () => {
+    if (onExit) {
+      onExit();
+    } else if (onOpenMyCards) {
+      onOpenMyCards();
+    } else {
+      window.history.back();
+    }
+  };
+
+  const toggleVoice = () => {
+    const nextVal = !voiceEnabled;
+    setVoiceEnabled(nextVal);
+    soundService.setVoiceEnabled(nextVal);
+  };
+
+  // Update clock every second for exact countdown calculations
   useEffect(() => {
     const timer = setInterval(() => {
       setNowTimestamp(Date.now());
@@ -78,11 +98,25 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  // Auto-lock onto active drawing round if present
+  useEffect(() => {
+    if (isLiveDrawing && activeRound?.id) {
+      setLockedRoundId(activeRound.id);
+    }
+  }, [isLiveDrawing, activeRound?.id]);
+
   // Determine the target round to display:
-  // 1. If a round is actively drawing or marked live:
+  // 0. Pinned round if this room session was already watching it
+  // 1. If a round is actively drawing or marked live
   // 2. If no drawing round, check if there's a finished round <= 7 minutes ago
   // 3. Else check open round or activeRound
   const targetRound: GameRound | null = useMemo(() => {
+    // 0. If user is in the room watching a specific round that was drawn or completed in this session
+    if (lockedRoundId) {
+      const locked = rounds.find((r) => r.id === lockedRoundId);
+      if (locked) return locked;
+    }
+
     // 1. Live drawing round
     const liveRound = rounds.find(
       (r) =>
@@ -127,13 +161,28 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
 
     // 4. Default to activeRound or first round
     return activeRound || rounds[0] || null;
-  }, [rounds, activeRound, isLiveDrawing, nowTimestamp]);
+  }, [rounds, activeRound, isLiveDrawing, nowTimestamp, lockedRoundId]);
 
-  // Round status flags & 7-Minute calculation
+  // Lock target round once drawing starts to avoid switching to a future round upon completion
+  useEffect(() => {
+    if (targetRound?.id && !lockedRoundId) {
+      if (isLiveDrawing || targetRound.status === 'drawing' || targetRound.status === 'live') {
+        setLockedRoundId(targetRound.id);
+      }
+    }
+  }, [targetRound?.id, isLiveDrawing, targetRound?.status, lockedRoundId]);
+
+  // Round status flags & Completion detection
   const isTargetFinished = Boolean(
     targetRound &&
       (String(targetRound.status).toLowerCase() === 'finished' ||
         String(targetRound.status).toLowerCase() === 'completado')
+  );
+
+  const isDrawCompleted = Boolean(
+    isTargetFinished ||
+      (!isLiveDrawing && liveDrawnFichas.length >= 20) ||
+      (Array.isArray(targetRound?.drawnFichas) && (targetRound?.drawnFichas?.length ?? 0) >= 20)
   );
 
   const finishTimeMs = useMemo(() => {
@@ -385,21 +434,39 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   // ARRANQUE AUTOMÁTICO DEL SORTEO AL FINALIZAR LA CUENTA REGRESIVA
   // =========================================================================
   const drawTargetTimestamp = useMemo(() => {
-    if (!targetRound || isTargetFinished) return null;
+    if (!targetRound || isTargetFinished || isDrawCompleted || isLiveDrawing) return null;
     const raw = targetRound.drawAt || targetRound.starts_at || targetRound.closeBetAt || null;
     if (!raw) return null;
     const parsed = new Date(raw).getTime();
     return isNaN(parsed) ? null : parsed;
-  }, [targetRound, isTargetFinished]);
+  }, [targetRound, isTargetFinished, isDrawCompleted, isLiveDrawing]);
 
   const [secondsUntilAutoStart, setSecondsUntilAutoStart] = useState<number | null>(null);
   const autoStartInitiatedRef = useRef<string | null>(null);
+  const lastAnnouncedFichaIndexRef = useRef<number>(-1);
+
+  // Cantador de voz en tiempo real durante la extracción de figuras
+  useEffect(() => {
+    if (!voiceEnabled || !isLiveDrawing) {
+      if (!isLiveDrawing) {
+        lastAnnouncedFichaIndexRef.current = -1;
+      }
+      return;
+    }
+
+    if (liveDrawnFichas.length > 0 && liveDrawnFichas.length - 1 > lastAnnouncedFichaIndexRef.current) {
+      const newFichaIndex = liveDrawnFichas.length - 1;
+      const newFicha = liveDrawnFichas[newFichaIndex];
+      lastAnnouncedFichaIndexRef.current = newFichaIndex;
+      if (newFicha) {
+        soundService.speakFicha(newFicha);
+      }
+    }
+  }, [liveDrawnFichas, voiceEnabled, isLiveDrawing]);
 
   useEffect(() => {
-    if (!targetRound || isTargetFinished || isLiveDrawing) {
-      if (isLiveDrawing) {
-        setSecondsUntilAutoStart(null);
-      }
+    if (!targetRound || isTargetFinished || isDrawCompleted || isLiveDrawing) {
+      setSecondsUntilAutoStart(null);
       return;
     }
 
@@ -416,17 +483,23 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
 
     // Recalcular el tiempo restante exacto comparando el timestamp objetivo contra Date.now()
     const updateCountdown = () => {
+      if (isLiveDrawing || isDrawCompleted || isTargetFinished) {
+        setSecondsUntilAutoStart(null);
+        return;
+      }
       const now = Date.now();
       const diffMs = drawTargetTimestamp - now;
       const diffSec = Math.max(0, Math.floor(diffMs / 1000));
 
-      setSecondsUntilAutoStart(diffSec);
-
       if (diffSec <= 0) {
+        setSecondsUntilAutoStart(null);
         if (autoStartInitiatedRef.current !== targetRound.id) {
           autoStartInitiatedRef.current = targetRound.id;
+          if (targetRound.id) setLockedRoundId(targetRound.id);
           startLiveDrawSimulation(targetRound.id);
         }
+      } else {
+        setSecondsUntilAutoStart(diffSec);
       }
     };
 
@@ -450,7 +523,7 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', updateCountdown);
     };
-  }, [targetRound?.id, isTargetFinished, isLiveDrawing, drawTargetTimestamp, startLiveDrawSimulation]);
+  }, [targetRound?.id, isTargetFinished, isDrawCompleted, isLiveDrawing, drawTargetTimestamp, startLiveDrawSimulation]);
 
   // Helper for formatting mm:ss (ej. 05:09)
   const formatTime = (totalSec: number) => {
@@ -482,21 +555,31 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
             La ventana de réplica en vivo de 7 minutos para este sorteo ha finalizado. Tus cartones y los premios adjudicados están disponibles en la sección <strong>Mis Cartones</strong>.
           </p>
 
-          <div className="mt-6 p-4 bg-indigo-950/60 border border-indigo-800/80 rounded-2xl flex items-center justify-between gap-4 max-w-sm mx-auto">
+          <div className="mt-6 p-4 bg-indigo-950/60 border border-indigo-800/80 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 max-w-md mx-auto">
             <div className="text-left">
               <span className="text-[11px] text-slate-400 block font-medium">Redirección Automática:</span>
               <span className="text-base font-black text-amber-400">
                 En {redirectCountdown ?? 3} segundos...
               </span>
             </div>
-            <button
-              type="button"
-              onClick={onOpenMyCards}
-              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-indigo-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-md transition-all cursor-pointer"
-            >
-              <span>Ir Ahora</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExitRoom}
+                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3.5 py-2.5 rounded-xl border border-slate-700 transition-all cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                <span>Inicio</span>
+              </button>
+              <button
+                type="button"
+                onClick={onOpenMyCards}
+                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-indigo-950 font-black text-xs px-4 py-2.5 rounded-xl shadow-md transition-all cursor-pointer"
+              >
+                <span>Mis Cartones</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -762,6 +845,18 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
             )}
           </div>
         </div>
+
+        {/* Action button to exit back to Home */}
+        <div className="flex justify-center pt-2">
+          <button
+            type="button"
+            onClick={handleExitRoom}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all cursor-pointer active:scale-95"
+          >
+            <LogOut className="w-4 h-4 text-rose-400" />
+            <span>Regresar al Panel Principal</span>
+          </button>
+        </div>
       </div>
     );
   }
@@ -792,7 +887,12 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
               )}
 
               {/* 7-Minute Countdown Pill if within 7 min, or Live/Countdown pill */}
-              {isWithin7Min ? (
+              {isDrawCompleted ? (
+                <div className="inline-flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 font-mono font-black text-xs px-3 py-1 rounded-full shadow-sm">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Sorteo Concluido (20/20)</span>
+                </div>
+              ) : isWithin7Min ? (
                 <div className="inline-flex items-center gap-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/50 font-mono font-black text-xs px-3 py-1 rounded-full shadow-sm">
                   <Clock className="w-3.5 h-3.5 text-amber-400" />
                   <span>Tiempo restante de réplica: {formatTime(remainingSecondsIn7Min)}</span>
@@ -802,14 +902,17 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
                   <span className="w-2 h-2 rounded-full bg-white animate-ping" />
                   <span>En Transmisión Directa</span>
                 </div>
-              ) : (
+              ) : secondsUntilAutoStart !== null && secondsUntilAutoStart > 0 ? (
                 <div className="inline-flex items-center gap-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/50 font-mono font-black text-xs px-3 py-1 rounded-full shadow-sm">
                   <Clock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
                   <span>
-                    {secondsUntilAutoStart !== null && secondsUntilAutoStart > 0
-                      ? `Cuenta Regresiva: ${formatTime(secondsUntilAutoStart)}`
-                      : 'Iniciando sorteo...'}
+                    Cuenta Regresiva: {formatTime(secondsUntilAutoStart)}
                   </span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 bg-indigo-900/80 text-indigo-200 border border-indigo-700 font-mono font-black text-xs px-3 py-1 rounded-full shadow-sm">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  <span>Preparando Sorteo...</span>
                 </div>
               )}
 
@@ -834,7 +937,17 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
           <div className="flex flex-col sm:flex-row items-center gap-3">
             <button
               type="button"
-              onClick={() => setVoiceEnabled(!voiceEnabled)}
+              onClick={handleExitRoom}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black bg-rose-950/90 hover:bg-rose-900 text-rose-200 border border-rose-700/80 transition-all cursor-pointer shadow-md active:scale-95"
+              title="Salir de la Sala de Sorteo y volver al panel principal"
+            >
+              <LogOut className="w-4 h-4 text-rose-400" />
+              <span>Salir de la Sala</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleVoice}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border transition-all cursor-pointer ${
                 voiceEnabled
                   ? 'bg-indigo-900/80 border-indigo-600 text-amber-300'
@@ -895,6 +1008,11 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
                 <span className="w-2 h-2 rounded-full bg-yellow-300 animate-ping" />
                 <span>Sorteo en Vivo en Curso</span>
               </div>
+            ) : isDrawCompleted ? (
+              <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl font-black text-xs bg-emerald-600 text-white shadow-lg border border-emerald-500">
+                <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                <span>Sorteo Concluido • 20 Balotas</span>
+              </div>
             ) : (
               <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs bg-indigo-900/90 border border-indigo-700 text-amber-300 shadow-md">
                 <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
@@ -908,6 +1026,45 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Sorteo Concluido Banner con Salida de Sala */}
+      {isDrawCompleted && (
+        <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 border-2 border-emerald-500/60 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left animate-in fade-in">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/40">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-black text-white">
+                ¡Sorteo #{targetRound?.roundNumber || ''} Concluido Exitosamente!
+              </h3>
+              <p className="text-xs text-slate-300">
+                Se han extraído las 20 figuras reglamentarias. Revisa tus cartones abajo o sal de la sala cuando desees.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleExitRoom}
+              className="px-5 py-3 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-900/40 flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Salir de la Sala</span>
+            </button>
+            {onOpenMyCards && (
+              <button
+                type="button"
+                onClick={onOpenMyCards}
+                className="px-5 py-3 rounded-xl text-xs font-black bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-lg shadow-amber-500/20 flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+              >
+                <Trophy className="w-4 h-4 fill-current" />
+                <span>Mis Cartones</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Draw Arena */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

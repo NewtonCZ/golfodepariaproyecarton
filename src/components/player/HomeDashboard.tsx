@@ -19,6 +19,7 @@ import {
   Ticket,
   Calendar,
   Layers,
+  Lock,
 } from 'lucide-react';
 
 interface HomeDashboardProps {
@@ -84,6 +85,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   }, [upcomingRounds, rounds]);
 
   const activeDisplayRound = displayRounds.find((r) => r.id === selectedRoundTabId) || displayRounds[0] || activeRound;
+
+  const isActiveDisplayRoundBettingClosed = Boolean(
+    activeDisplayRound && (
+      String(activeDisplayRound.status).toLowerCase() === 'closed' ||
+      String(activeDisplayRound.status).toLowerCase() === 'finished' ||
+      String(activeDisplayRound.status).toLowerCase() === 'drawing' ||
+      activeDisplayRound.isBettingClosed ||
+      (activeDisplayRound.closeBetAt && new Date(activeDisplayRound.closeBetAt).getTime() <= Date.now())
+    )
+  );
 
   const currentCardsInRound = userCards.filter((c) => c.roundId === activeDisplayRound?.id);
 
@@ -282,17 +293,28 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => onOpenBuyCards(round.id)}
-                      className={`w-full py-3 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 shadow-md ${
-                        isOpen
-                          ? 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/20'
-                          : 'bg-indigo-900/80 hover:bg-indigo-800 text-indigo-100 border border-indigo-700'
-                      }`}
-                    >
-                      <Zap className="w-4 h-4 fill-current shrink-0" />
-                      <span>Comprar para Sorteo #{round.order || round.roundNumber} ({formatMoney(cardPrice * 2)})</span>
-                    </button>
+                    {round.isBettingClosed || round.status === 'closed' || round.status === 'cerrado' || round.status === 'finished' ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="w-full py-3 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed shadow-none opacity-80"
+                      >
+                        <Lock className="w-4 h-4 text-amber-500" />
+                        <span>Apuestas Cerradas • Esperando Resultados</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onOpenBuyCards(round.id)}
+                        className={`w-full py-3 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 shadow-md ${
+                          isOpen
+                            ? 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/20'
+                            : 'bg-indigo-900/80 hover:bg-indigo-800 text-indigo-100 border border-indigo-700'
+                        }`}
+                      >
+                        <Zap className="w-4 h-4 fill-current shrink-0" />
+                        <span>Comprar para Sorteo #{round.order || round.roundNumber} ({formatMoney(cardPrice * 2)})</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -335,11 +357,25 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </p>
             </div>
             <button
+              disabled={isActiveDisplayRoundBettingClosed}
               onClick={() => onOpenBuyCards(activeDisplayRound?.id)}
-              className="w-full py-2.5 bg-slate-800 group-hover:bg-amber-500 group-hover:text-indigo-950 font-black text-slate-200 text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              className={`w-full py-2.5 font-black text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                isActiveDisplayRoundBettingClosed
+                  ? 'bg-slate-850 text-slate-500 border border-slate-700 cursor-not-allowed'
+                  : 'bg-slate-800 group-hover:bg-amber-500 group-hover:text-indigo-950 text-slate-200 cursor-pointer'
+              }`}
             >
-              <span>Comprar 2 Cartones</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              {isActiveDisplayRoundBettingClosed ? (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Apuestas Cerradas</span>
+                </>
+              ) : (
+                <>
+                  <span>Comprar 2 Cartones</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
             </button>
           </div>
 
@@ -363,11 +399,25 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </p>
             </div>
             <button
+              disabled={isActiveDisplayRoundBettingClosed}
               onClick={() => onOpenBuyCards(activeDisplayRound?.id)}
-              className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              className={`w-full py-2.5 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 ${
+                isActiveDisplayRoundBettingClosed
+                  ? 'bg-slate-850 text-slate-500 border border-slate-700 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 cursor-pointer'
+              }`}
             >
-              <span>Comprar 4 Cartones</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              {isActiveDisplayRoundBettingClosed ? (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Apuestas Cerradas</span>
+                </>
+              ) : (
+                <>
+                  <span>Comprar 4 Cartones</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
             </button>
           </div>
 
@@ -388,11 +438,25 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </p>
             </div>
             <button
+              disabled={isActiveDisplayRoundBettingClosed}
               onClick={() => onOpenBuyCards(activeDisplayRound?.id)}
-              className="w-full py-2.5 bg-slate-800 group-hover:bg-purple-500 group-hover:text-white font-black text-slate-200 text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              className={`w-full py-2.5 font-black text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                isActiveDisplayRoundBettingClosed
+                  ? 'bg-slate-850 text-slate-500 border border-slate-700 cursor-not-allowed'
+                  : 'bg-slate-800 group-hover:bg-purple-500 group-hover:text-white text-slate-200 cursor-pointer'
+              }`}
             >
-              <span>Comprar 6 Cartones</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              {isActiveDisplayRoundBettingClosed ? (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Apuestas Cerradas</span>
+                </>
+              ) : (
+                <>
+                  <span>Comprar 6 Cartones</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
             </button>
           </div>
         </div>

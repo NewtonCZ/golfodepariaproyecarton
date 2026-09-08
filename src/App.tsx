@@ -90,6 +90,7 @@ const AppContent: React.FC = () => {
                 onOpenLogin={openLogin}
                 onOpenRecharge={openRecharge}
                 onOpenMyCards={() => setActiveTab('my-cards')}
+                onExit={() => setActiveTab('home')}
               />
             )}
 

@@ -1135,8 +1135,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!round) return { success: false, message: 'Sorteo no encontrado.' };
 
       const roundStatus = String(round.status || '').toLowerCase();
-      if (roundStatus !== 'open' && roundStatus !== 'scheduled') {
-        return { success: false, message: 'Este sorteo no está activo para compras.' };
+      if (round.isBettingClosed || roundStatus === 'closed' || roundStatus === 'cerrado' || (roundStatus !== 'open' && roundStatus !== 'scheduled')) {
+        return { success: false, message: 'Las apuestas para este sorteo están cerradas. No se permiten nuevas compras.' };
       }
 
       // Priorizar el ID del usuario autenticado actual
@@ -1954,13 +1954,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     (roundId: string, status: GameRound['status']) => {
       // Surgical round status cache invalidation
       mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId });
+      const isBettingClosed = status === 'closed' || status === 'finished';
       setRounds((prev) => {
-        const updated = prev.map((r) => (r.id === roundId ? { ...r, status } : r));
+        const updated = prev.map((r) =>
+          r.id === roundId
+            ? { ...r, status, isBettingClosed: isBettingClosed ? true : r.isBettingClosed }
+            : r
+        );
         mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, updated, 'high');
         return updated;
       });
       try {
-        supabase.from('rounds').update({ status }).eq('id', roundId).then(({ error }) => {
+        supabase.from('rounds').update({ status, is_betting_closed: isBettingClosed }).eq('id', roundId).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase update status error:', error);
         });
       } catch {}
@@ -2260,6 +2265,26 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (step >= totalToDraw || step >= pool.length) {
           clearInterval(interval);
           setIsLiveDrawing(false);
+          const finalDrawnIds = drawnList.map((f) => f.id);
+          setRounds((prev) =>
+            prev.map((r) =>
+              r.id === roundId
+                ? {
+                    ...r,
+                    status: 'finished',
+                    drawnFichas: finalDrawnIds,
+                    bolas_cantadas: finalDrawnIds,
+                    resultSubmittedAt: new Date().toISOString(),
+                    hasPreloadedResults: true,
+                    resultLocked: true,
+                  }
+                : r
+            )
+          );
+          try {
+            verifyWinners(roundId, finalDrawnIds);
+            soundService.playWinner();
+          } catch {}
           return;
         }
 

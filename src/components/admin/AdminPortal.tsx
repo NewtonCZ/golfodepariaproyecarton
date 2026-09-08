@@ -36,6 +36,7 @@ import {
   LogOut,
   Clock,
   X,
+  Edit3,
 } from 'lucide-react';
 import { Ficha, RechargeTransaction, WithdrawalTransaction } from '../../types';
 import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
@@ -235,13 +236,28 @@ export const AdminPortal: React.FC = () => {
   // =========================================================================
   const [roundsWindowLimit, setRoundsWindowLimit] = useState<6 | 7>(7);
 
+  // Helper para verificar si un sorteo ya tiene figuras guardadas y validadas
+  const isRoundResultsLocked = useCallback((r?: GameRound | null) => {
+    if (!r) return false;
+    const st = String(r.status || '').toLowerCase();
+    const hasBolas = (Array.isArray(r.bolas_cantadas) && r.bolas_cantadas.length > 0) ||
+                     (Array.isArray(r.drawnFichas) && r.drawnFichas.length > 0);
+    return Boolean(
+      r.resultLocked ||
+      r.hasPreloadedResults ||
+      (st === 'closed' && hasBolas) ||
+      st === 'finished' ||
+      st === 'replay'
+    );
+  }, []);
+
   // Filtrado de rondas para la interfaz visual con lógica de purga automática
   const visibleActiveRounds = useMemo(() => {
     const now = Date.now();
 
     // 1. Lógica de Purga Automática y Permanente:
     // Eliminar automáticamente de la vista cualquier sorteo que ya haya finalizado por completo
-    // o cuya hora de inicio ya expiró (eliminando sorteos antiguos con estado 'LIVE' o 'Cerrado').
+    // o cuyas figuras ya fueron guardadas y validadas oficialmente.
     const activeList = rounds.filter((r) => {
       // Purga directa y permanente de sorteos específicos (#7 y #10)
       if (isPermanentlyDeletedRound(r)) {
@@ -252,24 +268,24 @@ export const AdminPortal: React.FC = () => {
         return false;
       }
       const st = String(r.status || '').toLowerCase().trim();
-      // Cualquier sorteo cerrado o finalizado se purga directamente de la vista
-      if (st === 'closed' || st === 'cerrado' || st === 'finished' || st === 'completado') {
+      // Solo los sorteos totalmente finalizados o con resultados ya validados y bloqueados se purgan
+      if (st === 'finished' || st === 'completado' || isRoundResultsLocked(r)) {
         return false;
       }
-      return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay';
+      return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay' || st === 'closed' || st === 'cerrado';
     });
 
     // 2. Ordenar activos por prioridad operativa:
     //    1) live / drawing / replay (en transmisión activa en este instante)
-    //    2) open (abierto a recepción de apuestas)
-    //    3) closed / cerrado (apuestas cerradas recientes a la espera inminente de extracción)
+    //    2) closed / cerrado (apuestas cerradas recientes a la espera inminente de ingreso de resultados)
+    //    3) open (abierto a recepción de apuestas)
     //    4) scheduled (programados ordenados cronológicamente)
     activeList.sort((a, b) => {
       const getPriority = (status: string) => {
         const s = String(status || '').toLowerCase().trim();
         if (s === 'live' || s === 'drawing' || s === 'replay') return 1;
-        if (s === 'open') return 2;
-        if (s === 'closed' || s === 'cerrado') return 3;
+        if (s === 'closed' || s === 'cerrado') return 2; // Alta prioridad para ingreso de resultados
+        if (s === 'open') return 3;
         if (s === 'scheduled') return 4;
         return 5;
       };
@@ -286,7 +302,7 @@ export const AdminPortal: React.FC = () => {
     // 3. Mantener únicamente visibles en pantalla los sorteos más prioritarios o programados,
     //    sin superar el límite de siete (7) elementos en total, liberando espacio para nuevos sorteos.
     return activeList.slice(0, Math.min(roundsWindowLimit, 7));
-  }, [rounds, roundsWindowLimit]);
+  }, [rounds, roundsWindowLimit, isRoundResultsLocked]);
 
   // Próximo orden calculado globalmente para garantizar que la creación y publicación no se altere
   const calculatedNextOrder = useMemo(() => {
@@ -297,7 +313,7 @@ export const AdminPortal: React.FC = () => {
   const currentTableRounds = visibleActiveRounds;
 
   const [selectedRoundForResult, setSelectedRoundForResult] = useState<string>(
-    visibleActiveRounds.find((r) => r.status === 'open' || r.status === 'scheduled')?.id || visibleActiveRounds[0]?.id || ''
+    visibleActiveRounds.find((r) => r.status === 'closed' || r.status === 'open' || r.status === 'scheduled')?.id || visibleActiveRounds[0]?.id || ''
   );
 
   // Mantener sincronizado el selector de ronda si una ronda se cierra/finaliza y sale de la vista
@@ -313,21 +329,6 @@ export const AdminPortal: React.FC = () => {
   const [isSigningResult, setIsSigningResult] = useState(false);
   const [showResultConfirmModal, setShowResultConfirmModal] = useState(false);
   const [resultSubmitMessage, setResultSubmitMessage] = useState<{ success: boolean; text: string } | null>(null);
-
-  // Helper para verificar si un sorteo ya tiene figuras guardadas y validadas
-  const isRoundResultsLocked = useCallback((r?: GameRound | null) => {
-    if (!r) return false;
-    const st = String(r.status || '').toLowerCase();
-    const hasBolas = (Array.isArray(r.bolas_cantadas) && r.bolas_cantadas.length > 0) ||
-                     (Array.isArray(r.drawnFichas) && r.drawnFichas.length > 0);
-    return Boolean(
-      r.resultLocked ||
-      r.hasPreloadedResults ||
-      (st === 'closed' && hasBolas) ||
-      st === 'finished' ||
-      st === 'replay'
-    );
-  }, []);
 
   const currentResultRound = useMemo(() => {
     return rounds.find((r) => r.id === selectedRoundForResult);
@@ -1302,7 +1303,11 @@ export const AdminPortal: React.FC = () => {
                               {(statusLower === 'open' || statusLower === 'live' || statusLower === 'drawing') && (
                                 <span className={`w-1.5 h-1.5 rounded-full ${statusLower === 'open' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                               )}
-                              {statusLower === 'closed' || statusLower === 'cerrado' ? 'CERRADO' : round.status}
+                              {isRoundResultsLocked(round)
+                                ? 'CERRADO (VALIDADO)'
+                                : (statusLower === 'closed' || statusLower === 'cerrado' || round.isBettingClosed)
+                                ? 'APUESTAS CERRADAS (ESPERANDO RESULTADOS)'
+                                : round.status}
                             </span>
                           </div>
                         </td>
@@ -1418,10 +1423,16 @@ export const AdminPortal: React.FC = () => {
                             )}
                             {statusLower === 'open' && (
                               <button
-                                onClick={() => setRoundStatus(round.id, 'closed')}
-                                className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] px-2 py-1 rounded-lg cursor-pointer"
+                                type="button"
+                                onClick={() => {
+                                  setRoundStatus(round.id, 'closed');
+                                  setSelectedRoundForResult(round.id);
+                                }}
+                                title="Inhabilita la compra de cartones y mantiene la sesión activa para el ingreso de resultados"
+                                className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg cursor-pointer flex items-center gap-1 shadow-sm transition-all active:scale-95"
                               >
-                                Cerrar Apuestas
+                                <Lock className="w-3 h-3" />
+                                <span>Cerrar Apuesta</span>
                               </button>
                             )}
                             {isRoundResultsLocked(round) ? (
@@ -1432,7 +1443,7 @@ export const AdminPortal: React.FC = () => {
                                 className="bg-slate-200 text-slate-500 font-bold text-[10px] px-2 py-1 rounded-lg cursor-not-allowed border border-slate-300 flex items-center gap-1 opacity-75 shadow-none"
                               >
                                 <Lock className="w-3 h-3 text-slate-500" />
-                                <span>Ingresar Figuras (Cerrado)</span>
+                                <span>Figuras Validadas</span>
                               </button>
                             ) : statusLower !== 'finished' ? (
                               <button
@@ -1441,9 +1452,14 @@ export const AdminPortal: React.FC = () => {
                                   setSelectedRoundForResult(round.id);
                                   setActiveTab('results');
                                 }}
-                                className="bg-indigo-900 hover:bg-indigo-800 text-amber-300 font-bold text-[10px] px-2 py-1 rounded-lg cursor-pointer"
+                                className={`font-bold text-[10px] px-2.5 py-1 rounded-lg cursor-pointer flex items-center gap-1 shadow-sm transition-all ${
+                                  statusLower === 'closed' || statusLower === 'cerrado'
+                                    ? 'bg-indigo-900 hover:bg-indigo-800 text-amber-300 border border-amber-500/50 animate-pulse'
+                                    : 'bg-indigo-900 hover:bg-indigo-800 text-amber-300'
+                                }`}
                               >
-                                Ingresar Figuras
+                                <Edit3 className="w-3 h-3 text-amber-400" />
+                                <span>Ingresar Figuras</span>
                               </button>
                             ) : null}
                           </div>

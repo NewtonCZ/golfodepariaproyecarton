@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { MatrixCardView } from '../cards/MatrixCardView';
-import { X, Sparkles, AlertCircle, ShoppingCart, Check, ShieldCheck, Loader2 } from 'lucide-react';
+import { X, Sparkles, AlertCircle, ShoppingCart, Check, ShieldCheck, Loader2, Lock } from 'lucide-react';
 import { MatrixCard } from '../../types';
 
 interface BuyCardsModalProps {
@@ -50,8 +50,19 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
   const totalPrice = getPackPrice(selectedPack);
   const hasEnoughBalance = currentUser.availableBalance >= totalPrice;
 
+  const isBettingClosed = Boolean(
+    selectedRound.isBettingClosed ||
+    selectedRound.status === 'closed' ||
+    selectedRound.status === 'cerrado' ||
+    selectedRound.status === 'finished'
+  );
+
   // Compra directa sin OTP ni verificación requerida
   const handleDirectPurchase = () => {
+    if (isBettingClosed) {
+      setErrorMessage('Las apuestas para este sorteo están cerradas. No se permiten nuevas compras.');
+      return;
+    }
     setErrorMessage(null);
     setIsProcessing(true);
 
@@ -243,6 +254,13 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
               </div>
             )}
 
+            {isBettingClosed && (
+              <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold p-3 rounded-xl mb-4 flex items-center gap-2">
+                <Lock className="w-4 h-4 shrink-0 text-amber-600" />
+                <span>Las apuestas para este sorteo están cerradas. No se permiten nuevas compras de cartones.</span>
+              </div>
+            )}
+
             {/* Action buttons */}
             <div className="flex items-center gap-3">
               <button
@@ -254,10 +272,10 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
               </button>
               <button
                 type="button"
-                disabled={!hasEnoughBalance || isProcessing || maxAllowedToBuy === 0}
+                disabled={!hasEnoughBalance || isProcessing || maxAllowedToBuy === 0 || isBettingClosed}
                 onClick={handleDirectPurchase}
                 className={`w-2/3 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  !hasEnoughBalance || maxAllowedToBuy === 0 || isProcessing
+                  !hasEnoughBalance || maxAllowedToBuy === 0 || isProcessing || isBettingClosed
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/25 active:scale-98'
                 }`}

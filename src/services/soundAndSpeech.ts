@@ -20,18 +20,29 @@ class SoundAndSpeechService {
       }
     }
     if (this.audioCtx && this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume();
+      this.audioCtx.resume().catch(() => {});
     }
   }
 
+  private getSpanishVoice(): SpeechSynthesisVoice | null {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return null;
+    // Prioritize natural Spanish voices (es-VE, es-MX, es-ES, es-US)
+    const priorityVoice = voices.find(v => v.lang === 'es-VE') ||
+      voices.find(v => v.lang === 'es-MX') ||
+      voices.find(v => v.lang === 'es-US') ||
+      voices.find(v => v.lang.startsWith('es-')) ||
+      voices.find(v => v.lang.toLowerCase().includes('spanish'));
+    return priorityVoice || voices[0] || null;
+  }
+
   private initVoice() {
-    if ('speechSynthesis' in window) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       const loadVoices = () => {
-        const voices = window.speechSynthesis.getVoices();
-        // Look for Spanish voices (es-ES, es-MX, es-US, es-VE, etc.)
-        const esVoice = voices.find(v => v.lang.startsWith('es') || v.lang.includes('Spanish'));
-        if (esVoice) {
-          this.selectedVoice = esVoice;
+        const v = this.getSpanishVoice();
+        if (v) {
+          this.selectedVoice = v;
         }
       };
 
@@ -65,15 +76,20 @@ class SoundAndSpeechService {
     }
 
     try {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
       window.speechSynthesis.cancel(); // Stop any pending utterance
+
       const utterance = new SpeechSynthesisUtterance(nameOrPhrase);
       utterance.lang = 'es-ES';
-      utterance.rate = 1.05;
-      utterance.pitch = 1.15; // slightly energetic cartoon tone
+      utterance.rate = 1.0;
+      utterance.pitch = 1.1; // energetic cartoon tone
       utterance.volume = 1.0;
 
-      if (this.selectedVoice) {
-        utterance.voice = this.selectedVoice;
+      const voice = this.selectedVoice || this.getSpanishVoice();
+      if (voice) {
+        utterance.voice = voice;
       }
 
       window.speechSynthesis.speak(utterance);
@@ -220,10 +236,13 @@ class SoundAndSpeechService {
   }
 
   public speakFicha(ficha: any) {
+    if (!ficha) return;
+    this.playBallDrop();
     if (typeof ficha === 'string') {
       this.cantarFicha(ficha);
     } else if (ficha && ficha.name) {
-      this.cantarFicha(`Número ${ficha.id}, ${ficha.name}`);
+      const phrase = ficha.pronunciation ? ficha.pronunciation.replace(/^[¡!]+|[¡!]+$/g, '') : ficha.name;
+      this.cantarFicha(`¡Número ${ficha.id}! ¡${phrase}!`);
     }
   }
 }
