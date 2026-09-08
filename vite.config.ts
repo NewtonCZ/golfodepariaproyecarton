@@ -6,7 +6,7 @@ import { defineConfig } from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
-    envPrefix: ['VITE_'],
+    envPrefix: ['VITE_', 'NEXT_PUBLIC_', 'SUPABASE_'],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

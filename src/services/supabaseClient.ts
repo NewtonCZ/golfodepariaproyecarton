@@ -1,23 +1,76 @@
 import { createClient, SupabaseClient, User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 
-// Retrieve Supabase environment variables safely using VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+// Helper to sanitize environment strings (trim whitespace and enclosing quotes)
+const sanitize = (val: any): string => {
+  if (!val || typeof val !== 'string') return '';
+  return val.trim().replace(/^["']|["']$/g, '');
+};
+
 const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env || {} : {};
+const procEnv = typeof process !== 'undefined' ? process.env || {} : {};
+const winObj: any = typeof window !== 'undefined' ? window : {};
 
-const SUPABASE_URL =
-  metaEnv.VITE_SUPABASE_URL ||
-  (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : '') ||
-  metaEnv.NEXT_PUBLIC_SUPABASE_URL ||
-  (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_URL : '') ||
-  (typeof process !== 'undefined' ? process.env?.SUPABASE_URL : '') ||
-  '';
+// 1. Resolve SUPABASE_URL with fallback to the production project URL
+export const SUPABASE_URL: string = (() => {
+  const candidates = [
+    metaEnv.VITE_SUPABASE_URL,
+    procEnv.VITE_SUPABASE_URL,
+    metaEnv.NEXT_PUBLIC_SUPABASE_URL,
+    procEnv.NEXT_PUBLIC_SUPABASE_URL,
+    metaEnv.SUPABASE_URL,
+    procEnv.SUPABASE_URL,
+    winObj.__ENV__?.VITE_SUPABASE_URL,
+    winObj.__ENV__?.SUPABASE_URL,
+    'https://mccjcdsombzmlxzxccto.supabase.co',
+  ];
 
-const SUPABASE_ANON_KEY =
-  metaEnv.VITE_SUPABASE_ANON_KEY ||
-  (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : '') ||
-  metaEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  (typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY : '') ||
-  (typeof process !== 'undefined' ? process.env?.SUPABASE_ANON_KEY : '') ||
-  '';
+  for (const item of candidates) {
+    const clean = sanitize(item);
+    if (clean && clean.startsWith('http')) {
+      return clean.replace(/\/$/, '');
+    }
+  }
+  return 'https://mccjcdsombzmlxzxccto.supabase.co';
+})();
+
+// 2. Resolve SUPABASE_ANON_KEY checking all standard and publishable key variants
+export const SUPABASE_ANON_KEY: string = (() => {
+  const candidates = [
+    metaEnv.VITE_SUPABASE_ANON_KEY,
+    procEnv.VITE_SUPABASE_ANON_KEY,
+    metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY,
+    procEnv.VITE_SUPABASE_PUBLISHABLE_KEY,
+    metaEnv.VITE_SUPABASE_KEY,
+    procEnv.VITE_SUPABASE_KEY,
+    metaEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    procEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    metaEnv.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    procEnv.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    metaEnv.NEXT_PUBLIC_SUPABASE_KEY,
+    procEnv.NEXT_PUBLIC_SUPABASE_KEY,
+    metaEnv.SUPABASE_ANON_KEY,
+    procEnv.SUPABASE_ANON_KEY,
+    metaEnv.SUPABASE_PUBLISHABLE_KEY,
+    procEnv.SUPABASE_PUBLISHABLE_KEY,
+    metaEnv.SUPABASE_KEY,
+    procEnv.SUPABASE_KEY,
+    winObj.__ENV__?.VITE_SUPABASE_ANON_KEY,
+    winObj.__ENV__?.SUPABASE_ANON_KEY,
+  ];
+
+  for (const item of candidates) {
+    const clean = sanitize(item);
+    if (clean && clean.length > 8) {
+      return clean;
+    }
+  }
+  return '';
+})();
+
+export const getSupabaseConfig = () => ({
+  url: SUPABASE_URL,
+  anonKey: SUPABASE_ANON_KEY,
+});
 
 export let realSupabaseClient: SupabaseClient | null = null;
 
@@ -28,6 +81,24 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY && typeof SUPABASE_URL === 'string' && SUP
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
+      },
+      global: {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+          const headers = new Headers(init?.headers || {});
+          if (SUPABASE_ANON_KEY) {
+            if (!headers.has('apikey')) {
+              headers.set('apikey', SUPABASE_ANON_KEY);
+            }
+            if (!headers.has('Authorization')) {
+              headers.set('Authorization', `Bearer ${SUPABASE_ANON_KEY}`);
+            }
+          }
+          return fetch(input, { ...init, headers });
+        },
       },
     });
   } catch (err) {

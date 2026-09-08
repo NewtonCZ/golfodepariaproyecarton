@@ -15,7 +15,7 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', (req.headers.origin as string) || '*');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, apikey, x-client-info');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -26,16 +26,38 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Inicialización opcional de Supabase en Servidor
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://mccjcdsombzmlxzxccto.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_URL = (
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  'https://mccjcdsombzmlxzxccto.supabase.co'
+).trim().replace(/^["']|["']$/g, '');
+
+const SUPABASE_KEY = (
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.SUPABASE_PUBLISHABLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.VITE_SUPABASE_KEY ||
+  process.env.SUPABASE_KEY ||
+  ''
+).trim().replace(/^["']|["']$/g, '');
 
 let supabaseServerClient: SupabaseClient | null = null;
 if (SUPABASE_URL && SUPABASE_KEY) {
   try {
     supabaseServerClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
       auth: { persistSession: false },
+      global: {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+      },
     });
-    console.log('✅ [Supabase Server Client] Conectado exitosamente');
+    console.log('✅ [Supabase Server Client] Conectado exitosamente con apikey en cabeceras');
   } catch (err) {
     console.warn('[Supabase Server Client] Aviso al inicializar cliente:', err);
   }
