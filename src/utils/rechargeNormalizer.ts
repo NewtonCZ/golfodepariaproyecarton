@@ -59,7 +59,7 @@ export function normalizeRechargeTransaction(raw: any): RechargeTransaction {
     amountVes: isNaN(amount) ? 0 : amount,
     payerPhone: String(raw.payerPhone || raw.payer_phone || raw.telefono_pagador || raw.usuario_telefono || ''),
     payerName: String(raw.payerName || raw.payer_name || raw.pagador_nombre || raw.usuario_nombre || ''),
-    payerDocumentId: String(raw.payerDocumentId || raw.payer_document_id || raw.pagador_ci || raw.cedula || ''),
+    payerDocumentId: String(raw.payerDocumentId || raw.payer_document_id || raw.cedula_pagador || raw.pagador_ci || raw.cedula || ''),
     bankOrigin: String(raw.bankOrigin || raw.bank_origin || raw.banco_origen || raw.banco || 'Pago Móvil'),
     referenceNumber: String(raw.referenceNumber || raw.reference_number || raw.referencia || ''),
     voucherImageUrl: String(raw.voucherImageUrl || raw.voucher_image_url || raw.comprobante_url || ''),

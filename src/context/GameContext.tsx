@@ -664,11 +664,76 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data, error } = await supabase.from('withdrawals').select('*').order('created_at', { ascending: false });
       if (!error && data && data.length > 0) {
-        setWithdrawals(data as any);
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_withdrawals`, data, 'normal');
+        const mapped: WithdrawalTransaction[] = data.map((row: any) => ({
+          id: String(row.id),
+          userId: String(row.user_id || ''),
+          userName: row.user_name || row.titular_name || 'Jugador',
+          userPhone: row.phone_or_account || '',
+          amountVes: Number(row.amount || row.amount_ves || 0),
+          channel: row.channel || 'pago_movil',
+          bankDest: row.bank_dest || 'Banco de Venezuela',
+          phoneOrAccount: row.phone_or_account || '',
+          documentId: row.document_id || '',
+          titularName: row.titular_name || row.user_name || 'Jugador',
+          status: row.status || 'pending',
+          createdAt: row.created_at || new Date().toISOString(),
+          processedAt: row.processed_at,
+          processedBy: row.processed_by,
+        }));
+        setWithdrawals(mapped);
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_withdrawals`, mapped, 'normal');
       }
     } catch (err) { console.warn('[GameContext] fetchWithdrawals:', err); }
   }, []);
+
+  const fetchLedger = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('ledger').select('*').order('created_at', { ascending: false }).limit(200);
+      if (!error && data && data.length > 0) {
+        const mapped: WalletLedgerEntry[] = data.map((row: any) => ({
+          id: String(row.id),
+          userId: String(row.user_id || ''),
+          userName: row.user_name || 'Usuario',
+          type: row.type || 'recharge_approved',
+          amountVes: Number(row.amount_ves || 0),
+          balanceBefore: Number(row.balance_before || 0),
+          balanceAfter: Number(row.balance_after || 0),
+          description: row.description || '',
+          referenceId: row.reference_id,
+          createdAt: row.created_at || new Date().toISOString(),
+        }));
+        setLedger(mapped);
+      }
+    } catch (err) {
+      console.warn('[GameContext] fetchLedger error:', err);
+    }
+  }, []);
+
+  const fetchJugadores = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('jugadores_bingo').select('*');
+      if (!error && data && data.length > 0) {
+        setUsers((prev) => {
+          const map = new Map(data.map((jb: any) => [String(jb.id), jb]));
+          return prev.map((u) => {
+            const jb = map.get(u.id) as any;
+            if (jb) {
+              return {
+                ...u,
+                availableBalance: Number(jb.saldo ?? u.availableBalance),
+                phone: jb.telefono || u.phone,
+                documentId: jb.cedula || u.documentId,
+              };
+            }
+            return u;
+          });
+        });
+      }
+    } catch (err) {
+      console.warn('[GameContext] fetchJugadores error:', err);
+    }
+  }, []);
+
   const fetchCommercialConfig = useCallback(async () => {
     try {
       const { data } = await supabase.from('comercial').select('*').limit(1).maybeSingle();
@@ -763,6 +828,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchCommercialConfig();
     fetchUserCards();
     fetchAuditLogs();
+    fetchLedger();
+    fetchJugadores();
     const handleVis = () => {
       if (document.visibilityState === 'visible') {
         fetchCommercialConfig();
@@ -771,6 +838,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         fetchWithdrawals();
         fetchUserCards();
         fetchAuditLogs();
+        fetchLedger();
+        fetchJugadores();
       }
     };
     window.addEventListener('visibilitychange', handleVis);
@@ -780,13 +849,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fetchWithdrawals();
       fetchUserCards();
       fetchPendingRecharges();
+      fetchLedger();
     }, 30000);
     return () => {
       clearInterval(intervalTimer);
       window.removeEventListener('visibilitychange', handleVis);
       window.removeEventListener('focus', handleVis);
     };
-  }, [fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals, fetchCommercialConfig, fetchUserCards, fetchAuditLogs]);
+  }, [fetchActiveRounds, fetchPendingRecharges, fetchWithdrawals, fetchCommercialConfig, fetchUserCards, fetchAuditLogs, fetchLedger, fetchJugadores]);
 
   const addAuditLog = useCallback((action: string, details: string, customOperator?: { name?: string; role?: AdminRole }) => {
     const newLog: AuditLogEntry = {
@@ -1528,14 +1598,43 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         prev.map((r) => (r.id === transactionId ? { ...r, status: 'approved', processedAt, processedBy } : r))
       );
 
-      // 2. SOLO 1 PATCH a recargas_pago_movil con UPDATE estado='APROBADO'
-      // Sin actualizar saldo en jugadores_bingo, jugadores, users ni recharges (se acreditará manual)
+      // 2. Acreditar saldo en memoria y en currentUser
+      const targetUserId = target.userId;
+      let balBefore = 0;
+      let balAfter = 0;
+      if (targetUserId) {
+        setUsers((prev) =>
+          prev.map((u) => {
+            if (u.id === targetUserId) {
+              balBefore = u.availableBalance;
+              balAfter = balBefore + targetAmount;
+              return { ...u, availableBalance: balAfter };
+            }
+            return u;
+          })
+        );
+
+        // 3. Persistir crédito en jugadores_bingo.saldo
+        supabase
+          .from('jugadores_bingo')
+          .select('saldo')
+          .eq('id', targetUserId)
+          .maybeSingle()
+          .then(({ data: jb }) => {
+            if (jb) {
+              const newSaldo = Number(jb.saldo || 0) + targetAmount;
+              supabase.from('jugadores_bingo').update({ saldo: newSaldo }).eq('id', targetUserId).then(() => {});
+            }
+          });
+      }
+
+      // 4. Actualizar estado en recargas_pago_movil y recharges
       try {
         supabase
           .from('recargas_pago_movil')
           .update({
-            estado: 'APROBADO',
-            estatus: 'APROBADO',
+            estado: 'aprobado',
+            estatus: 'aprobado',
             fecha_procesado: processedAt,
             procesado_por: processedBy,
           })
@@ -1543,18 +1642,62 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .then(({ error }) => {
             if (error) console.warn('[GameContext] Error updating recargas_pago_movil:', error);
           });
+
+        supabase
+          .from('recharges')
+          .update({
+            status: 'approved',
+          })
+          .eq('id', transactionId)
+          .then(() => {});
       } catch (err) {
         console.warn('[GameContext] Excepción updating recargas_pago_movil:', err);
       }
 
-      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(targetAmount)} marcada como APROBADA en recargas_pago_movil`);
+      // 5. Asentar movimiento en el libro contable
+      const ledgerEntry: WalletLedgerEntry = {
+        id: `led-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        userId: target.userId,
+        userName: target.userName,
+        type: 'recharge_approved',
+        amountVes: targetAmount,
+        balanceBefore: balBefore,
+        balanceAfter: balAfter || (balBefore + targetAmount),
+        description: `Recarga aprobada Ref: ${target.referenceNumber || transactionId}`,
+        referenceId: transactionId,
+        createdAt: processedAt,
+      };
+      setLedger((prev) => [ledgerEntry, ...prev]);
+      supabase.from('ledger').insert({
+        id: ledgerEntry.id,
+        user_id: ledgerEntry.userId,
+        user_name: ledgerEntry.userName,
+        type: ledgerEntry.type,
+        amount_ves: ledgerEntry.amountVes,
+        balance_before: ledgerEntry.balanceBefore,
+        balance_after: ledgerEntry.balanceAfter,
+        description: ledgerEntry.description,
+        reference_id: ledgerEntry.referenceId,
+        created_at: ledgerEntry.createdAt,
+      }).then(() => {});
+
+      addAuditLog('APROBAR_RECARGA', `Recarga ${transactionId} de ${formatMoney(targetAmount)} aprobada y acreditada a ${target.userName}`);
       try {
         soundService.playCoin();
       } catch {}
 
-      return { success: true, message: 'Recarga aprobada exitosamente (estado: APROBADO).' };
+      try {
+        syncEngine.broadcastRechargeStatus({
+          transactionId,
+          status: 'approved',
+          userId: target.userId,
+          recharge: { ...target, status: 'approved', processedAt, processedBy },
+        });
+      } catch {}
+
+      return { success: true, message: 'Recarga aprobada y saldo acreditado exitosamente.' };
     },
-    [recharges, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
+    [recharges, currentUser, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
   );
 
   const rejectRecharge = useCallback(
@@ -1570,15 +1713,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         prev.map((r) => (r.id === transactionId ? { ...r, status: 'rejected', rejectionReason: reason, processedAt, processedBy } : r))
       );
 
-      // 2. SOLO 1 PATCH a recargas_pago_movil con UPDATE estado='RECHAZADO'
-      // Sin actualizar saldo en jugadores_bingo, jugadores, users ni recharges
+      // 2. Actualizar recargas_pago_movil y recharges usando solo columnas reales (sin motivo_rechazo)
       try {
         supabase
           .from('recargas_pago_movil')
           .update({
-            estado: 'RECHAZADO',
-            estatus: 'RECHAZADO',
-            motivo_rechazo: reason,
+            estado: 'rechazado',
+            estatus: 'rechazado',
             fecha_procesado: processedAt,
             procesado_por: processedBy,
           })
@@ -1586,12 +1727,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .then(({ error }) => {
             if (error) console.warn('[GameContext] Error rejecting recargas_pago_movil:', error);
           });
+
+        supabase
+          .from('recharges')
+          .update({
+            status: 'rejected',
+          })
+          .eq('id', transactionId)
+          .then(() => {});
       } catch (err) {
         console.warn('[GameContext] Excepción rejecting recargas_pago_movil:', err);
       }
 
-      addAuditLog('RECHAZAR_RECARGA', `Recarga ${transactionId} rechazada (estado: RECHAZADO). Motivo: ${reason}`);
-      return { success: true, message: 'Recarga rechazada exitosamente (estado: RECHAZADO).' };
+      addAuditLog('RECHAZAR_RECARGA', `Recarga ${transactionId} rechazada. Motivo: ${reason}`);
+      try {
+        syncEngine.broadcastRechargeStatus({
+          transactionId,
+          status: 'rejected',
+          userId: target.userId,
+          recharge: { ...target, status: 'rejected', rejectionReason: reason, processedAt, processedBy },
+        });
+      } catch {}
+
+      return { success: true, message: 'Recarga rechazada exitosamente.' };
     },
     [recharges, loggedUsername, activeCredential, operatorRole, addAuditLog]
   );
@@ -1667,33 +1825,31 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // 2. Bloquear saldo y persistir en Supabase directamente
       try {
-        supabase.from('withdrawals').insert([newWithdrawal]).then(({ error }) => {
+        // En withdrawals solo existen: id, user_id, amount, status, created_at
+        const withdrawalDbPayload = {
+          id: newWithdrawal.id,
+          user_id: currentUser.id,
+          amount: amount,
+          status: 'pending',
+          created_at: newWithdrawal.createdAt,
+        };
+        supabase.from('withdrawals').insert([withdrawalDbPayload]).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert withdrawal error:', error);
         });
 
-        // Insertar en tabla retiros en español
-        supabase.from('retiros').insert([{
-          id: newWithdrawal.id,
+        // Registrar débito en tabla ledger
+        supabase.from('ledger').insert({
+          id: `led-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           user_id: currentUser.id,
-          usuario_id: currentUser.id,
-          usuario_nombre: currentUser.name,
-          monto_ves: amount,
-          monto: amount,
-          canal: newWithdrawal.channel,
-          banco_destino: newWithdrawal.bankDest,
-          telefono_o_cuenta: newWithdrawal.phoneOrAccount,
-          cedula_titular: newWithdrawal.documentId,
-          nombre_titular: newWithdrawal.titularName,
-          tipo_cuenta: newWithdrawal.accountType || 'Corriente',
-          estado: 'pendiente',
+          user_name: currentUser.name,
+          type: 'withdrawal_lock',
+          amount_ves: amount,
+          balance_before: balBefore,
+          balance_after: balAfter,
+          description: `Solicitud de retiro (${newWithdrawal.channel === 'pago_movil' ? 'Pago Móvil' : 'Transferencia'})`,
+          reference_id: newWithdrawal.id,
           created_at: newWithdrawal.createdAt,
-        }]).then(() => {});
-
-        // Actualizar saldo disponible y retenido en tabla users
-        supabase.from('users').update({
-          available_balance: balAfter,
-          pending_balance: newPending,
-        }).eq('id', currentUser.id).then(() => {});
+        }).then(() => {});
 
         // Descontar en jugadores_bingo
         supabase.from('jugadores_bingo').select('saldo').eq('id', currentUser.id).maybeSingle().then(({ data: jb }) => {
@@ -1748,34 +1904,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }).catch(() => {});
       } catch {}
 
-      // Supabase sync
+      // Supabase sync: En withdrawals solo existe status
       try {
         supabase
           .from('withdrawals')
-          .update({ status: 'completed', processed_at: processedAt, processed_by: processedBy })
+          .update({ status: 'completed' })
           .eq('id', transactionId)
           .then(({ error }) => {
             if (error) console.warn('[GameContext] Supabase update withdrawal error:', error);
           });
 
-        supabase
-          .from('retiros')
-          .update({ estado: 'completado', estatus: 'completado', fecha_procesado: processedAt, procesado_por: processedBy })
-          .eq('id', transactionId)
-          .then(() => {});
-
-        // Descontar saldo pendiente del usuario
-        supabase
-          .from('users')
-          .select('pending_balance')
-          .eq('id', target.userId)
-          .maybeSingle()
-          .then(({ data: u }) => {
-            if (u) {
-              const currentPending = Number(u.pending_balance || 0);
-              supabase.from('users').update({ pending_balance: Math.max(0, currentPending - target.amountVes) }).eq('id', target.userId).then(() => {});
-            }
-          });
+        supabase.from('ledger').insert({
+          id: `led-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          user_id: target.userId,
+          user_name: target.userName,
+          type: 'withdrawal_completed',
+          amount_ves: target.amountVes,
+          balance_before: 0,
+          balance_after: 0,
+          description: `Retiro ${transactionId} completado y liquidado`,
+          reference_id: transactionId,
+          created_at: processedAt,
+        }).then(() => {});
       } catch {}
 
       addAuditLog('COMPLETAR_RETIRO', `Retiro ${transactionId} de ${formatMoney(target.amountVes)} completado para ${target.userName}`);
@@ -1797,28 +1947,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
 
       // Devolver saldo al usuario localmente
+      let balBefore = 0;
+      let balAfter = 0;
       setUsers((prev) =>
         prev.map((u) => {
           if (u.id === target.userId) {
-            const balBefore = u.availableBalance;
-            const balAfter = balBefore + target.amountVes;
+            balBefore = u.availableBalance;
+            balAfter = balBefore + target.amountVes;
             const newPending = Math.max(0, (u.pendingBalance || 0) - target.amountVes);
-
-            setLedger((l) => [
-              {
-                id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-                userId: u.id,
-                userName: u.name,
-                type: 'withdrawal_refund',
-                amountVes: target.amountVes,
-                balanceBefore: balBefore,
-                balanceAfter: balAfter,
-                description: `Reembolso por retiro rechazado (${reason})`,
-                referenceId: target.id,
-                createdAt: processedAt,
-              },
-              ...l,
-            ]);
 
             return {
               ...u,
@@ -1839,42 +1975,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }).catch(() => {});
       } catch {}
 
-      // Supabase sync: Reintegrar balance a users y jugadores_bingo
+      // Supabase sync: Reintegrar balance en jugadores_bingo.saldo y actualizar status en withdrawals
       try {
         supabase
           .from('withdrawals')
-          .update({ status: 'rejected', rejection_reason: reason, processed_at: processedAt, processed_by: processedBy })
+          .update({ status: 'rejected' })
           .eq('id', transactionId)
           .then(({ error }) => {
             if (error) console.warn('[GameContext] Supabase reject withdrawal error:', error);
           });
 
-        supabase
-          .from('retiros')
-          .update({ estado: 'rechazado', estatus: 'rechazado', motivo_rechazo: reason, fecha_procesado: processedAt, procesado_por: processedBy })
-          .eq('id', transactionId)
-          .then(() => {});
-
-        // Reintegrar en users
-        supabase
-          .from('users')
-          .select('available_balance, pending_balance')
-          .eq('id', target.userId)
-          .maybeSingle()
-          .then(({ data: u }) => {
-            if (u) {
-              const currentAvail = Number(u.available_balance || 0);
-              const currentPending = Number(u.pending_balance || 0);
-              supabase
-                .from('users')
-                .update({
-                  available_balance: currentAvail + target.amountVes,
-                  pending_balance: Math.max(0, currentPending - target.amountVes),
-                })
-                .eq('id', target.userId)
-                .then(() => {});
-            }
-          });
+        // Registrar devolución en ledger
+        supabase.from('ledger').insert({
+          id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+          user_id: target.userId,
+          user_name: target.userName,
+          type: 'withdrawal_refund',
+          amount_ves: target.amountVes,
+          balance_before: balBefore,
+          balance_after: balAfter,
+          description: `Reembolso por retiro rechazado (${reason})`,
+          reference_id: target.id,
+          created_at: processedAt,
+        }).then(() => {});
 
         // Reintegrar en jugadores_bingo
         supabase
@@ -2063,7 +2186,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return updated;
       });
       try {
-        supabase.from('rounds').update({ status, is_betting_closed: isBettingClosed }).eq('id', roundId).then(({ error }) => {
+        supabase.from('rounds').update({ status }).eq('id', roundId).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase update status error:', error);
         });
       } catch {}
@@ -2146,17 +2269,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           : updatedCards;
         setCards(finalCards);
         mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, finalCards, 'high');
-
-        try {
-          supabase
-            .from('cards')
-            .update({ pagado: true })
-            .eq('round_id', roundId)
-            .then(() => {});
-        } catch {}
       }
 
-      // Acreditar saldo a ganadores sólo por lo que no había sido pagado
+      // Acreditar saldo a ganadores en memoria, en jugadores_bingo y en libro contable (ledger)
       if (userPrizeMap.size > 0) {
         const newLedgerEntries: WalletLedgerEntry[] = [];
         setUsers((prevUsers) =>
@@ -2166,7 +2281,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const balBefore = u.availableBalance;
               const balAfter = balBefore + wonAmount;
 
-              newLedgerEntries.push({
+              const ledgerItem: WalletLedgerEntry = {
                 id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
                 userId: u.id,
                 userName: u.name,
@@ -2177,7 +2292,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 description: `Premio ganado en Sorteo #${targetRound.roundNumber} (${targetRound.title})`,
                 referenceId: targetRound.id,
                 createdAt: new Date().toISOString(),
-              });
+              };
+              newLedgerEntries.push(ledgerItem);
+
+              // Persistir en jugadores_bingo.saldo
+              supabase
+                .from('jugadores_bingo')
+                .select('saldo')
+                .eq('id', u.id)
+                .maybeSingle()
+                .then(({ data: jb }) => {
+                  if (jb) {
+                    const newSaldo = Number(jb.saldo || 0) + wonAmount;
+                    supabase.from('jugadores_bingo').update({ saldo: newSaldo }).eq('id', u.id).then(() => {});
+                  }
+                });
+
+              // Persistir en tabla ledger
+              supabase.from('ledger').insert({
+                id: ledgerItem.id,
+                user_id: ledgerItem.userId,
+                user_name: ledgerItem.userName,
+                type: ledgerItem.type,
+                amount_ves: ledgerItem.amountVes,
+                balance_before: ledgerItem.balanceBefore,
+                balance_after: ledgerItem.balanceAfter,
+                description: ledgerItem.description,
+                reference_id: ledgerItem.referenceId,
+                created_at: ledgerItem.createdAt,
+              }).then(() => {});
 
               return {
                 ...u,
@@ -2267,13 +2410,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .from('rounds')
           .update({
             status: 'closed',
-            bolas_cantadas: twentyFichasIds,
-            drawn_fichas: twentyFichasIds,
-            result_locked: true,
+            winning_numbers: twentyFichasIds,
           })
           .eq('id', roundId)
           .then(({ error }) => {
-            if (error) console.warn('[GameContext] Supabase update status & bolas_cantadas error:', error);
+            if (error) console.warn('[GameContext] Supabase update status & winning_numbers error:', error);
           });
       } catch (err) {
         console.warn('[GameContext] Error updating round in Supabase:', err);
@@ -2492,10 +2633,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           {
             id: newCred.id,
             username: newCred.username,
-            display_name: newCred.displayName,
             role: toDbRole(newCred.role),
             status: 'active',
-            password_hash: data.password ? await hashPassword(data.password) : undefined,
           },
         ]);
 
@@ -2517,12 +2656,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (id: string, data: any): Promise<{ success: boolean; message: string }> => {
       try {
         const payload: any = {};
-        if (data.displayName) payload.display_name = data.displayName;
+        if (data.username) payload.username = data.username.trim();
         if (data.role) payload.role = toDbRole(data.role);
         if (data.status) payload.status = data.status;
-        if (data.password) payload.password_hash = await hashPassword(data.password);
 
-        await supabase.from('admin_users').update(payload).eq('id', id);
+        if (Object.keys(payload).length > 0) {
+          await supabase.from('admin_users').update(payload).eq('id', id);
+        }
 
         setSystemCredentials((prev) =>
           prev.map((c) => (c.id === id ? { ...c, ...data, role: data.role ? normalizeAdminRole(data.role) : c.role } : c))
@@ -2635,8 +2775,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         is_of_age: true,
         age_confirmed_at: newUser.ageConfirmedAt,
         kyc_status: 'Aprobado',
-        available_balance: 0,
-        pending_balance: 0,
       }).then(() => {});
 
       supabase.from('jugadores_bingo').upsert({
@@ -2666,9 +2804,64 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true, message: 'Cuenta e identidad verificadas con éxito (+18).' };
   }, [currentUser]);
   const adjustUserBalance = useCallback((userId: string, amountVes: number, reason: string) => {
-    setUsers(prev => prev.map(u => u.id === userId? {...u, availableBalance: u.availableBalance + amountVes } : u));
-    addAuditLog('AJUSTE_SALDO', `Ajuste ${amountVes} Bs a ${userId} motivo: ${reason}`); return { success: true, message: 'Saldo ajustado' };
-  }, [addAuditLog]);
+    let balBefore = 0;
+    let balAfter = 0;
+    let targetName = 'Usuario';
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id === userId) {
+          balBefore = u.availableBalance;
+          balAfter = balBefore + amountVes;
+          targetName = u.name;
+          return { ...u, availableBalance: balAfter };
+        }
+        return u;
+      })
+    );
+
+    // Persistir ajuste en jugadores_bingo.saldo
+    supabase
+      .from('jugadores_bingo')
+      .select('saldo')
+      .eq('id', userId)
+      .maybeSingle()
+      .then(({ data: jb }) => {
+        if (jb) {
+          const newSaldo = Math.max(0, Number(jb.saldo || 0) + amountVes);
+          supabase.from('jugadores_bingo').update({ saldo: newSaldo }).eq('id', userId).then(() => {});
+        }
+      });
+
+    // Registrar en libro contable (ledger)
+    const ledgerEntry: WalletLedgerEntry = {
+      id: `led-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      userId,
+      userName: targetName,
+      type: amountVes >= 0 ? 'recharge_approved' : 'withdrawal_lock',
+      amountVes,
+      balanceBefore: balBefore,
+      balanceAfter: balAfter,
+      description: `Ajuste manual de saldo: ${reason}`,
+      referenceId: `adj-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+    };
+    setLedger((prev) => [ledgerEntry, ...prev]);
+    supabase.from('ledger').insert({
+      id: ledgerEntry.id,
+      user_id: ledgerEntry.userId,
+      user_name: ledgerEntry.userName,
+      type: ledgerEntry.type,
+      amount_ves: ledgerEntry.amountVes,
+      balance_before: ledgerEntry.balanceBefore,
+      balance_after: ledgerEntry.balanceAfter,
+      description: ledgerEntry.description,
+      reference_id: ledgerEntry.referenceId,
+      created_at: ledgerEntry.createdAt,
+    }).then(() => {});
+
+    addAuditLog('AJUSTE_SALDO', `Ajuste de ${amountVes} Bs a usuario ${userId}. Motivo: ${reason}`);
+    return { success: true, message: 'Saldo ajustado exitosamente.' };
+  }, [currentUser, addAuditLog]);
   const updateUserStatus = useCallback((userId: string, status: 'active' | 'suspended' | 'banned') => {
     setUsers(prev => prev.map(u => u.id === userId? {...u, status } : u)); return { success: true, message: `Usuario ${status}` };
   }, []);

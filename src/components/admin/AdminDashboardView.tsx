@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Users, Clock, TrendingUp, ArrowUpRight } from 'lucide-react';
 import { GameRound, MatrixCard, RechargeTransaction } from '../../types';
 import { AdminTab } from '../../config/permissions';
 
@@ -11,6 +11,10 @@ export interface AdminDashboardViewProps {
   netPlatformProfitVes: number;
   pendingRechargesCount: number;
   pendingWithdrawalsCount: number;
+  totalPlayersCount?: number;
+  pendingRechargesSumVes?: number;
+  dailyCardsSalesVes?: number;
+  pendingWithdrawalsSumVes?: number;
   recharges: RechargeTransaction[];
   cards: MatrixCard[];
   visibleActiveRounds: GameRound[];
@@ -26,6 +30,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   netPlatformProfitVes,
   pendingRechargesCount,
   pendingWithdrawalsCount,
+  totalPlayersCount = 0,
+  pendingRechargesSumVes = 0,
+  dailyCardsSalesVes = 0,
+  pendingWithdrawalsSumVes = 0,
   recharges,
   cards,
   visibleActiveRounds,
@@ -34,7 +42,90 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 }) => {
   return (
     <div className="space-y-6">
-      {/* KPI Stats Grid */}
+      {/* 4 Contadores en Tiempo Real de Supabase */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 1. Total Jugadores */}
+        <div id="kpi-total-jugadores" className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                Total Jugadores
+              </span>
+              <Users className="w-4 h-4 text-indigo-600" />
+            </div>
+            <div className="text-3xl font-mono font-black text-slate-900">
+              {totalPlayersCount}
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>En base de datos:</span>
+            <span className="font-bold text-slate-800">Directo de Supabase</span>
+          </div>
+        </div>
+
+        {/* 2. Recargas Pendientes */}
+        <div id="kpi-recargas-pendientes" className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                Recargas Pendientes
+              </span>
+              <Clock className="w-4 h-4 text-amber-600" />
+            </div>
+            <div className="text-3xl font-mono font-black text-amber-600">
+              {pendingRechargesCount}
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>Monto a verificar:</span>
+            <span className="font-bold font-mono text-amber-700">
+              {formatMoney(pendingRechargesSumVes)}
+            </span>
+          </div>
+        </div>
+
+        {/* 3. Ventas del Día */}
+        <div id="kpi-ventas-dia" className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                Ventas del Día
+              </span>
+              <TrendingUp className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="text-2xl font-mono font-black text-emerald-600">
+              {formatMoney(dailyCardsSalesVes)}
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>Filtro diario:</span>
+            <span className="font-bold text-slate-800">00:00 a hoy</span>
+          </div>
+        </div>
+
+        {/* 4. Retiros por Pagar */}
+        <div id="kpi-retiros-pagar" className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                Retiros por Pagar
+              </span>
+              <ArrowUpRight className="w-4 h-4 text-purple-600" />
+            </div>
+            <div className="text-3xl font-mono font-black text-purple-600">
+              {pendingWithdrawalsCount}
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>Monto a liquidar:</span>
+            <span className="font-bold font-mono text-purple-700">
+              {formatMoney(pendingWithdrawalsSumVes)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* KPI Stats Grid - Métricas Financieras */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Recharges */}
         <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 flex flex-col justify-between">

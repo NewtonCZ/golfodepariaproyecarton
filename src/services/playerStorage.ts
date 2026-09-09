@@ -70,7 +70,7 @@ export async function getJugadores(): Promise<JugadorBingo[]> {
       const { data, error } = await supabase
         .from('jugadores_bingo')
         .select('*')
-        .order('fecha_registro', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (!error && Array.isArray(data) && data.length > 0) {
         const formatted = data.map(mapToJugadorBingo);
@@ -149,17 +149,9 @@ export async function saveJugador(
         nombre: cleanRecord.nombre,
         apellido: cleanRecord.apellido,
         cedula: cleanRecord.cedula,
-        correo: cleanRecord.correo,
+        email: cleanRecord.correo,
         telefono: cleanRecord.telefono,
-        fecha_nacimiento: cleanRecord.fechaNacimiento,
-        fecha_registro: cleanRecord.fechaRegistro,
-        is_of_age: true,
-        age_confirmed_at: new Date().toISOString(),
       };
-
-      if (cleanRecord.password) {
-        dbPayload.password = cleanRecord.password;
-      }
 
       // Upsert en la tabla 'jugadores_bingo'
       const { error } = await supabase.from('jugadores_bingo').upsert(dbPayload, { onConflict: 'id' });
@@ -169,16 +161,8 @@ export async function saveJugador(
         await supabase.from('users').upsert(
           {
             id: cleanRecord.id,
-            name: `${cleanRecord.nombre} ${cleanRecord.apellido}`.trim(),
             email: cleanRecord.correo,
-            phone: cleanRecord.telefono,
-            document_id: cleanRecord.cedula,
             role: 'Player',
-            birth_date: cleanRecord.fechaNacimiento,
-            fecha_nacimiento: cleanRecord.fechaNacimiento,
-            is_of_age: true,
-            age_confirmed_at: new Date().toISOString(),
-            kyc_status: 'Aprobado',
           },
           { onConflict: 'id' }
         );

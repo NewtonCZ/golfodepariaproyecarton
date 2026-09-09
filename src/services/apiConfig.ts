@@ -8,15 +8,19 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient';
  */
 
 export const getApiBaseUrl = (): string => {
+  // If running in browser, use relative base url so requests route directly to the local server
+  if (typeof window !== 'undefined') {
+    return '';
+  }
+
   const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env || {} : {};
   const envUrl = metaEnv.VITE_API_URL || (typeof process !== 'undefined' && process.env?.VITE_API_URL);
 
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '' && !envUrl.includes('onrender.com')) {
     return envUrl.trim().replace(/\/$/, '');
   }
 
-  // Default production backend on Render
-  return 'https://golfodepariaproyecarton.onrender.com';
+  return '';
 };
 
 export const API_ENDPOINTS = {

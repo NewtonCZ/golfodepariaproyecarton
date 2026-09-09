@@ -864,7 +864,6 @@ app.post(['/api/recargas/rechazar', '/api/recharges/reject'], async (req, res) =
         .update({
           estado: 'rechazada',
           estatus: 'rechazada',
-          motivo_rechazo: rejectionReason,
           fecha_procesado: nowIso,
           procesado_por: auditor,
         })
@@ -874,9 +873,6 @@ app.post(['/api/recargas/rechazar', '/api/recharges/reject'], async (req, res) =
         .from('recharges')
         .update({
           status: 'rejected',
-          rejection_reason: rejectionReason,
-          processed_at: nowIso,
-          processed_by: auditor,
         })
         .eq('id', rechargeId);
 
@@ -1077,37 +1073,12 @@ app.post(['/api/withdrawals', '/api/retiros'], async (req, res) => {
       const withdrawalRecord = {
         id: withdrawalId,
         user_id: uid,
-        user_name: userName || userRecord?.name || 'Jugador',
-        amount_ves: amount,
-        channel: channel || 'pago_movil',
-        bank_dest: bankDest || '',
-        phone_or_account: phoneOrAccount || '',
-        document_id: documentId || '',
-        titular_name: titularName || '',
-        account_type: accountType || 'Corriente',
+        amount: amount,
         status: 'pending',
         created_at: nowIso,
       };
 
       await supabaseServerClient.from('withdrawals').insert(withdrawalRecord);
-
-      // Insertar en tabla retiros en español
-      await supabaseServerClient.from('retiros').insert({
-        id: withdrawalId,
-        user_id: uid,
-        usuario_id: uid,
-        usuario_nombre: userName || userRecord?.name || 'Jugador',
-        monto_ves: amount,
-        monto: amount,
-        canal: channel || 'pago_movil',
-        banco_destino: bankDest || '',
-        telefono_o_cuenta: phoneOrAccount || '',
-        cedula_titular: documentId || '',
-        nombre_titular: titularName || '',
-        tipo_cuenta: accountType || 'Corriente',
-        estado: 'pendiente',
-        created_at: nowIso,
-      });
 
       // Registrar débito en libro contable
       await supabaseServerClient.from('ledger').insert({
@@ -1153,21 +1124,10 @@ app.post(['/api/withdrawals/complete', '/api/retiros/completar'], async (req, re
       const { data: wd } = await supabaseServerClient.from('withdrawals').select('*').eq('id', withdrawalId).maybeSingle();
       if (wd) {
         const uid = wd.user_id;
-        const amount = Number(wd.amount_ves || 0);
+        const amount = Number(wd.amount || wd.amount_ves || 0);
 
         await supabaseServerClient.from('withdrawals').update({
           status: 'completed',
-          reference_number: referenceNumber || '',
-          processed_at: nowIso,
-          processed_by: auditor,
-        }).eq('id', withdrawalId);
-
-        await supabaseServerClient.from('retiros').update({
-          estado: 'completado',
-          estatus: 'completado',
-          referencia: referenceNumber || '',
-          fecha_procesado: nowIso,
-          procesado_por: auditor,
         }).eq('id', withdrawalId);
 
         // Descontar del saldo pendiente
@@ -1213,21 +1173,10 @@ app.post(['/api/withdrawals/reject', '/api/retiros/rechazar'], async (req, res) 
       const { data: wd } = await supabaseServerClient.from('withdrawals').select('*').eq('id', withdrawalId).maybeSingle();
       if (wd) {
         const uid = wd.user_id;
-        const amount = Number(wd.amount_ves || 0);
+        const amount = Number(wd.amount || wd.amount_ves || 0);
 
         await supabaseServerClient.from('withdrawals').update({
           status: 'rejected',
-          rejection_reason: rejectionReason,
-          processed_at: nowIso,
-          processed_by: auditor,
-        }).eq('id', withdrawalId);
-
-        await supabaseServerClient.from('retiros').update({
-          estado: 'rechazado',
-          estatus: 'rechazado',
-          motivo_rechazo: rejectionReason,
-          fecha_procesado: nowIso,
-          procesado_por: auditor,
         }).eq('id', withdrawalId);
 
         // REINTEGRAR FONDOS: Devolver a available_balance y restar de pending_balance

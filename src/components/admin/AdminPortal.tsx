@@ -47,9 +47,11 @@ import { syncEngine } from '../../services/syncService';
 export const AdminPortal: React.FC = () => {
   const {
     operatorRole,
+    currentUser,
     permissions,
     rounds,
     users,
+    adjustUserBalance,
     cards,
     recharges,
     setRecharges,
@@ -450,6 +452,123 @@ export const AdminPortal: React.FC = () => {
   const pendingRechargesCount = recharges.filter((r) => r.status === 'pending').length;
   const pendingWithdrawalsCount = withdrawals.filter((w) => w.status === 'pending').length;
 
+  // Real-time Supabase 4 KPI counters for Tablero Principal
+  const [liveMetrics, setLiveMetrics] = useState({
+    totalJugadores: 0,
+    recargasPendientesCount: 0,
+    recargasPendientesSum: 0,
+    ventasDelDiaSum: 0,
+    retirosPorPagarCount: 0,
+    retirosPorPagarSum: 0,
+  });
+
+  const refreshLiveDashboardMetrics = useCallback(async () => {
+    try {
+      // 1. Total Jugadores: exact count from jugadores_bingo
+      const { count: jbCount } = await supabase
+        .from('jugadores_bingo')
+        .select('*', { count: 'exact', head: true });
+
+      // 2. Recargas Pendientes: count and sum(monto_ves) from recargas_pago_movil
+      const { data: recData, count: rCount } = await supabase
+        .from('recargas_pago_movil')
+        .select('monto_ves, estado')
+        .or('estado.ilike.pendiente,estado.ilike.pending');
+
+      const sumRecargas = (recData || []).reduce((acc: number, r: any) => acc + Number(r.monto_ves || 0), 0);
+
+      // 3. Ventas del Día: sum(price_ves) from cards created today
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const { data: todayCards } = await supabase
+        .from('cards')
+        .select('price_ves, created_at')
+        .gte('created_at', startOfDay.toISOString());
+
+      const sumVentas = (todayCards || []).reduce((acc: number, c: any) => acc + Number(c.price_ves || 0), 0);
+
+      // 4. Retiros por Pagar: count and sum(amount) from withdrawals
+      const { data: retData, count: wCount } = await supabase
+        .from('withdrawals')
+        .select('amount, status')
+        .or('status.ilike.pending,status.ilike.pendiente');
+
+      const sumRetiros = (retData || []).reduce((acc: number, w: any) => acc + Number(w.amount || 0), 0);
+
+      setLiveMetrics({
+        totalJugadores: (jbCount !== null && jbCount !== undefined) ? jbCount : users.length,
+        recargasPendientesCount: (rCount !== null && rCount !== undefined) ? rCount : recharges.filter(r => r.status === 'pending').length,
+        recargasPendientesSum: sumRecargas > 0 ? sumRecargas : recharges.filter(r => r.status === 'pending').reduce((s, r) => s + r.amountVes, 0),
+        ventasDelDiaSum: sumVentas > 0 ? sumVentas : totalCardsSalesVes,
+        retirosPorPagarCount: (wCount !== null && wCount !== undefined) ? wCount : withdrawals.filter(w => w.status === 'pending').length,
+        retirosPorPagarSum: sumRetiros > 0 ? sumRetiros : withdrawals.filter(w => w.status === 'pending').reduce((s, w) => s + w.amountVes, 0),
+      });
+    } catch (e) {
+      console.warn('[AdminPortal] Realtime dashboard metrics notice:', e);
+    }
+  }, [users.length, recharges, withdrawals, totalCardsSalesVes]);
+
+  useEffect(() => {
+    refreshLiveDashboardMetrics();
+    const sub = supabase.channel('realtime:admin_portal_kpis')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => refreshLiveDashboardMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawals' }, () => refreshLiveDashboardMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cards' }, () => refreshLiveDashboardMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jugadores_bingo' }, () => refreshLiveDashboardMetrics())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(sub);
+    };
+  }, [refreshLiveDashboardMetrics]);
+
+  // General Ledger Date Filters (Tab 7)
+  const [ledgerDateFrom, setLedgerDateFrom] = useState('');
+  const [ledgerDateTo, setLedgerDateTo] = useState('');
+
+  // Player Balance Editor Modal (Tab 8)
+  const [editingBalanceUser, setEditingBalanceUser] = useState<any | null>(null);
+  const [editBalanceAmount, setEditBalanceAmount] = useState<number>(0);
+  const [editBalanceReason, setEditBalanceReason] = useState<string>('Ajuste contable manual');
+  const [isSavingBalance, setIsSavingBalance] = useState<boolean>(false);
+  const [balanceSaveSuccessMsg, setBalanceSaveSuccessMsg] = useState<string | null>(null);
+
+  const handleSavePlayerBalance = async () => {
+    if (!editingBalanceUser) return;
+    setIsSavingBalance(true);
+    try {
+      const targetUserId = editingBalanceUser.id;
+      const targetUserDoc = editingBalanceUser.documentId;
+      const targetUserName = editingBalanceUser.name;
+      const newBal = Number(editBalanceAmount);
+      const oldBal = Number(editingBalanceUser.availableBalance || 0);
+
+      // 1. UPDATE real en Supabase tabla jugadores_bingo
+      const { error: dbError } = await supabase
+        .from('jugadores_bingo')
+        .update({ saldo: newBal })
+        .eq('id', targetUserId);
+
+      if (dbError) {
+        console.warn('[AdminPortal] Error updating balance in jugadores_bingo:', dbError);
+      }
+
+      // 2. Actualizar estado y auditoría usando adjustUserBalance
+      const diff = newBal - oldBal;
+      adjustUserBalance(targetUserId, diff, editBalanceReason);
+
+      setBalanceSaveSuccessMsg(`¡Saldo actualizado correctamente a ${formatMoney(newBal)}!`);
+      setTimeout(() => {
+        setBalanceSaveSuccessMsg(null);
+        setEditingBalanceUser(null);
+      }, 1500);
+    } catch (err: any) {
+      console.error('[AdminPortal] Error in handleSavePlayerBalance:', err);
+    } finally {
+      setIsSavingBalance(false);
+    }
+  };
+
   // Toggle selection for 70 fichas result submission
   const toggleFichaSelection = (id: number) => {
     if (isCurrentRoundResultsLocked) return;
@@ -752,8 +871,12 @@ export const AdminPortal: React.FC = () => {
           totalCardsSalesVes={totalCardsSalesVes}
           totalPrizesPaidVes={totalPrizesPaidVes}
           netPlatformProfitVes={netPlatformProfitVes}
-          pendingRechargesCount={pendingRechargesCount}
-          pendingWithdrawalsCount={pendingWithdrawalsCount}
+          pendingRechargesCount={liveMetrics.recargasPendientesCount || pendingRechargesCount}
+          pendingWithdrawalsCount={liveMetrics.retirosPorPagarCount || pendingWithdrawalsCount}
+          totalPlayersCount={liveMetrics.totalJugadores || users.length}
+          pendingRechargesSumVes={liveMetrics.recargasPendientesSum}
+          dailyCardsSalesVes={liveMetrics.ventasDelDiaSum}
+          pendingWithdrawalsSumVes={liveMetrics.retirosPorPagarSum}
           recharges={recharges}
           cards={cards}
           visibleActiveRounds={visibleActiveRounds}
@@ -1925,6 +2048,189 @@ export const AdminPortal: React.FC = () => {
             </div>
           )}
 
+          {/* Libro Contable Mayor con Filtros por Fecha */}
+          <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+                  <span>Libro Contable Mayor (General Ledger)</span>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-900 font-black px-2 py-0.5 rounded-full">
+                    Auditoría Financiera
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Registro cronológico exhaustivo de ingresos, egresos y variaciones de balance.
+                </p>
+              </div>
+
+              {/* Filtros de Fecha */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase px-1">Desde:</span>
+                  <input
+                    type="date"
+                    value={ledgerDateFrom}
+                    onChange={(e) => setLedgerDateFrom(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono text-slate-800 outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase px-1">Hasta:</span>
+                  <input
+                    type="date"
+                    value={ledgerDateTo}
+                    onChange={(e) => setLedgerDateTo(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono text-slate-800 outline-none"
+                  />
+                </div>
+                {(ledgerDateFrom || ledgerDateTo) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLedgerDateFrom('');
+                      setLedgerDateTo('');
+                    }}
+                    className="text-xs font-bold text-rose-600 hover:text-rose-800 px-2 py-1 bg-rose-50 rounded-lg border border-rose-200"
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Totales Agregados Cuadrados con Transacciones Reales */}
+            {(() => {
+              const filteredLedgerEntries = ledger.filter((entry) => {
+                if (!entry.createdAt) return true;
+                const d = new Date(entry.createdAt).getTime();
+                if (ledgerDateFrom && d < new Date(ledgerDateFrom + 'T00:00:00').getTime()) return false;
+                if (ledgerDateTo && d > new Date(ledgerDateTo + 'T23:59:59').getTime()) return false;
+                return true;
+              });
+
+              const periodIngresos = filteredLedgerEntries
+                .filter((e) =>
+                  e.type === 'recharge_approved' ||
+                  e.type === 'recharge' ||
+                  e.type === 'CARD_PURCHASE' ||
+                  e.type === 'card_purchase' ||
+                  e.type === 'admin_adjustment_credit'
+                )
+                .reduce((sum, e) => sum + Math.abs(e.amountVes || 0), 0);
+
+              const periodEgresos = filteredLedgerEntries
+                .filter((e) =>
+                  e.type === 'withdrawal_paid' ||
+                  e.type === 'withdrawal' ||
+                  e.type === 'prize_payout' ||
+                  e.type === 'admin_adjustment_debit'
+                )
+                .reduce((sum, e) => sum + Math.abs(e.amountVes || 0), 0);
+
+              const periodNeto = periodIngresos - periodEgresos;
+
+              return (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block mb-1">
+                        Ingresos Totales (Período)
+                      </span>
+                      <div className="text-2xl font-mono font-black text-emerald-700">
+                        {formatMoney(periodIngresos)}
+                      </div>
+                      <span className="text-[10px] text-emerald-600 font-medium mt-1 block">
+                        Recargas aprobadas + Ventas cartones
+                      </span>
+                    </div>
+
+                    <div className="bg-rose-50/70 border border-rose-200 rounded-2xl p-4">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-rose-800 block mb-1">
+                        Egresos Totales (Período)
+                      </span>
+                      <div className="text-2xl font-mono font-black text-rose-700">
+                        {formatMoney(periodEgresos)}
+                      </div>
+                      <span className="text-[10px] text-rose-600 font-medium mt-1 block">
+                        Retiros liquidados + Premios distribuidos
+                      </span>
+                    </div>
+
+                    <div className="bg-indigo-950 text-white rounded-2xl p-4 border border-indigo-800">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 block mb-1">
+                        Balance Neto Operativo
+                      </span>
+                      <div className={`text-2xl font-mono font-black ${periodNeto >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {formatMoney(periodNeto)}
+                      </div>
+                      <span className="text-[10px] text-slate-300 font-medium mt-1 block">
+                        Ingresos − Egresos en tiempo real
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto max-h-[340px]">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                          <th className="pb-2">Fecha / Hora</th>
+                          <th className="pb-2">Operación / Tipo</th>
+                          <th className="pb-2">Usuario / Titular</th>
+                          <th className="pb-2">Concepto / Referencia</th>
+                          <th className="pb-2 text-right">Monto (VES)</th>
+                          <th className="pb-2 text-right">Saldo Resultante</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {filteredLedgerEntries.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-8 text-center text-slate-400">
+                              No hay movimientos contables en el rango de fechas seleccionado.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredLedgerEntries.map((entry) => {
+                            const isIncome =
+                              entry.type === 'recharge_approved' ||
+                              entry.type === 'recharge' ||
+                              entry.type === 'CARD_PURCHASE' ||
+                              entry.type === 'card_purchase' ||
+                              entry.type === 'admin_adjustment_credit';
+
+                            return (
+                              <tr key={entry.id} className="hover:bg-slate-50">
+                                <td className="py-2.5 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                                  {entry?.createdAt ? new Date(entry.createdAt).toLocaleString('es-VE') : ''}
+                                </td>
+                                <td className="py-2.5">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                    isIncome ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                  }`}>
+                                    {entry.type}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 font-bold text-slate-900">{entry.userName || 'Sistema'}</td>
+                                <td className="py-2.5 text-slate-600 max-w-xs truncate">{entry.description || '-'}</td>
+                                <td className={`py-2.5 text-right font-mono font-black ${
+                                  isIncome ? 'text-emerald-600' : 'text-rose-600'
+                                }`}>
+                                  {isIncome ? '+' : '-'}{formatMoney(Math.abs(entry.amountVes || 0))}
+                                </td>
+                                <td className="py-2.5 text-right font-mono text-slate-700">
+                                  {entry.balanceAfter !== undefined ? formatMoney(entry.balanceAfter) : '-'}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
           {/* Audit Logs */}
           <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200">
             <h3 className="font-black text-slate-900 text-base mb-1">
@@ -1983,9 +2289,12 @@ export const AdminPortal: React.FC = () => {
                   Auditoría Financiera de Balances de Usuario
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Audita saldos disponibles, pendientes y bloqueados por usuario.
+                  Cargado directo desde Supabase. Permite modificar saldos de manera autorizada y registrada.
                 </p>
               </div>
+              <span className="text-xs font-bold text-indigo-900 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-xl">
+                {users.length} jugadores en base de datos
+              </span>
             </div>
 
             <div className="overflow-x-auto">
@@ -1998,7 +2307,7 @@ export const AdminPortal: React.FC = () => {
                     <th className="pb-2.5">Pendiente</th>
                     <th className="pb-2.5">Bloqueado</th>
                     <th className="pb-2.5">Total Ganado</th>
-                    <th className="pb-2.5 text-right">Acciones</th>
+                    <th className="pb-2.5 text-right">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -2023,16 +2332,121 @@ export const AdminPortal: React.FC = () => {
                       </td>
                       <td className="py-3 text-right">
                         <button
-                          onClick={() => quickAddBalance(100)}
-                          className="bg-indigo-100 hover:bg-indigo-200 text-indigo-900 font-bold text-[10px] px-2.5 py-1 rounded-lg transition-all"
+                          type="button"
+                          onClick={() => {
+                            setEditingBalanceUser(u);
+                            setEditBalanceAmount(u.availableBalance || 0);
+                            setEditBalanceReason('Ajuste contable manual');
+                          }}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] px-3 py-1.5 rounded-xl shadow-xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
                         >
-                          +100 Bs. Bono Demo
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Editar Saldo</span>
                         </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDITAR SALDO DE JUGADOR (TAB 8) */}
+      {editingBalanceUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-900 flex items-center justify-center font-bold">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm">Modificar Saldo del Jugador</h3>
+                  <p className="text-[11px] text-slate-500">Actualización en Supabase (jugadores_bingo.saldo)</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingBalanceUser(null)}
+                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-1">
+                <div className="text-xs font-bold text-slate-800">{editingBalanceUser.name}</div>
+                <div className="text-[11px] text-slate-500">C.I.: {editingBalanceUser.documentId} | Tel: {editingBalanceUser.phone}</div>
+                <div className="text-xs text-slate-700 font-medium pt-1">
+                  Saldo Actual: <span className="font-mono font-black text-emerald-600">{formatMoney(editingBalanceUser.availableBalance || 0)}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-800 mb-1">
+                  Nuevo Saldo Disponible (VES) *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editBalanceAmount}
+                  onChange={(e) => setEditBalanceAmount(Number(e.target.value))}
+                  className="w-full bg-amber-50/50 border-2 border-amber-400 rounded-xl px-3.5 py-2 text-sm font-mono font-black text-indigo-950 outline-none focus:bg-white focus:border-indigo-600"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Motivo / Concepto del Ajuste *
+                </label>
+                <input
+                  type="text"
+                  value={editBalanceReason}
+                  onChange={(e) => setEditBalanceReason(e.target.value)}
+                  placeholder="Ej: Acreditación manual, corrección comprobante"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 outline-none focus:bg-white focus:border-indigo-600"
+                  required
+                />
+              </div>
+
+              {balanceSaveSuccessMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-800 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{balanceSaveSuccessMsg}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingBalanceUser(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingBalance}
+                  onClick={handleSavePlayerBalance}
+                  className="px-4 py-2 text-xs font-black text-white bg-indigo-950 hover:bg-indigo-900 rounded-xl transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingBalance ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Confirmar y Actualizar Saldo</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
