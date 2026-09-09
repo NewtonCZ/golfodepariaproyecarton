@@ -45,6 +45,9 @@ export const WalletLedgerView: React.FC<WalletLedgerViewProps> = ({
 
   const filteredLedger = userLedger.filter((l) => {
     if (ledgerFilter === 'all') return true;
+    if (ledgerFilter === 'recharge') {
+      return l.type === 'recharge' || l.type === 'recharge_approved';
+    }
     if (ledgerFilter === 'card_purchase' || ledgerFilter === 'CARD_PURCHASE') {
       return l.type === 'card_purchase' || l.type === 'CARD_PURCHASE';
     }
@@ -274,7 +277,7 @@ export const WalletLedgerView: React.FC<WalletLedgerViewProps> = ({
                         <td className="py-3">
                           <span
                             className={`px-2 py-0.5 rounded-md font-bold text-[10px] uppercase ${
-                              item.type === 'recharge'
+                              item.type === 'recharge' || item.type === 'recharge_approved'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : item.type === 'prize_payout'
                                 ? 'bg-amber-100 text-amber-900 font-black'
@@ -283,7 +286,7 @@ export const WalletLedgerView: React.FC<WalletLedgerViewProps> = ({
                                 : 'bg-rose-100 text-rose-900'
                             }`}
                           >
-                            {item.type === 'recharge'
+                            {item.type === 'recharge' || item.type === 'recharge_approved'
                               ? 'Recarga'
                               : item.type === 'prize_payout'
                               ? 'Premio'

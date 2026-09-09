@@ -720,18 +720,22 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data, error } = await supabase.from('ledger').select('*').order('created_at', { ascending: false }).limit(200);
       if (!error && data && data.length > 0) {
-        const mapped: WalletLedgerEntry[] = data.map((row: any) => ({
-          id: String(row.id),
-          userId: String(row.user_id || ''),
-          userName: row.user_name || 'Usuario',
-          type: row.type || 'recharge_approved',
-          amountVes: Number(row.amount_ves || 0),
-          balanceBefore: Number(row.balance_before || 0),
-          balanceAfter: Number(row.balance_after || 0),
-          description: row.description || '',
-          referenceId: row.reference_id,
-          createdAt: row.created_at || new Date().toISOString(),
-        }));
+        const mapped: WalletLedgerEntry[] = data.map((row: any) => {
+          const rawType = row.type || '';
+          const resolvedType = rawType === 'recharge_approved' ? 'recharge' : (rawType || 'recharge');
+          return {
+            id: String(row.id),
+            userId: String(row.user_id || ''),
+            userName: row.user_name || 'Usuario',
+            type: resolvedType,
+            amountVes: Number(row.amount_ves || 0),
+            balanceBefore: Number(row.balance_before || 0),
+            balanceAfter: Number(row.balance_after || 0),
+            description: row.description || '',
+            referenceId: row.reference_id,
+            createdAt: row.created_at || new Date().toISOString(),
+          };
+        });
         setLedger(mapped);
       }
     } catch (err) {
@@ -1588,7 +1592,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: `led-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         userId: target.userId,
         userName: target.userName,
-        type: 'recharge_approved',
+        type: 'recharge',
         amountVes: targetAmount,
         balanceBefore: balBefore,
         balanceAfter: balAfter || (balBefore + targetAmount),
@@ -2766,7 +2770,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: `led-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       userId,
       userName: targetName,
-      type: amountVes >= 0 ? 'recharge_approved' : 'withdrawal_lock',
+      type: amountVes >= 0 ? 'recharge' : 'withdrawal',
       amountVes,
       balanceBefore: balBefore,
       balanceAfter: balAfter,

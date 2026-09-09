@@ -805,7 +805,7 @@ app.post(['/api/recargas/aprobar', '/api/recharges/approve'], async (req, res) =
           id: `led-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           user_id: resolvedUserId,
           user_name: resolvedUserName,
-          type: 'recharge_approved',
+          type: 'recharge',
           amount_ves: finalCreditedAmount,
           balance_before: balanceBefore,
           balance_after: balanceAfter || (balanceBefore + finalCreditedAmount),
