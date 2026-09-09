@@ -147,7 +147,7 @@ export const RechargeModal: React.FC<RechargeModalProps> = ({ isOpen, onClose })
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -163,14 +163,19 @@ export const RechargeModal: React.FC<RechargeModalProps> = ({ isOpen, onClose })
     setIsSubmitting(true);
 
     try {
-      const result = submitRecharge({
+      const result = await submitRecharge({
+        monto: Number(amountVes),
         amountVes: Number(amountVes),
-        payerPhone: payerPhone.trim(),
-        payerName: payerName.trim(),
-        payerDocumentId: payerDocumentId.trim(),
-        bankOrigin,
+        referencia: referenceNumber.trim(),
         referenceNumber: referenceNumber.trim(),
-        voucherImageUrl: voucherUrl,
+        bancoOrigen: bankOrigin,
+        bankOrigin,
+        telefonoPagador: payerPhone.trim(),
+        payerPhone: payerPhone.trim(),
+        cedulaPagador: payerDocumentId.trim(),
+        payerDocumentId: payerDocumentId.trim(),
+        comprobanteUrl: voucherUrl || null,
+        voucherImageUrl: voucherUrl || null,
       });
 
       setIsSubmitting(false);

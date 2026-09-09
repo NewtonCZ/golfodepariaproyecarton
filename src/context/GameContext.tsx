@@ -68,7 +68,9 @@ interface GameContextType {
   currencyDisplay: 'VES' | 'USD'; setCurrencyDisplay: (curr: 'VES' | 'USD') => void;
   formatMoney: (amountVes: number, options?: { showBoth?: boolean }) => string;
   purchaseCards: (packCount: 2 | 4 | 6, roundId: string) => { success: boolean; message: string; cards?: MatrixCard[] };
-  submitRecharge: (data: any) => { success: boolean; message: string };
+  submitRecharge: (data: any) => Promise<{ success: boolean; message: string }>;
+  addRecharge?: (data: any) => Promise<{ success: boolean; message: string }>;
+  registrarRecargaPagoMovil?: (data: any) => Promise<{ success: boolean; message: string }>;
   approveRecharge: (transactionId: string) => { success: boolean; message: string };
   rejectRecharge: (transactionId: string, reason: string) => { success: boolean; message: string };
   submitWithdrawal: (data: any) => { success: boolean; message: string };
@@ -1444,79 +1446,71 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const submitRecharge = useCallback(
-    (data: any): { success: boolean; message: string } => {
-      const newRecharge: RechargeTransaction = {
-        id: `rch-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        userPhone: currentUser.phone,
-        amountVes: Number(data.amountVes) || 0,
-        payerPhone: data.payerPhone || '',
-        payerName: data.payerName || '',
-        payerDocumentId: data.payerDocumentId || '',
-        bankOrigin: data.bankOrigin || 'Banco de Venezuela',
-        referenceNumber: data.referenceNumber || '',
-        voucherImageUrl: data.voucherImageUrl || '',
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
-
-      setRecharges((prev) => [newRecharge, ...prev]);
+    async (form: any): Promise<{ success: boolean; message: string }> => {
       try {
-        const dbPayload = {
-          id: newRecharge.id,
-          user_id: currentUser.id,
-          user_name: currentUser.name,
-          user_phone: currentUser.phone,
-          amount_ves: newRecharge.amountVes,
-          payer_phone: newRecharge.payerPhone,
-          payer_name: newRecharge.payerName,
-          payer_document_id: newRecharge.payerDocumentId,
-          bank_origin: newRecharge.bankOrigin,
-          reference_number: newRecharge.referenceNumber,
-          voucher_image_url: newRecharge.voucherImageUrl,
-          status: 'pending',
-          created_at: newRecharge.createdAt,
+        const payload = {
+          usuario_id: currentUser.id, // es text tipo usr-xxx
+          nombre_usuario: (currentUser as any).nombre || currentUser.name,
+          monto_ves: Number(form.monto !== undefined ? form.monto : form.amountVes),
+          referencia: form.referencia !== undefined ? form.referencia : (form.referenceNumber || ''),
+          banco_origen: form.bancoOrigen !== undefined ? form.bancoOrigen : (form.bankOrigin || 'Banco de Venezuela'),
+          telefono_pagador: form.telefonoPagador !== undefined ? form.telefonoPagador : (form.payerPhone || ''),
+          cedula_pagador: form.cedulaPagador !== undefined ? form.cedulaPagador : (form.payerDocumentId || ''),
+          comprobante_url: (form.comprobanteUrl !== undefined ? form.comprobanteUrl : form.voucherImageUrl) || null,
+          estatus: 'PENDIENTE',
+          estado: 'PENDIENTE',
+          created_at: new Date().toISOString()
         };
 
-        supabase.from('recharges').insert([dbPayload]).then(({ error }) => {
-          if (error) console.warn('[GameContext] Supabase insert recharges error:', error);
-        });
+        const { error } = await supabase.from('recargas_pago_movil').insert([payload]);
 
-        supabase.from('recargas_pago_movil').insert([{
-          id: newRecharge.id,
-          user_id: currentUser.id,
-          usuario_id: currentUser.id,
-          usuario_nombre: currentUser.name,
-          monto_ves: newRecharge.amountVes,
-          monto: newRecharge.amountVes,
-          referencia: newRecharge.referenceNumber,
-          banco: newRecharge.bankOrigin,
-          pagador_nombre: newRecharge.payerName,
-          pagador_ci: newRecharge.payerDocumentId,
-          telefono_pagador: newRecharge.payerPhone,
-          comprobante_url: newRecharge.voucherImageUrl,
-          estado: 'pendiente',
-          created_at: newRecharge.createdAt,
-        }]).then(({ error }) => {
-          if (error) console.warn('[GameContext] Supabase insert recargas_pago_movil error:', error);
-        });
-      } catch {}
+        if (error) {
+          console.error('[GameContext] Supabase insert recargas_pago_movil error:', JSON.stringify(error, null, 2));
+          return {
+            success: false,
+            message: `Error al registrar en Supabase: ${error.message || 'Verifica RLS'}`,
+          };
+        }
 
-      try {
-        syncEngine.broadcastRechargeStatus({
-          transactionId: newRecharge.id,
-          status: 'pending',
+        const newRecharge: RechargeTransaction = {
+          id: `rch-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           userId: currentUser.id,
-          recharge: newRecharge,
-        });
-      } catch {}
+          userName: (currentUser as any).nombre || currentUser.name,
+          userPhone: currentUser.phone,
+          amountVes: payload.monto_ves,
+          payerPhone: payload.telefono_pagador,
+          payerName: payload.nombre_usuario,
+          payerDocumentId: payload.cedula_pagador,
+          bankOrigin: payload.banco_origen,
+          referenceNumber: payload.referencia,
+          voucherImageUrl: payload.comprobante_url || '',
+          status: 'pending',
+          createdAt: payload.created_at,
+        };
 
-      addAuditLog('SOLICITUD_RECARGA', `Recarga de ${formatMoney(newRecharge.amountVes)} solicitada por ${currentUser.name}`);
-      return { success: true, message: 'Reporte de pago enviado exitosamente. En breve será verificado.' };
+        setRecharges((prev) => [newRecharge, ...prev]);
+
+        try {
+          syncEngine.broadcastRechargeStatus({
+            transactionId: newRecharge.id,
+            status: 'pending',
+            userId: currentUser.id,
+            recharge: newRecharge,
+          });
+        } catch {}
+
+        addAuditLog('SOLICITUD_RECARGA', `Recarga de ${formatMoney(newRecharge.amountVes)} solicitada por ${currentUser.name}`);
+        return { success: true, message: 'Reporte de pago enviado exitosamente. En breve será verificado.' };
+      } catch (error: any) {
+        console.error('[GameContext] Catch insert recargas_pago_movil:', JSON.stringify(error, null, 2));
+        return { success: false, message: 'Error de conexión al registrar la recarga.' };
+      }
     },
     [currentUser, formatMoney, addAuditLog]
   );
+
+  const addRecharge = submitRecharge;
+  const registrarRecargaPagoMovil = submitRecharge;
 
   const approveRecharge = useCallback(
     (transactionId: string): { success: boolean; message: string } => {
@@ -2828,7 +2822,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     login, logout, requestPasswordRecovery, verifyRecoveryCode, resetPasswordWithCode, registerUser, updateUserKyc, verifyCurrentAccount,
     systemCredentials, fetchSystemCredentials, createSystemCredential, updateSystemCredential, deleteSystemCredential,
     users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards, recharges, setRecharges, withdrawals, setWithdrawals, ledger, auditLogs, addAuditLog, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
-    purchaseCards, submitRecharge, approveRecharge, rejectRecharge,
+    purchaseCards, submitRecharge, addRecharge, registrarRecargaPagoMovil, approveRecharge, rejectRecharge,
     submitWithdrawal, completeWithdrawal, rejectWithdrawal,
     createRound, updateRoundConfig, setRoundStatus, submitRoundResult,
     ingresarResultados, verifyWinners, setRoundTransmissionReplay, setRoundLive,
