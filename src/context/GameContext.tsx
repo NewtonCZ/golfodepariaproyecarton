@@ -92,7 +92,7 @@ interface GameContextType {
   updateUserStatus: (userId: string, status: 'active' | 'suspended' | 'banned', reason?: string) => { success: boolean; message: string };
   isRealtimeSyncConnected: boolean; lastSyncTimestamp: number;
   fetchActiveRounds: (options?: { bypassCache?: boolean; limit?: number }) => Promise<void>;
-  fetchPendingRecharges: () => Promise<void>; fetchWithdrawals: () => Promise<void>;
+  fetchPendingRecharges: (statusFilter?: 'all' | 'pending' | 'approved' | 'rejected', page?: number) => Promise<void>; fetchWithdrawals: () => Promise<void>;
   archiveCard: (cardId: string) => void; unarchiveCard: (cardId: string) => void; archiveCardsBatch: (cardIds: string[]) => void;
 }
 
@@ -591,45 +591,73 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [enforceAutoCleanupRounds]);
 
-  const fetchPendingRecharges = useCallback(async () => {
-    try {
-      const [res1, res2] = await Promise.all([
-        supabase.from('recargas_pago_movil').select('*').order('created_at', { ascending: false }).limit(200),
-        supabase.from('recharges').select('*').order('created_at', { ascending: false }).limit(200),
-      ]);
+  const fetchPendingRecharges = useCallback(
+    async (
+      statusFilter: 'all' | 'pending' | 'approved' | 'rejected' = 'pending',
+      page: number = 1
+    ) => {
+      try {
+        const limit = statusFilter === 'all' ? 100 : 50;
+        const offset = (Math.max(1, page) - 1) * limit;
 
-      const itemsMap = new Map<string, RechargeTransaction>();
+        let q1 = supabase.from('recargas_pago_movil').select('*').order('created_at', { ascending: false });
+        let q2 = supabase.from('recharges').select('*').order('created_at', { ascending: false });
 
-      // Load from recargas_pago_movil
-      if (res1.data && Array.isArray(res1.data)) {
-        res1.data.forEach((raw) => {
-          const norm = normalizeRechargeTransaction(raw);
-          if (norm.id) itemsMap.set(norm.id, norm);
+        if (statusFilter === 'pending') {
+          q1 = q1.in('estado', ['pendiente', 'PENDIENTE', 'pending']).limit(50);
+          q2 = q2.eq('status', 'pending').limit(50);
+        } else if (statusFilter === 'approved') {
+          q1 = q1.in('estado', ['aprobado', 'APROBADO', 'aprobada', 'approved']).range(offset, offset + limit - 1);
+          q2 = q2.eq('status', 'approved').range(offset, offset + limit - 1);
+        } else if (statusFilter === 'rejected') {
+          q1 = q1.in('estado', ['rechazado', 'RECHAZADO', 'rechazada', 'rejected']).range(offset, offset + limit - 1);
+          q2 = q2.eq('status', 'rejected').range(offset, offset + limit - 1);
+        } else {
+          // Tab 'Todos' -> trae solo últimos 100 ordenados por created_at desc con .limit(100)
+          q1 = q1.limit(100);
+          q2 = q2.limit(100);
+        }
+
+        const [res1, res2] = await Promise.all([q1, q2]);
+
+        const itemsMap = new Map<string, RechargeTransaction>();
+
+        // Load from recargas_pago_movil
+        if (res1.data && Array.isArray(res1.data)) {
+          res1.data.forEach((raw) => {
+            const norm = normalizeRechargeTransaction(raw);
+            if (norm.id) itemsMap.set(norm.id, norm);
+          });
+        }
+
+        // Load from recharges (merge or add missing)
+        if (res2.data && Array.isArray(res2.data)) {
+          res2.data.forEach((raw) => {
+            const norm = normalizeRechargeTransaction(raw);
+            if (norm.id && !itemsMap.has(norm.id)) {
+              itemsMap.set(norm.id, norm);
+            }
+          });
+        }
+
+        const merged = Array.from(itemsMap.values()).sort((a, b) => {
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
         });
-      }
 
-      // Load from recharges (merge or add missing)
-      if (res2.data && Array.isArray(res2.data)) {
-        res2.data.forEach((raw) => {
-          const norm = normalizeRechargeTransaction(raw);
-          if (norm.id && !itemsMap.has(norm.id)) {
-            itemsMap.set(norm.id, norm);
-          }
-        });
-      }
+        // Asegurar que en memoria se respete el filtro y el límite correspondiente a la vista seleccionada
+        const finalItems =
+          statusFilter === 'all'
+            ? merged.slice(0, 100)
+            : merged.filter((item) => item.status === statusFilter).slice(0, 50);
 
-      const merged = Array.from(itemsMap.values()).sort((a, b) => {
-        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-      });
-
-      if (merged.length > 0) {
-        setRecharges(merged);
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_recharges`, merged, 'normal');
+        setRecharges(finalItems);
+        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_recharges`, finalItems, 'normal');
+      } catch (err) {
+        console.warn('[GameContext] fetchPendingRecharges:', err);
       }
-    } catch (err) {
-      console.warn('[GameContext] fetchPendingRecharges:', err);
-    }
-  }, []);
+    },
+    []
+  );
 
   const fetchAuditLogs = useCallback(async () => {
     try {

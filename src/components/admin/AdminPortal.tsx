@@ -37,6 +37,10 @@ import {
   Clock,
   X,
   Edit3,
+  Info,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Ficha, RechargeTransaction, WithdrawalTransaction } from '../../types';
 import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
@@ -95,11 +99,65 @@ export const AdminPortal: React.FC = () => {
     }
   }, [operatorRole, currentRoleConfig, activeTab]);
 
+  // Recharge Queue states and handlers
+  const [rechargeFilterStatus, setRechargeFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [rechargePage, setRechargePage] = useState<number>(1);
+  const [rechargeCounts, setRechargeCounts] = useState<{
+    all: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+  }>({ all: 0, pending: 0, approved: 0, rejected: 0 });
+
+  const refreshRechargeCounts = useCallback(async () => {
+    try {
+      const [cPen1, cPen2, cApp1, cApp2, cRej1, cRej2, cAll1, cAll2] = await Promise.all([
+        supabase.from('recargas_pago_movil').select('id', { count: 'exact', head: true }).in('estado', ['pendiente', 'PENDIENTE', 'pending']),
+        supabase.from('recharges').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('recargas_pago_movil').select('id', { count: 'exact', head: true }).in('estado', ['aprobado', 'APROBADO', 'aprobada', 'approved']),
+        supabase.from('recharges').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
+        supabase.from('recargas_pago_movil').select('id', { count: 'exact', head: true }).in('estado', ['rechazado', 'RECHAZADO', 'rechazada', 'rejected']),
+        supabase.from('recharges').select('id', { count: 'exact', head: true }).eq('status', 'rejected'),
+        supabase.from('recargas_pago_movil').select('id', { count: 'exact', head: true }),
+        supabase.from('recharges').select('id', { count: 'exact', head: true }),
+      ]);
+
+      setRechargeCounts({
+        pending: (cPen1.count || 0) + (cPen2.count || 0),
+        approved: (cApp1.count || 0) + (cApp2.count || 0),
+        rejected: (cRej1.count || 0) + (cRej2.count || 0),
+        all: (cAll1.count || 0) + (cAll2.count || 0),
+      });
+    } catch (err) {
+      console.warn('[AdminPortal] refreshRechargeCounts error:', err);
+    }
+  }, []);
+
+  const handleSelectRechargeTab = useCallback(
+    (tab: 'all' | 'pending' | 'approved' | 'rejected') => {
+      setRechargeFilterStatus(tab);
+      setRechargePage(1);
+      fetchPendingRecharges(tab, 1);
+      refreshRechargeCounts();
+    },
+    [fetchPendingRecharges, refreshRechargeCounts]
+  );
+
+  const handleRechargePageChange = useCallback(
+    (newPage: number) => {
+      if (newPage < 1) return;
+      setRechargePage(newPage);
+      fetchPendingRecharges(rechargeFilterStatus, newPage);
+    },
+    [fetchPendingRecharges, rechargeFilterStatus]
+  );
+
   // -- INICIO BLOQUE REALTIME SEGURO (ACTUALIZACIÓN DIRECTA DE ESTADO) --
   const [realtimeRechargeAlert, setRealtimeRechargeAlert] = useState<RechargeTransaction | null>(null);
 
   useEffect(() => {
-    fetchPendingRecharges();
+    fetchPendingRecharges('pending', 1);
+    refreshRechargeCounts();
     fetchWithdrawals();
 
     const handleNewRecharge = (raw: any) => {
@@ -237,7 +295,6 @@ export const AdminPortal: React.FC = () => {
   const [selectedVoucherForModal, setSelectedVoucherForModal] = useState<string | null>(null);
   const [selectedRechargeForReview, setSelectedRechargeForReview] = useState<RechargeTransaction | null>(null);
   const [confirmBankArrivalChecked, setConfirmBankArrivalChecked] = useState<boolean>(false);
-  const [rechargeFilterStatus, setRechargeFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [rechargeSearchTerm, setRechargeSearchTerm] = useState<string>('');
   const [rejectRechargeId, setRejectRechargeId] = useState<string | null>(null);
   const [rechargeRejectReason, setRechargeRejectReason] = useState('Comprobante no coincide con extracto bancario.');
@@ -959,66 +1016,100 @@ export const AdminPortal: React.FC = () => {
             </div>
           )}
 
-          {/* Search and Filters Bar */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
-                value={rechargeSearchTerm}
-                onChange={(e) => setRechargeSearchTerm(e.target.value)}
-                placeholder="Buscar por referencia, nombre de usuario, pagador, cédula o banco..."
-                className="w-full bg-white border border-slate-200 focus:border-amber-500 pl-10 pr-4 py-2 rounded-xl text-xs font-medium text-slate-900 focus:outline-none"
-              />
+          {/* Informative Banner */}
+          <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-blue-950 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                <Info className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-blue-900">
+                  Historial completo disponible en Libro y Auditoría y en Supabase
+                </p>
+                <p className="text-[11px] text-blue-700">
+                  Esta cola muestra hasta 50 registros por vista para optimizar la velocidad y fluidez. Toda la información histórica de pagos permanece permanentemente preservada en la base de datos.
+                </p>
+              </div>
             </div>
-
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-              <button
-                type="button"
-                onClick={() => setRechargeFilterStatus('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                  rechargeFilterStatus === 'all'
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
-                }`}
-              >
-                Todos ({recharges.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setRechargeFilterStatus('pending')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                  rechargeFilterStatus === 'pending'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm'
-                    : 'bg-white text-amber-700 hover:bg-amber-50 border border-slate-200'
-                }`}
-              >
-                Pendientes ({recharges.filter((r) => r.status === 'pending').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setRechargeFilterStatus('approved')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                  rechargeFilterStatus === 'approved'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-white text-emerald-700 hover:bg-emerald-50 border border-slate-200'
-                }`}
-              >
-                Aprobados ({recharges.filter((r) => r.status === 'approved').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setRechargeFilterStatus('rejected')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
-                  rechargeFilterStatus === 'rejected'
-                    ? 'bg-rose-600 text-white shadow-sm'
-                    : 'bg-white text-rose-700 hover:bg-rose-50 border border-slate-200'
-                }`}
-              >
-                Rechazados ({recharges.filter((r) => r.status === 'rejected').length})
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('audit')}
+              className="bg-white hover:bg-blue-100/50 text-blue-800 border border-blue-200 text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-2xs shrink-0 self-end sm:self-center flex items-center gap-1.5 cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Ver Libro y Auditoría
+            </button>
           </div>
+
+          {/* Search and Filters Bar */}
+          {(() => {
+            const displayPendingCount = Math.max(rechargeCounts.pending, recharges.filter((r) => r.status === 'pending').length);
+            const displayApprovedCount = Math.max(rechargeCounts.approved, recharges.filter((r) => r.status === 'approved').length);
+            const displayRejectedCount = Math.max(rechargeCounts.rejected, recharges.filter((r) => r.status === 'rejected').length);
+            const displayAllCount = Math.max(rechargeCounts.all, recharges.length, displayPendingCount + displayApprovedCount + displayRejectedCount);
+
+            return (
+              <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type="text"
+                    value={rechargeSearchTerm}
+                    onChange={(e) => setRechargeSearchTerm(e.target.value)}
+                    placeholder="Buscar por referencia, nombre de usuario, pagador, cédula o banco..."
+                    className="w-full bg-white border border-slate-200 focus:border-amber-500 pl-10 pr-4 py-2 rounded-xl text-xs font-medium text-slate-900 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRechargeTab('pending')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      rechargeFilterStatus === 'pending'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'bg-white text-amber-700 hover:bg-amber-50 border border-slate-200'
+                    }`}
+                  >
+                    Pendientes ({displayPendingCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRechargeTab('approved')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      rechargeFilterStatus === 'approved'
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-white text-emerald-700 hover:bg-emerald-50 border border-slate-200'
+                    }`}
+                  >
+                    Aprobados ({displayApprovedCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRechargeTab('rejected')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      rechargeFilterStatus === 'rejected'
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'bg-white text-rose-700 hover:bg-rose-50 border border-slate-200'
+                    }`}
+                  >
+                    Rechazados ({displayRejectedCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRechargeTab('all')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      rechargeFilterStatus === 'all'
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    Todos ({displayAllCount})
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Table */}
           <div className="overflow-x-auto">
@@ -1068,7 +1159,7 @@ export const AdminPortal: React.FC = () => {
                     );
                   }
 
-                  return filteredList.map((rec) => (
+                  return filteredList.slice(0, 50).map((rec) => (
                     <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
                       <td className="py-3">
                         <div className="relative group">
@@ -1189,6 +1280,64 @@ export const AdminPortal: React.FC = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {(() => {
+            const displayPendingCount = Math.max(rechargeCounts.pending, recharges.filter((r) => r.status === 'pending').length);
+            const displayApprovedCount = Math.max(rechargeCounts.approved, recharges.filter((r) => r.status === 'approved').length);
+            const displayRejectedCount = Math.max(rechargeCounts.rejected, recharges.filter((r) => r.status === 'rejected').length);
+            const displayAllCount = Math.max(rechargeCounts.all, recharges.length, displayPendingCount + displayApprovedCount + displayRejectedCount);
+
+            const currentTabTotalItems =
+              rechargeFilterStatus === 'approved'
+                ? displayApprovedCount
+                : rechargeFilterStatus === 'rejected'
+                ? displayRejectedCount
+                : rechargeFilterStatus === 'pending'
+                ? displayPendingCount
+                : Math.min(100, displayAllCount);
+
+            const rechargePageSize = rechargeFilterStatus === 'all' ? 100 : 50;
+            const totalRechargePages = Math.max(1, Math.ceil(currentTabTotalItems / rechargePageSize));
+
+            return (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200 text-xs text-slate-600">
+                <div className="flex items-center gap-2">
+                  <span>
+                    Mostrando página <strong className="text-slate-900 font-bold">{rechargePage}</strong> de{' '}
+                    <strong className="text-slate-900 font-bold">{totalRechargePages}</strong>
+                  </span>
+                  <span className="text-slate-300">|</span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    (Carga liviana de máximo 50 por página &bull; Preservación total en Supabase)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleRechargePageChange(rechargePage - 1)}
+                    disabled={rechargePage <= 1}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    Anterior
+                  </button>
+                  <div className="px-3 py-1 text-xs font-black text-slate-900 bg-slate-100 rounded-lg border border-slate-200">
+                    {rechargePage} / {totalRechargePages}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRechargePageChange(rechargePage + 1)}
+                    disabled={rechargePage >= totalRechargePages}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    Siguiente
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
