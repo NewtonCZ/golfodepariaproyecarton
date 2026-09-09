@@ -779,42 +779,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, merged, 'high');
           return merged;
         });
-        return;
-      }
-
-      // 2. Fallback: intentar cargar desde tabla 'user_cards'
-      const { data: ucData, error: ucError } = await supabase
-        .from('user_cards')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (!ucError && Array.isArray(ucData) && ucData.length > 0) {
-        const mapped: MatrixCard[] = ucData.map((row: any) => ({
-          id: String(row.id || row.card_id),
-          code: row.code || `LF-${String(row.id || row.card_id || '1000').slice(-4)}`,
-          roundId: String(row.round_id || row.roundId || ''),
-          roundNumber: Number(row.round_number || 0),
-          userId: String(row.user_id || ''),
-          userName: row.user_name || 'Jugador',
-          matrix: Array.isArray(row.matrix) ? row.matrix : (Array.isArray(row.card_data) ? row.card_data : []),
-          purchaseTime: row.created_at || new Date().toISOString(),
-          priceVes: Number(row.price_ves || 25),
-          status: row.status || 'active',
-          matchedCount: 0,
-          winningPatterns: [],
-          totalPrizeVes: 0,
-          is_archived: false,
-        }));
-
-        setCards((prev) => {
-          const existingIds = new Set(prev.map((c) => c.id));
-          const newOnes = mapped.filter((c) => !existingIds.has(c.id));
-          if (newOnes.length === 0) return prev;
-          const merged = [...newOnes, ...prev];
-          mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, merged, 'high');
-          return merged;
-        });
       }
     } catch (err) {
       console.warn('[GameContext] fetchUserCards error:', err);
@@ -1086,29 +1050,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
               winningPatterns: Array.isArray(row.winning_patterns) ? row.winning_patterns : [],
               totalPrizeVes: Number(row.total_prize_ves || 0),
               is_archived: Boolean(row.is_archived),
-            };
-            mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId: item.roundId, userId: item.userId });
-            setCards((prev) => (prev.some((c) => c.id === item.id) ? prev : [item, ...prev]));
-          }
-        })
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'user_cards' }, (payload: any) => {
-          if (payload?.new) {
-            const row = payload.new as any;
-            const item: MatrixCard = {
-              id: String(row.id || row.card_id),
-              code: row.code || `LF-${String(row.id || row.card_id || '1000').slice(-4)}`,
-              roundId: String(row.round_id || row.roundId || ''),
-              roundNumber: Number(row.round_number || 0),
-              userId: String(row.user_id || ''),
-              userName: row.user_name || 'Jugador',
-              matrix: Array.isArray(row.matrix) ? row.matrix : (Array.isArray(row.card_data) ? row.card_data : []),
-              purchaseTime: row.created_at || new Date().toISOString(),
-              priceVes: Number(row.price_ves || 25),
-              status: row.status || 'active',
-              matchedCount: 0,
-              winningPatterns: [],
-              totalPrizeVes: 0,
-              is_archived: false,
             };
             mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', { roundId: item.roundId, userId: item.userId });
             setCards((prev) => (prev.some((c) => c.id === item.id) ? prev : [item, ...prev]));
@@ -1417,7 +1358,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         soundService.playPurchase();
       } catch {}
 
-      // 1) y 2) Persistir en Supabase con columnas snake_case correctas (cards, user_cards, cartones_comprados)
+      // Persistir en Supabase con columnas snake_case correctas (tabla cards)
       try {
         const dbCardsPayload = newCards.map((c) => ({
           id: c.id,
@@ -1435,38 +1376,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           total_prize_ves: c.totalPrizeVes,
         }));
 
-        const dbUserCardsPayload = newCards.map((c) => ({
-          id: c.id,
-          card_id: c.id,
-          round_id: c.roundId,
-          round_number: c.roundNumber,
-          user_id: targetUserId,
-          user_name: c.userName,
-          card_data: c.matrix,
-          matrix: c.matrix,
-          code: c.code,
-          price_ves: c.priceVes,
-          status: c.status,
-          created_at: c.purchaseTime,
-        }));
-
         // Insertar en tabla cards
         supabase.from('cards').insert(dbCardsPayload).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert cards error:', error);
-        });
-
-        // Insertar en tabla user_cards (compatibilidad RLS)
-        supabase.from('user_cards').insert(dbUserCardsPayload).then(({ error }) => {
-          if (error && (error as any).code !== '42P01') {
-            console.warn('[GameContext] Supabase insert user_cards error:', error);
-          }
-        });
-
-        // Insertar en tabla cartones_comprados
-        supabase.from('cartones_comprados').insert(dbUserCardsPayload).then(({ error }) => {
-          if (error && (error as any).code !== '42P01') {
-            console.warn('[GameContext] Supabase insert cartones_comprados error:', error);
-          }
         });
 
         supabase.from('ledger').insert([newLedger]).then(({ error }) => {
@@ -1477,12 +1389,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (error) console.warn('[GameContext] Supabase update round error:', error);
         });
 
-        // Sincronizar saldo de usuario en Supabase
-        supabase.from('users').update({
-          available_balance: balAfter,
-          total_spent_ves: (user.totalSpentVes || 0) + effectivePrice,
-        }).eq('id', targetUserId).then(() => {});
-
+        // Sincronizar saldo de usuario en jugadores_bingo
         supabase.from('jugadores_bingo').update({
           saldo: balAfter,
         }).eq('id', targetUserId).then(() => {});

@@ -149,7 +149,7 @@ class MobileCacheManager {
     // 4. Invalidate user cards cache on purchase, round finish or logout
     if (reason === 'CARDS_PURCHASED' || reason === 'USER_LOGOUT' || reason === 'ROUND_FINISHED') {
       if (payload?.userId) {
-        this.memoryCache.delete(`user_cards_${payload.userId}`);
+        this.memoryCache.delete(`cards_${payload.userId}`);
       }
       this.memoryCache.delete('all_active_cards');
       this.memoryCache.delete('Millioneire_Destiny_Lottery_v1_cards');
