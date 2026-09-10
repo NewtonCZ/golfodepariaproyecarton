@@ -148,6 +148,13 @@ serve(async (req: Request) => {
           console.log('[Edge Function api] Saldo acreditado exitosamente:', jugador.id, 'Nuevo:', saldoPosterior);
         }
 
+        // Actualizar en profiles
+        try {
+          const { data: prof } = await supabase.from('profiles').select('saldo').eq('id', jugador.id).maybeSingle();
+          const pSaldoAnt = Number(prof?.saldo || 0);
+          await supabase.from('profiles').update({ saldo: pSaldoAnt + montoVes }).eq('id', jugador.id);
+        } catch {}
+
         // c) Insertar en ledger de auditoría
         try {
           await supabase.from('ledger').insert({

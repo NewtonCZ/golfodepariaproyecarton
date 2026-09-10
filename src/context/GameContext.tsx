@@ -1547,7 +1547,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })
         );
 
-        // 3. Persistir crédito en jugadores_bingo.saldo
+        // 3. Persistir crédito en profiles.saldo y jugadores_bingo.saldo
+        supabase
+          .from('profiles')
+          .select('saldo')
+          .eq('id', targetUserId)
+          .maybeSingle()
+          .then(({ data: prof }) => {
+            const currentSaldo = Number(prof?.saldo || 0);
+            const newSaldo = currentSaldo + targetAmount;
+            supabase.from('profiles').update({ saldo: newSaldo }).eq('id', targetUserId).then(() => {});
+          });
+
         supabase
           .from('jugadores_bingo')
           .select('saldo')
