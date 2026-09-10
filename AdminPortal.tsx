@@ -1,0 +1,3035 @@
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useGame, isRoundCompletedOrExpired, isPermanentlyDeletedRound } from '../../context/GameContext';
+import { GameRound } from '../../types';
+import { supabase } from '../../services/realtimeService';
+import { saveCommercialConfigToDb } from '../../services/configService';
+import { FICHAS_POOL, getFichaById } from '../../data/fichasPool';
+import { FichaBadge } from '../common/FichaBadge';
+import { OperatorManagementView } from './OperatorManagementView';
+import { SorteoForm } from './SorteoForm';
+import { AdminDashboardView } from './AdminDashboardView';
+import { ROLE_PERMISSIONS, AdminTab } from '../../config/permissions';
+import {
+  LayoutDashboard,
+  CreditCard,
+  ArrowUpRight,
+  Calendar,
+  Sparkles,
+  Settings,
+  FileSpreadsheet,
+  Users,
+  Shield,
+  ShieldCheck,
+  ShieldAlert,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Lock,
+  Eye,
+  Plus,
+  RefreshCw,
+  Search,
+  DollarSign,
+  TrendingUp,
+  Award,
+  KeyRound,
+  LogOut,
+  Clock,
+  X,
+  Edit3,
+  Info,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
+import { Ficha, RechargeTransaction, WithdrawalTransaction } from '../../types';
+import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
+import { normalizeRechargeTransaction } from '../../utils/rechargeNormalizer';
+import { soundService } from '../../services/soundAndSpeech';
+import { syncEngine } from '../../services/syncService';
+
+export const AdminPortal: React.FC = () => {
+  const {
+    operatorRole,
+    currentUser,
+    permissions,
+    rounds,
+    users,
+    adjustUserBalance,
+    cards,
+    recharges,
+    setRecharges,
+    withdrawals,
+    setWithdrawals,
+    ledger,
+    auditLogs,
+    addAuditLog,
+    commercialConfig,
+    formatMoney,
+    approveRecharge,
+    rejectRecharge,
+    completeWithdrawal,
+    rejectWithdrawal,
+    createRound,
+    updateRoundConfig,
+    setRoundStatus,
+    submitRoundResult,
+    updateCommercialConfig,
+    startLiveDrawSimulation,
+    quickAddBalance,
+    fetchPendingRecharges,
+    fetchWithdrawals,
+    logout,
+    loggedUsername,
+    purgeCompletedRounds,
+  } = useGame();
+
+  const currentRoleConfig = ROLE_PERMISSIONS[operatorRole] || ROLE_PERMISSIONS['Super Admin'];
+  const canManageWithdrawals = permissions?.canManageWithdrawals ?? (operatorRole === 'Super Admin' || operatorRole === 'Operador Financiero');
+  const canManageResults = permissions?.canManageRounds ?? (operatorRole === 'Super Admin' || operatorRole === 'Operador Financiero');
+
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => {
+    return currentRoleConfig.allowedTabs[0] || 'dashboard';
+  });
+
+  // Ensure active tab is allowed for current role
+  useEffect(() => {
+    if (!currentRoleConfig.allowedTabs.includes(activeTab)) {
+      setActiveTab(currentRoleConfig.allowedTabs[0] || 'dashboard');
+    }
+  }, [operatorRole, currentRoleConfig, activeTab]);
+
+  // Recharge Queue states and handlers
+  const [rechargeFilterStatus, setRechargeFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [rechargePage, setRechargePage] = useState<number>(1);
+  const [rechargeCounts, setRechargeCounts] = useState<{
+    all: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+  }>({ all: 0, pending: 0, approved: 0, rejected: 0 });
+
+  const refreshRechargeCounts = useCallback(async () => {
+    try {
+      const [cPen1, cPen2, cApp1, cApp2, cRej1, cRej2, cAll1, cAll2] = await Promise.all([
+        supabase.from('recargas_pago_movil').select('id', { count: 'exact', head: true }).in('estado', ['pendiente', 'PENDIENTE', 'pending']),
+        supabase.from('recharges').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('recargas_pago_movil').select('id', { count: 'exact', head: true }).in('estado', ['aprobado', 'APROBADO', 'aprobada', 'approved']),
+        supabase.from('recharges').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
+        supabase.from('recargas_pago_movil').select('id', { count: 'exact', head: true }).in('estado', ['rechazado', 'RECHAZADO', 'rechazada', 'rejected']),
+        supabase.from('recharges').select('id', { count: 'exact', head: true }).eq('status', 'rejected'),
+        supabase.from('recargas_pago_movil').select('id', { count: 'exact', head: true }),
+        supabase.from('recharges').select('id', { count: 'exact', head: true }),
+      ]);
+
+      setRechargeCounts({
+        pending: (cPen1.count || 0) + (cPen2.count || 0),
+        approved: (cApp1.count || 0) + (cApp2.count || 0),
+        rejected: (cRej1.count || 0) + (cRej2.count || 0),
+        all: (cAll1.count || 0) + (cAll2.count || 0),
+      });
+    } catch (err) {
+      console.warn('[AdminPortal] refreshRechargeCounts error:', err);
+    }
+  }, []);
+
+  const handleSelectRechargeTab = useCallback(
+    (tab: 'all' | 'pending' | 'approved' | 'rejected') => {
+      setRechargeFilterStatus(tab);
+      setRechargePage(1);
+      fetchPendingRecharges(tab, 1);
+      refreshRechargeCounts();
+    },
+    [fetchPendingRecharges, refreshRechargeCounts]
+  );
+
+  const handleRechargePageChange = useCallback(
+    (newPage: number) => {
+      if (newPage < 1) return;
+      setRechargePage(newPage);
+      fetchPendingRecharges(rechargeFilterStatus, newPage);
+    },
+    [fetchPendingRecharges, rechargeFilterStatus]
+  );
+
+  // -- INICIO BLOQUE REALTIME SEGURO (ACTUALIZACIÓN DIRECTA DE ESTADO) --
+  const [realtimeRechargeAlert, setRealtimeRechargeAlert] = useState<RechargeTransaction | null>(null);
+
+  useEffect(() => {
+    fetchPendingRecharges('pending', 1);
+    refreshRechargeCounts();
+    fetchWithdrawals();
+
+    const handleNewRecharge = (raw: any) => {
+      if (!raw) return;
+      const newRecord = normalizeRechargeTransaction(raw);
+      setRecharges((prev) => {
+        const exists = prev.some(
+          (r) => r.id === newRecord.id || (newRecord.referenceNumber && r.referenceNumber === newRecord.referenceNumber)
+        );
+        if (exists) {
+          return prev.map((r) =>
+            r.id === newRecord.id || (newRecord.referenceNumber && r.referenceNumber === newRecord.referenceNumber)
+              ? { ...r, ...newRecord }
+              : r
+          );
+        }
+        return [newRecord, ...prev];
+      });
+
+      if (newRecord.status === 'pending') {
+        try {
+          soundService.playCoin();
+        } catch {}
+        addAuditLog(
+          'SOLICITUD_RECARGA',
+          `Nueva solicitud de recarga Pago Móvil: ${formatMoney(newRecord.amountVes)} de ${newRecord.userName} (Ref: ${newRecord.referenceNumber || 'N/A'})`
+        );
+        setRealtimeRechargeAlert(newRecord);
+      }
+    };
+
+    const handleUpdateRecharge = (raw: any) => {
+      if (!raw) return;
+      const updated = normalizeRechargeTransaction(raw);
+      setRecharges((prev) =>
+        prev.map((item) =>
+          item.id === updated.id || (updated.referenceNumber && item.referenceNumber === updated.referenceNumber)
+            ? { ...item, ...updated }
+            : item
+        )
+      );
+    };
+
+    const channel = supabase
+      .channel('realtime-finanzas-admin')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'recargas_pago_movil' },
+        (payload) => handleNewRecharge(payload.new)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'recargas_pago_movil' },
+        (payload) => handleUpdateRecharge(payload.new)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'recharges' },
+        (payload) => handleNewRecharge(payload.new)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'recharges' },
+        (payload) => handleUpdateRecharge(payload.new)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'withdrawals' },
+        (payload) => {
+          if (payload.new) {
+            const raw = payload.new as any;
+            const newRecord: WithdrawalTransaction = {
+              ...raw,
+              id: String(raw.id),
+              userId: raw.user_id || raw.userId || '',
+              userName: raw.user_name || raw.userName || 'Usuario',
+              amountVes: Number(raw.amount_ves ?? raw.amountVes ?? raw.monto_ves ?? raw.monto ?? 0),
+              bankName: raw.bank_name || raw.bankName || raw.banco || '',
+              accountNumber: raw.account_number || raw.accountNumber || raw.cuenta || '',
+              idDocument: raw.id_document || raw.idDocument || raw.cedula || '',
+              phoneNumber: raw.phone_number || raw.phoneNumber || raw.telefono || '',
+              status: (raw.status || raw.estado || 'pending').toLowerCase() === 'completed' || (raw.status || raw.estado || '').toLowerCase() === 'completado' ? 'completed' : (raw.status || raw.estado || '').toLowerCase() === 'rejected' || (raw.status || raw.estado || '').toLowerCase() === 'rechazado' ? 'rejected' : 'pending',
+              createdAt: raw.created_at || raw.createdAt || new Date().toISOString(),
+              processedAt: raw.processed_at || raw.processedAt || '',
+            };
+            setWithdrawals((prev) => [newRecord, ...prev.filter((w) => w.id !== newRecord.id)]);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'withdrawals' },
+        (payload) => {
+          if (payload.new) {
+            const raw = payload.new as any;
+            setWithdrawals((prev) =>
+              prev.map((item) =>
+                item.id === String(raw.id)
+                  ? {
+                      ...item,
+                      ...raw,
+                      id: String(raw.id),
+                      amountVes: Number(raw.amount_ves ?? raw.amountVes ?? raw.monto_ves ?? raw.monto ?? item.amountVes),
+                      status: (raw.status || raw.estado || item.status).toLowerCase() === 'completed' || (raw.status || raw.estado || '').toLowerCase() === 'completado' ? 'completed' : (raw.status || raw.estado || '').toLowerCase() === 'rejected' || (raw.status || raw.estado || '').toLowerCase() === 'rechazado' ? 'rejected' : item.status,
+                      processedAt: raw.processed_at || raw.processedAt || item.processedAt,
+                      rejectionReason: raw.motivo_rechazo || raw.rejection_reason || raw.rejectionReason || item.rejectionReason,
+                    }
+                  : item
+              )
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    const unsubSync = syncEngine.subscribe((event) => {
+      if (event.type === 'RECHARGE_STATUS_CHANGED') {
+        const { recharge, transactionId, status } = event.payload || {};
+        if (recharge) {
+          handleNewRecharge(recharge);
+        } else if (transactionId && status) {
+          setRecharges((prev) => prev.map((r) => (r.id === transactionId ? { ...r, status } : r)));
+        }
+      }
+    });
+
+    return () => {
+      unsubSync();
+      supabase.removeChannel(channel);
+    };
+  }, [fetchPendingRecharges, fetchWithdrawals, setRecharges, setWithdrawals, addAuditLog, formatMoney]);
+  // -- FIN BLOQUE REALTIME SEGURO --
+
+  // Modal states
+  const [selectedVoucherForModal, setSelectedVoucherForModal] = useState<string | null>(null);
+  const [selectedRechargeForReview, setSelectedRechargeForReview] = useState<RechargeTransaction | null>(null);
+  const [confirmBankArrivalChecked, setConfirmBankArrivalChecked] = useState<boolean>(false);
+  const [rechargeSearchTerm, setRechargeSearchTerm] = useState<string>('');
+  const [rejectRechargeId, setRejectRechargeId] = useState<string | null>(null);
+  const [rechargeRejectReason, setRechargeRejectReason] = useState('Comprobante no coincide con extracto bancario.');
+  const [rejectWithdrawalId, setRejectWithdrawalId] = useState<string | null>(null);
+  const [withdrawalRejectReason, setWithdrawalRejectReason] = useState('Datos de cuenta inválidos o no corresponden al titular.');
+
+  // Editable round configurations map: { [roundId]: { card_price: number, prize_percentage: number } }
+  const [editingRoundConfigs, setEditingRoundConfigs] = useState<{
+    [roundId: string]: { card_price: number; prize_percentage: number };
+  }>({});
+  const [savedRoundFeedback, setSavedRoundFeedback] = useState<string | null>(null);
+
+  // Result submission
+  // =========================================================================
+  // ELIMINACIÓN DIRECTA Y PERMANENTE DE SORTEOS FINALIZADOS
+  // Módulo de Gestión de Sorteos - Listado de Rondas y Monitor Financiero en Tiempo Real
+  //
+  // Mantiene y renderiza estrictamente un máximo de hasta siete (7) sorteos visibles prioritarios o programados.
+  // Cualquier sorteo que figure con estado finalizado ('finished', 'completado') o cerrado ('closed') es eliminado
+  // de forma directa y permanente de la interfaz visual, eliminando por completo la funcionalidad de archivo
+  // y cualquier botón de "Ver archivados".
+  //
+  // GARANTÍA ESTRICTA: Todos los datos históricos y registros de auditoría permanecen intactos en Supabase.
+  // =========================================================================
+  const [roundsWindowLimit, setRoundsWindowLimit] = useState<6 | 7>(7);
+
+  // Helper para verificar si un sorteo ya tiene figuras guardadas y validadas
+  const isRoundResultsLocked = useCallback((r?: GameRound | null) => {
+    if (!r) return false;
+    const st = String(r.status || '').toLowerCase();
+    const hasBolas = (Array.isArray(r.bolas_cantadas) && r.bolas_cantadas.length > 0) ||
+                     (Array.isArray(r.drawnFichas) && r.drawnFichas.length > 0);
+    return Boolean(
+      r.resultLocked ||
+      r.hasPreloadedResults ||
+      (st === 'closed' && hasBolas) ||
+      st === 'finished' ||
+      st === 'replay'
+    );
+  }, []);
+
+  // Filtrado de rondas para la interfaz visual con lógica de purga automática
+  const visibleActiveRounds = useMemo(() => {
+    const now = Date.now();
+
+    // 1. Lógica de Purga Automática y Permanente:
+    // Eliminar automáticamente de la vista cualquier sorteo que ya haya finalizado por completo
+    // o cuyas figuras ya fueron guardadas y validadas oficialmente.
+    const activeList = rounds.filter((r) => {
+      // Purga directa y permanente de sorteos específicos (#7 y #10)
+      if (isPermanentlyDeletedRound(r)) {
+        return false;
+      }
+      // Purga si el sorteo ya completó o su horario ya expiró
+      if (isRoundCompletedOrExpired(r, now)) {
+        return false;
+      }
+      const st = String(r.status || '').toLowerCase().trim();
+      // Solo los sorteos totalmente finalizados o con resultados ya validados y bloqueados se purgan
+      if (st === 'finished' || st === 'completado' || isRoundResultsLocked(r)) {
+        return false;
+      }
+      return st === 'open' || st === 'scheduled' || st === 'live' || st === 'drawing' || st === 'replay' || st === 'closed' || st === 'cerrado';
+    });
+
+    // 2. Ordenar activos por prioridad operativa:
+    //    1) live / drawing / replay (en transmisión activa en este instante)
+    //    2) closed / cerrado (apuestas cerradas recientes a la espera inminente de ingreso de resultados)
+    //    3) open (abierto a recepción de apuestas)
+    //    4) scheduled (programados ordenados cronológicamente)
+    activeList.sort((a, b) => {
+      const getPriority = (status: string) => {
+        const s = String(status || '').toLowerCase().trim();
+        if (s === 'live' || s === 'drawing' || s === 'replay') return 1;
+        if (s === 'closed' || s === 'cerrado') return 2; // Alta prioridad para ingreso de resultados
+        if (s === 'open') return 3;
+        if (s === 'scheduled') return 4;
+        return 5;
+      };
+      const prioA = getPriority(a.status);
+      const prioB = getPriority(b.status);
+      if (prioA !== prioB) return prioA - prioB;
+
+      const timeA = new Date(a.starts_at || a.openBetAt || a.drawAt || a.created_at || 0).getTime();
+      const timeB = new Date(b.starts_at || b.openBetAt || b.drawAt || b.created_at || 0).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
+    });
+
+    // 3. Mantener únicamente visibles en pantalla los sorteos más prioritarios o programados,
+    //    sin superar el límite de siete (7) elementos en total, liberando espacio para nuevos sorteos.
+    return activeList.slice(0, Math.min(roundsWindowLimit, 7));
+  }, [rounds, roundsWindowLimit, isRoundResultsLocked]);
+
+  // Próximo orden calculado globalmente para garantizar que la creación y publicación no se altere
+  const calculatedNextOrder = useMemo(() => {
+    const maxOrder = rounds.reduce((max, r) => Math.max(max, r.order || r.roundNumber || 0), 0);
+    return maxOrder + 1;
+  }, [rounds]);
+
+  const currentTableRounds = visibleActiveRounds;
+
+  const [selectedRoundForResult, setSelectedRoundForResult] = useState<string>(
+    visibleActiveRounds.find((r) => r.status === 'closed' || r.status === 'open' || r.status === 'scheduled')?.id || visibleActiveRounds[0]?.id || ''
+  );
+
+  // Mantener sincronizado el selector de ronda si una ronda se cierra/finaliza y sale de la vista
+  useEffect(() => {
+    if (visibleActiveRounds.length > 0 && !visibleActiveRounds.some((r) => r.id === selectedRoundForResult)) {
+      setSelectedRoundForResult(visibleActiveRounds[0].id);
+    }
+  }, [visibleActiveRounds, selectedRoundForResult]);
+  const [selectedResultFichas, setSelectedResultFichas] = useState<number[]>([]);
+  const [otpInput, setOtpInput] = useState('');
+  const [otpRequestStatus, setOtpRequestStatus] = useState('📧 Solicitar Código');
+  const [otpModalFeedback, setOtpModalFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isSigningResult, setIsSigningResult] = useState(false);
+  const [showResultConfirmModal, setShowResultConfirmModal] = useState(false);
+  const [resultSubmitMessage, setResultSubmitMessage] = useState<{ success: boolean; text: string } | null>(null);
+
+  const currentResultRound = useMemo(() => {
+    return rounds.find((r) => r.id === selectedRoundForResult);
+  }, [rounds, selectedRoundForResult]);
+
+  const isCurrentRoundResultsLocked = useMemo(() => {
+    return isRoundResultsLocked(currentResultRound);
+  }, [currentResultRound, isRoundResultsLocked]);
+
+  // Sincronizar fichas seleccionadas con las figuras guardadas si el sorteo está cerrado y validado
+  useEffect(() => {
+    if (!currentResultRound) return;
+    const existing = (currentResultRound.bolas_cantadas && currentResultRound.bolas_cantadas.length > 0)
+      ? currentResultRound.bolas_cantadas
+      : (currentResultRound.drawnFichas && currentResultRound.drawnFichas.length > 0)
+      ? currentResultRound.drawnFichas
+      : [];
+    if (isRoundResultsLocked(currentResultRound) && existing.length > 0) {
+      setSelectedResultFichas(existing);
+    } else if (!isRoundResultsLocked(currentResultRound)) {
+      setSelectedResultFichas(existing.length > 0 ? existing : []);
+    }
+  }, [currentResultRound?.id, isRoundResultsLocked, currentResultRound?.resultLocked, currentResultRound?.status]);
+
+  // Commercial config form
+  const [configBankName, setConfigBankName] = useState(commercialConfig.adminBank.bankName);
+  const [configPhone, setConfigPhone] = useState(commercialConfig.adminBank.phone);
+  const [configRif, setConfigRif] = useState(commercialConfig.adminBank.rif);
+  const [configHolder, setConfigHolder] = useState(commercialConfig.adminBank.holderName);
+  const initialBasePrice = commercialConfig.precio_carton_base_ves ?? commercialConfig.singleCardPriceVes ?? (commercialConfig.cardPrices?.pack2 ? commercialConfig.cardPrices.pack2 / 2 : 25);
+  const [precioCartonBaseVes, setPrecioCartonBaseVes] = useState<number>(initialBasePrice);
+  const [configFullCardMult, setConfigFullCardMult] = useState(commercialConfig.prizeMultipliers.fullCard);
+  const [configSavedToast, setConfigSavedToast] = useState(false);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [configSaveMsg, setConfigSaveMsg] = useState<string | null>(null);
+
+  // Synchronize local form inputs when commercialConfig updates from server/websocket
+  useEffect(() => {
+    setConfigBankName(commercialConfig.adminBank.bankName);
+    setConfigPhone(commercialConfig.adminBank.phone);
+    setConfigRif(commercialConfig.adminBank.rif);
+    setConfigHolder(commercialConfig.adminBank.holderName);
+    const liveBase = commercialConfig.precio_carton_base_ves ?? commercialConfig.singleCardPriceVes ?? (commercialConfig.cardPrices?.pack2 ? commercialConfig.cardPrices.pack2 / 2 : 25);
+    setPrecioCartonBaseVes(liveBase);
+    setConfigFullCardMult(commercialConfig.prizeMultipliers.fullCard);
+  }, [
+    commercialConfig.adminBank.bankName,
+    commercialConfig.adminBank.phone,
+    commercialConfig.adminBank.rif,
+    commercialConfig.adminBank.holderName,
+    commercialConfig.precio_carton_base_ves,
+    commercialConfig.singleCardPriceVes,
+    commercialConfig.cardPrices?.pack2,
+    commercialConfig.cardPrices?.pack4,
+    commercialConfig.cardPrices?.pack6,
+    commercialConfig.prizeMultipliers.fullCard,
+  ]);
+
+  // Search & filters
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Financial KPI calculations
+  const totalApprovedRechargesVes = recharges
+    .filter((r) => r.status === 'approved')
+    .reduce((sum, r) => sum + r.amountVes, 0);
+
+  // Función agregadora del widget "Ventas de Cartones": suma de registros de transacciones contables tipo CARD_PURCHASE completadas
+  const cardPurchaseTransactions = ledger.filter(
+    (entry) =>
+      (entry.type === 'CARD_PURCHASE' || entry.type === 'card_purchase') &&
+      (!entry.status || String(entry.status).toUpperCase() === 'COMPLETED')
+  );
+
+  const totalCardsSalesFromLedger = cardPurchaseTransactions.reduce(
+    (sum, entry) => sum + Math.abs(entry.amountVes || entry.amount || 0),
+    0
+  );
+
+  // Total recaudado por ventas de cartones en tiempo real
+  const totalCardsSalesVes = totalCardsSalesFromLedger > 0
+    ? totalCardsSalesFromLedger
+    : cards.reduce((sum, c) => sum + (c.priceVes || 0), 0);
+
+  const totalPrizesPaidVes = cards
+    .filter((c) => c.status === 'winner' || c.winningPatterns.length > 0)
+    .reduce((sum, c) => sum + c.totalPrizeVes, 0);
+
+  const totalCompletedWithdrawalsVes = withdrawals
+    .filter((w) => w.status === 'completed')
+    .reduce((sum, w) => sum + w.amountVes, 0);
+
+  const netPlatformProfitVes = totalCardsSalesVes - totalPrizesPaidVes;
+  const pendingRechargesCount = recharges.filter((r) => r.status === 'pending').length;
+  const pendingWithdrawalsCount = withdrawals.filter((w) => w.status === 'pending').length;
+
+  // Real-time Supabase 4 KPI counters for Tablero Principal
+  const [liveMetrics, setLiveMetrics] = useState({
+    totalJugadores: 0,
+    recargasPendientesCount: 0,
+    recargasPendientesSum: 0,
+    ventasDelDiaSum: 0,
+    retirosPorPagarCount: 0,
+    retirosPorPagarSum: 0,
+  });
+
+  const refreshLiveDashboardMetrics = useCallback(async () => {
+    try {
+      // 1. Total Jugadores: exact count from jugadores_bingo
+      const { count: jbCount } = await supabase
+        .from('jugadores_bingo')
+        .select('*', { count: 'exact', head: true });
+
+      // 2. Recargas Pendientes: count and sum(monto_ves) from recargas_pago_movil
+      const { data: recData, count: rCount } = await supabase
+        .from('recargas_pago_movil')
+        .select('monto_ves, estado')
+        .or('estado.ilike.pendiente,estado.ilike.pending');
+
+      const sumRecargas = (recData || []).reduce((acc: number, r: any) => acc + Number(r.monto_ves || 0), 0);
+
+      // 3. Ventas del Día: sum(price_ves) from cards created today
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const { data: todayCards } = await supabase
+        .from('cards')
+        .select('price_ves, created_at')
+        .gte('created_at', startOfDay.toISOString());
+
+      const sumVentas = (todayCards || []).reduce((acc: number, c: any) => acc + Number(c.price_ves || 0), 0);
+
+      // 4. Retiros por Pagar: count and sum(amount) from withdrawals
+      const { data: retData, count: wCount } = await supabase
+        .from('withdrawals')
+        .select('amount, status')
+        .or('status.ilike.pending,status.ilike.pendiente');
+
+      const sumRetiros = (retData || []).reduce((acc: number, w: any) => acc + Number(w.amount || 0), 0);
+
+      setLiveMetrics({
+        totalJugadores: (jbCount !== null && jbCount !== undefined) ? jbCount : users.length,
+        recargasPendientesCount: (rCount !== null && rCount !== undefined) ? rCount : recharges.filter(r => r.status === 'pending').length,
+        recargasPendientesSum: sumRecargas > 0 ? sumRecargas : recharges.filter(r => r.status === 'pending').reduce((s, r) => s + r.amountVes, 0),
+        ventasDelDiaSum: sumVentas > 0 ? sumVentas : totalCardsSalesVes,
+        retirosPorPagarCount: (wCount !== null && wCount !== undefined) ? wCount : withdrawals.filter(w => w.status === 'pending').length,
+        retirosPorPagarSum: sumRetiros > 0 ? sumRetiros : withdrawals.filter(w => w.status === 'pending').reduce((s, w) => s + w.amountVes, 0),
+      });
+    } catch (e) {
+      console.warn('[AdminPortal] Realtime dashboard metrics notice:', e);
+    }
+  }, [users.length, recharges, withdrawals, totalCardsSalesVes]);
+
+  useEffect(() => {
+    refreshLiveDashboardMetrics();
+    const sub = supabase.channel('realtime:admin_portal_kpis')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => refreshLiveDashboardMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawals' }, () => refreshLiveDashboardMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cards' }, () => refreshLiveDashboardMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jugadores_bingo' }, () => refreshLiveDashboardMetrics())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(sub);
+    };
+  }, [refreshLiveDashboardMetrics]);
+
+  // General Ledger Date Filters (Tab 7)
+  const [ledgerDateFrom, setLedgerDateFrom] = useState('');
+  const [ledgerDateTo, setLedgerDateTo] = useState('');
+
+  // Player Balance Editor Modal (Tab 8)
+  const [editingBalanceUser, setEditingBalanceUser] = useState<any | null>(null);
+  const [editBalanceAmount, setEditBalanceAmount] = useState<number>(0);
+  const [editBalanceReason, setEditBalanceReason] = useState<string>('Ajuste contable manual');
+  const [isSavingBalance, setIsSavingBalance] = useState<boolean>(false);
+  const [balanceSaveSuccessMsg, setBalanceSaveSuccessMsg] = useState<string | null>(null);
+
+  const handleSavePlayerBalance = async () => {
+    if (!editingBalanceUser) return;
+    setIsSavingBalance(true);
+    try {
+      const targetUserId = editingBalanceUser.id;
+      const targetUserDoc = editingBalanceUser.documentId;
+      const targetUserName = editingBalanceUser.name;
+      const newBal = Number(editBalanceAmount);
+      const oldBal = Number(editingBalanceUser.availableBalance || 0);
+
+      // 1. UPDATE real en Supabase tabla jugadores_bingo
+      const { error: dbError } = await supabase
+        .from('jugadores_bingo')
+        .update({ saldo: newBal })
+        .eq('id', targetUserId);
+
+      if (dbError) {
+        console.warn('[AdminPortal] Error updating balance in jugadores_bingo:', dbError);
+      }
+
+      // 2. Actualizar estado y auditoría usando adjustUserBalance
+      const diff = newBal - oldBal;
+      adjustUserBalance(targetUserId, diff, editBalanceReason);
+
+      setBalanceSaveSuccessMsg(`¡Saldo actualizado correctamente a ${formatMoney(newBal)}!`);
+      setTimeout(() => {
+        setBalanceSaveSuccessMsg(null);
+        setEditingBalanceUser(null);
+      }, 1500);
+    } catch (err: any) {
+      console.error('[AdminPortal] Error in handleSavePlayerBalance:', err);
+    } finally {
+      setIsSavingBalance(false);
+    }
+  };
+
+  // Toggle selection for 70 fichas result submission
+  const toggleFichaSelection = (id: number) => {
+    if (isCurrentRoundResultsLocked) return;
+    if (selectedResultFichas.includes(id)) {
+      setSelectedResultFichas(selectedResultFichas.filter((fId) => fId !== id));
+    } else {
+      if (selectedResultFichas.length >= 20) return;
+      setSelectedResultFichas([...selectedResultFichas, id]);
+    }
+  };
+
+  const handleAutoSelect20Fichas = () => {
+    if (isCurrentRoundResultsLocked) return;
+    const pool = FICHAS_POOL.map((f) => f.id);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    setSelectedResultFichas(pool.slice(0, 20));
+  };
+
+  const handleRequestOtp = async () => {
+    try {
+      setOtpModalFeedback(null);
+      setOtpRequestStatus('Enviando...');
+      let response = await fetch(API_ENDPOINTS.SEND_OTP, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: 'niutoncaraballo3@gmail.com' }),
+      }).catch(() => null);
+
+      if (!response || !response.ok) {
+        response = await fetch(API_ENDPOINTS.SUPABASE_SEND_OTP, {
+          method: 'POST',
+          headers: getSupabaseFunctionHeaders(),
+          body: JSON.stringify({ email: 'niutoncaraballo3@gmail.com' }),
+        }).catch((err) => {
+          console.warn('[Supabase Fallback Send Error]:', err);
+          return null;
+        });
+      }
+
+      if (response && response.ok) {
+        setOtpRequestStatus('Enviado ✓');
+        setOtpModalFeedback({
+          type: 'success',
+          text: 'Código de seguridad enviado a niutoncaraballo3@gmail.com (válido por 30 minutos)',
+        });
+        setTimeout(() => {
+          setOtpRequestStatus('📧 Reenviar Código');
+        }, 10000);
+      } else {
+        const errData = await response?.json().catch(() => ({}));
+        setOtpRequestStatus('📧 Solicitar Código');
+        setOtpModalFeedback({
+          type: 'error',
+          text: errData?.message || 'Error al enviar el código de verificación.',
+        });
+      }
+    } catch (err) {
+      setOtpRequestStatus('📧 Solicitar Código');
+      setOtpModalFeedback({
+        type: 'error',
+        text: 'Error de conexión al enviar el código de seguridad.',
+      });
+    }
+  };
+
+  const handleExecuteResultSubmission = async () => {
+    setResultSubmitMessage(null);
+    setOtpModalFeedback(null);
+
+    if (!canManageResults) {
+      setResultSubmitMessage({
+        success: false,
+        text: 'Acceso Denegado: Tu rol actual no tiene autorización para emitir o certificar resultados de sorteos.',
+      });
+      setShowResultConfirmModal(false);
+      return;
+    }
+
+    const trimmedOtp = otpInput.trim();
+    if (!trimmedOtp) {
+      setOtpModalFeedback({
+        type: 'error',
+        text: 'Por favor ingresa el código de verificación de 6 dígitos.',
+      });
+      return;
+    }
+
+    setIsSigningResult(true);
+    try {
+      let response = await fetch(API_ENDPOINTS.VERIFY_OTP, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code: trimmedOtp, email: 'niutoncaraballo3@gmail.com' }),
+      }).catch(() => null);
+
+      if (!response || !response.ok) {
+        response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
+          method: 'POST',
+          headers: getSupabaseFunctionHeaders(),
+          body: JSON.stringify({ code: trimmedOtp, email: 'niutoncaraballo3@gmail.com' }),
+        }).catch((err) => {
+          console.warn('[Supabase Fallback Verify Error]:', err);
+          return null;
+        });
+      }
+
+      const data = await response?.json().catch(() => ({}));
+      if (data && data.valid === true) {
+        const result = submitRoundResult(selectedRoundForResult, selectedResultFichas, trimmedOtp);
+        if (result.success) {
+          setResultSubmitMessage({ success: true, text: result.message });
+          setShowResultConfirmModal(false);
+          setSelectedResultFichas([]);
+          setOtpInput('');
+          setOtpModalFeedback(null);
+        } else {
+          setResultSubmitMessage({ success: false, text: result.message });
+        }
+      } else {
+        setOtpModalFeedback({
+          type: 'error',
+          text: data?.message || 'Código incorrecto o vencido.',
+        });
+      }
+    } catch (err: any) {
+      setOtpModalFeedback({
+        type: 'error',
+        text: 'Error al verificar el código de seguridad.',
+      });
+    } finally {
+      setIsSigningResult(false);
+    }
+  };
+
+  const handleSaveCommercialConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingConfig(true);
+    setConfigSaveMsg(null);
+
+    try {
+      const basePrice = Math.max(1, Number(precioCartonBaseVes) || 25);
+      const payload = {
+        adminBank: {
+          bankName: configBankName.trim(),
+          phone: configPhone.trim(),
+          rif: configRif.trim(),
+          holderName: configHolder.trim(),
+          type: 'Pago Móvil',
+        },
+        precio_carton_base_ves: basePrice,
+        singleCardPriceVes: basePrice,
+        cardPrices: {
+          pack2: basePrice * 2,
+          pack4: basePrice * 4,
+          pack6: basePrice * 6,
+        },
+        prizeMultipliers: {
+          ...commercialConfig.prizeMultipliers,
+          fullCard: Number(configFullCardMult) || 50,
+        },
+      };
+
+      const [res] = await Promise.all([
+        updateCommercialConfig(payload),
+        saveCommercialConfigToDb({ ...commercialConfig, ...payload }),
+      ]);
+
+      setConfigSaveMsg(res?.message || '¡Datos bancarios y parámetros comerciales sincronizados en vivo!');
+      setConfigSavedToast(true);
+      setTimeout(() => setConfigSavedToast(false), 4000);
+    } catch (err: any) {
+      setConfigSaveMsg('Parámetros guardados y emitidos.');
+      setConfigSavedToast(true);
+      setTimeout(() => setConfigSavedToast(false), 3000);
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in pb-12">
+      {/* Backoffice Header Bar */}
+      <div className="bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-950 rounded-3xl p-5 sm:p-7 text-white shadow-2xl border-2 border-purple-800/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-purple-300 font-black text-xs uppercase tracking-wider mb-1">
+            <Shield className="w-4 h-4 text-purple-400" />
+            <span>Panel de Administración Central (Backoffice v1.0)</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-white">
+            Tu Super Carton Management Console
+          </h1>
+          <p className="text-xs text-indigo-200 mt-1 max-w-xl">
+            Control de recargas Pago Móvil, auditoría de comprobantes, gestión de sorteos 4×4 y liquidación automatizada de premios.
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="flex flex-col items-start md:items-end gap-1.5 bg-purple-900/60 border border-purple-500/40 p-3.5 rounded-2xl max-w-sm">
+            <div className="flex items-center gap-2">
+              <div className={`w-9 h-9 rounded-xl bg-gradient-to-r ${currentRoleConfig.badgeColor} text-white flex items-center justify-center font-black shadow-md`}>
+                <Shield className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] text-purple-300 font-bold block uppercase tracking-wider">
+                  Rol: {currentRoleConfig.displayName} {loggedUsername ? `(@${loggedUsername})` : ''}
+                </span>
+                <span className="font-black text-sm text-white">{currentRoleConfig.displayName}</span>
+              </div>
+            </div>
+            <p className="text-[11px] text-purple-200/90 font-medium leading-tight">
+              {currentRoleConfig.description}
+            </p>
+          </div>
+
+          <button
+            id="admin-logout-btn"
+            onClick={logout}
+            className="flex items-center justify-center gap-2 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-black text-xs px-4 py-3 rounded-2xl shadow-lg shadow-rose-950/60 border border-rose-400/40 active:scale-95 transition-all"
+            title="Cerrar Sesión Segura del Sistema"
+          >
+            <LogOut className="w-4 h-4 stroke-[2.5]" />
+            <span>Cerrar Sesión</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Session & Permission Automatic Load Synchronizer Banner */}
+      <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-3 px-4.5 flex flex-wrap items-center justify-between gap-3 text-xs text-emerald-200 shadow-md">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          <span className="font-bold text-emerald-300">
+            Sesión y Permisos Independientes Activos:
+          </span>
+          <span className="bg-emerald-900/80 text-emerald-100 font-extrabold px-2.5 py-0.5 rounded-lg border border-emerald-500/50">
+            @{loggedUsername || 'Usuario'}
+          </span>
+          <span className="text-emerald-300/80 hidden sm:inline">
+            • Rol: <strong className="text-white">{currentRoleConfig.displayName}</strong> ({currentRoleConfig.allowedTabs.length} módulo{currentRoleConfig.allowedTabs.length !== 1 ? 's' : ''} habilitado{currentRoleConfig.allowedTabs.length !== 1 ? 's' : ''})
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-400 bg-slate-950/60 px-3 py-1 rounded-xl border border-emerald-500/30">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span>Actualizado Automáticamente</span>
+        </div>
+      </div>
+
+      {/* Main Navigation Tab Bar */}
+      <div className="bg-white rounded-2xl p-1.5 shadow-sm border border-slate-200 flex flex-wrap gap-1">
+        {[
+          { id: 'dashboard' as AdminTab, label: 'Tablero Principal', icon: LayoutDashboard, badge: 0 },
+          { id: 'recharges' as AdminTab, label: 'Auditoría Pago Móvil', icon: CreditCard, badge: pendingRechargesCount },
+          { id: 'withdrawals' as AdminTab, label: 'Gestión de Retiros', icon: ArrowUpRight, badge: pendingWithdrawalsCount },
+          { id: 'rounds' as AdminTab, label: 'Gestión de Sorteos', icon: Calendar, badge: 0 },
+          { id: 'results' as AdminTab, label: 'Ingreso de Resultados', icon: Sparkles, badge: 0 },
+          { id: 'commercial' as AdminTab, label: 'Configuración Comercial', icon: Settings, badge: 0 },
+          { id: 'audit' as AdminTab, label: 'Libro y Auditoría', icon: FileSpreadsheet, badge: 0 },
+          { id: 'users' as AdminTab, label: 'Usuarios y Balances', icon: Users, badge: 0 },
+          { id: 'operators' as AdminTab, label: 'Gestión de Personal', icon: KeyRound, badge: 0 },
+        ]
+          .filter((tab) => currentRoleConfig.allowedTabs.includes(tab.id))
+          .map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
+                  isActive
+                    ? 'bg-purple-900 text-white shadow-md'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-slate-400'}`} />
+                <span>{tab.label}</span>
+                {tab.badge > 0 && (
+                  <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-black animate-pulse">
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+      </div>
+
+      {/* ======================================================== */}
+      {/* TAB 1: DASHBOARD & FINANCIAL KPIS */}
+      {/* ======================================================== */}
+      {activeTab === 'dashboard' && (
+        <AdminDashboardView
+          formatMoney={formatMoney}
+          totalApprovedRechargesVes={totalApprovedRechargesVes}
+          totalCardsSalesVes={totalCardsSalesVes}
+          totalPrizesPaidVes={totalPrizesPaidVes}
+          netPlatformProfitVes={netPlatformProfitVes}
+          pendingRechargesCount={liveMetrics.recargasPendientesCount || pendingRechargesCount}
+          pendingWithdrawalsCount={liveMetrics.retirosPorPagarCount || pendingWithdrawalsCount}
+          totalPlayersCount={liveMetrics.totalJugadores || users.length}
+          pendingRechargesSumVes={liveMetrics.recargasPendientesSum}
+          dailyCardsSalesVes={liveMetrics.ventasDelDiaSum}
+          pendingWithdrawalsSumVes={liveMetrics.retirosPorPagarSum}
+          recharges={recharges}
+          cards={cards}
+          visibleActiveRounds={visibleActiveRounds}
+          setActiveTab={setActiveTab}
+          setSelectedRoundForResult={setSelectedRoundForResult}
+        />
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 2: AUDITORÍA DE PAGO MÓVIL (RECHARGES) */}
+      {/* ======================================================== */}
+      {activeTab === 'recharges' && (
+        <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-slate-900 text-base">
+                  Cola de Auditoría y Verificación de Recargas Pago Móvil
+                </h3>
+                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full">
+                  Módulo Financiero
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Verifica el registro, revisa los datos del comprobante, confirma el ingreso del dinero en la cuenta bancaria y aprueba la acreditación.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-xl flex items-center gap-1.5 shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Sincronización Automática en Vivo
+              </span>
+              <span className="text-xs font-bold text-amber-900 bg-amber-100 border border-amber-300 px-3 py-1 rounded-xl flex items-center gap-1.5 animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                {pendingRechargesCount} pendientes de verificación
+              </span>
+            </div>
+          </div>
+
+          {/* Realtime Alert Banner */}
+          {realtimeRechargeAlert && (
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-950 shadow-sm animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-200 flex items-center justify-center text-amber-900 font-bold shrink-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-600 animate-ping"></span>
+                </div>
+                <div>
+                  <h4 className="font-black text-xs uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                    ¡Nueva Solicitud de Recarga en Tiempo Real!
+                    <span className="bg-amber-200 text-amber-950 text-[10px] px-1.5 py-0.5 rounded font-bold">En Vivo</span>
+                  </h4>
+                  <p className="text-xs text-amber-800">
+                    <span className="font-bold">{realtimeRechargeAlert.userName}</span> reportó un pago de{' '}
+                    <span className="font-black">{formatMoney(realtimeRechargeAlert.amountVes)}</span> vía{' '}
+                    <span className="font-semibold">{realtimeRechargeAlert.bankOrigin || 'Pago Móvil'}</span> (Ref: {realtimeRechargeAlert.referenceNumber || 'S/R'}).
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 self-end sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRechargeForReview(realtimeRechargeAlert);
+                    setRealtimeRechargeAlert(null);
+                  }}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs px-3.5 py-1.5 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Revisar Ahora
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRealtimeRechargeAlert(null)}
+                  className="p-1.5 hover:bg-amber-100 text-amber-800 rounded-lg transition-all"
+                  title="Cerrar notificación"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Informative Banner */}
+          <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-blue-950 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                <Info className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-blue-900">
+                  Historial completo disponible en Libro y Auditoría y en Supabase
+                </p>
+                <p className="text-[11px] text-blue-700">
+                  Esta cola muestra hasta 50 registros por vista para optimizar la velocidad y fluidez. Toda la información histórica de pagos permanece permanentemente preservada en la base de datos.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('audit')}
+              className="bg-white hover:bg-blue-100/50 text-blue-800 border border-blue-200 text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-2xs shrink-0 self-end sm:self-center flex items-center gap-1.5 cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Ver Libro y Auditoría
+            </button>
+          </div>
+
+          {/* Search and Filters Bar */}
+          {(() => {
+            const displayPendingCount = Math.max(rechargeCounts.pending, recharges.filter((r) => r.status === 'pending').length);
+            const displayApprovedCount = Math.max(rechargeCounts.approved, recharges.filter((r) => r.status === 'approved').length);
+            const displayRejectedCount = Math.max(rechargeCounts.rejected, recharges.filter((r) => r.status === 'rejected').length);
+            const displayAllCount = Math.max(rechargeCounts.all, recharges.length, displayPendingCount + displayApprovedCount + displayRejectedCount);
+
+            return (
+              <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type="text"
+                    value={rechargeSearchTerm}
+                    onChange={(e) => setRechargeSearchTerm(e.target.value)}
+                    placeholder="Buscar por referencia, nombre de usuario, pagador, cédula o banco..."
+                    className="w-full bg-white border border-slate-200 focus:border-amber-500 pl-10 pr-4 py-2 rounded-xl text-xs font-medium text-slate-900 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRechargeTab('pending')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      rechargeFilterStatus === 'pending'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'bg-white text-amber-700 hover:bg-amber-50 border border-slate-200'
+                    }`}
+                  >
+                    Pendientes ({displayPendingCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRechargeTab('approved')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      rechargeFilterStatus === 'approved'
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-white text-emerald-700 hover:bg-emerald-50 border border-slate-200'
+                    }`}
+                  >
+                    Aprobados ({displayApprovedCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRechargeTab('rejected')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      rechargeFilterStatus === 'rejected'
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'bg-white text-rose-700 hover:bg-rose-50 border border-slate-200'
+                    }`}
+                  >
+                    Rechazados ({displayRejectedCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRechargeTab('all')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      rechargeFilterStatus === 'all'
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    Todos ({displayAllCount})
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                  <th className="pb-2.5">Comprobante</th>
+                  <th className="pb-2.5">Usuario Registrado</th>
+                  <th className="pb-2.5">Pagador / C.I.</th>
+                  <th className="pb-2.5">Banco y Referencia</th>
+                  <th className="pb-2.5">Monto (VES)</th>
+                  <th className="pb-2.5">Fecha y Auditoría</th>
+                  <th className="pb-2.5">Estatus</th>
+                  <th className="pb-2.5 text-right">Acción Operativa</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(() => {
+                  const filteredList = recharges.filter((rec) => {
+                    const matchesStatus =
+                      rechargeFilterStatus === 'all' || rec.status === rechargeFilterStatus;
+                    const searchLower = rechargeSearchTerm.toLowerCase();
+                    const matchesSearch =
+                      !rechargeSearchTerm ||
+                      (rec.referenceNumber || '').toLowerCase().includes(searchLower) ||
+                      (rec.userName || '').toLowerCase().includes(searchLower) ||
+                      (rec.payerName || '').toLowerCase().includes(searchLower) ||
+                      (rec.payerDocumentId || '').toLowerCase().includes(searchLower) ||
+                      (rec.bankOrigin || '').toLowerCase().includes(searchLower) ||
+                      (rec.userPhone || '').includes(searchLower);
+                    return matchesStatus && matchesSearch;
+                  });
+
+                  if (filteredList.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={8} className="py-10 text-center text-slate-400">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <Clock className="w-8 h-8 text-slate-300" />
+                            <p className="font-bold text-sm text-slate-600">No hay recargas en esta vista</p>
+                            <p className="text-xs text-slate-400">
+                              {rechargeSearchTerm ? 'No se encontraron resultados para la búsqueda actual.' : 'Todas las solicitudes han sido atendidas o no hay registros pendientes.'}
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filteredList.slice(0, 50).map((rec) => (
+                    <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3">
+                        <div className="relative group">
+                          <img
+                            src={rec.voucherImageUrl}
+                            alt="Comprobante"
+                            onClick={() => setSelectedVoucherForModal(rec.voucherImageUrl)}
+                            className="w-12 h-12 object-cover rounded-xl border border-slate-300 cursor-pointer group-hover:scale-105 transition-transform shadow-xs"
+                            title="Clic para ampliar comprobante"
+                          />
+                          <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center pointer-events-none transition-opacity">
+                            <Eye className="w-4 h-4 text-white" />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 font-semibold text-slate-900">
+                        <div className="font-bold text-slate-900">{rec.userName}</div>
+                        <div className="text-[10px] text-slate-500 font-mono">{rec.userPhone}</div>
+                      </td>
+                      <td className="py-3 text-slate-700">
+                        <div className="font-medium text-slate-900">{rec.payerName || rec.userName}</div>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          {rec.payerDocumentId ? `CI: ${rec.payerDocumentId}` : 'No especificada'}
+                        </div>
+                      </td>
+                      <td className="py-3">
+                        <div className="font-bold text-slate-800">{rec.bankOrigin}</div>
+                        <div className="font-mono text-indigo-900 font-bold bg-indigo-50 px-1.5 py-0.5 rounded inline-block text-[11px]">
+                          Ref: {rec.referenceNumber}
+                        </div>
+                        {rec.updatedAt && (
+                          <div className="text-[9px] text-amber-700 font-semibold mt-0.5">
+                            (Actualizada por usuario)
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 font-mono font-black text-sm text-emerald-600">
+                        {formatMoney(rec.amountVes)}
+                      </td>
+                      <td className="py-3 text-slate-500 text-[11px]">
+                        <div>{rec?.createdAt ? new Date(rec.createdAt).toLocaleDateString('es-VE') : ''}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {rec?.createdAt ? new Date(rec.createdAt).toLocaleTimeString('es-VE') : ''}
+                        </div>
+                      </td>
+                      <td className="py-3">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase inline-flex items-center gap-1 ${
+                            rec.status === 'approved'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : rec.status === 'pending'
+                              ? 'bg-amber-100 text-amber-900 animate-pulse'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {rec.status === 'approved' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                          {rec.status === 'pending' && <Clock className="w-3 h-3 text-amber-600" />}
+                          {rec.status === 'rejected' && <XCircle className="w-3 h-3 text-rose-600" />}
+                          {rec.status === 'approved'
+                            ? 'Aprobado'
+                            : rec.status === 'pending'
+                            ? 'Pendiente'
+                            : 'Rechazado'}
+                        </span>
+                        {rec.confirmedBankArrival && (
+                          <span className="block text-[9px] font-extrabold text-emerald-700 mt-0.5">
+                            ✓ Ingreso Confirmado
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 text-right">
+                        {rec.status === 'pending' ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                approveRecharge(rec.id);
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] px-3 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1 cursor-pointer"
+                              title="Aprobar recarga en recargas_pago_movil"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Aprobar</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedRechargeForReview(rec);
+                                setConfirmBankArrivalChecked(false);
+                              }}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] px-2 py-1.5 rounded-lg transition-all"
+                              title="Revisar comprobante y detalles"
+                            >
+                              Revisar
+                            </button>
+                            <button
+                              onClick={() => setRejectRechargeId(rec.id)}
+                              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] px-2 py-1.5 rounded-lg transition-all cursor-pointer"
+                              title="Rechazar recarga"
+                            >
+                              Rechazar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-500 font-medium block">
+                              {rec.processedBy || 'Operador'}
+                            </span>
+                            {rec?.processedAt && (
+                              <span className="text-[9px] text-slate-400 font-mono">
+                                {new Date(rec.processedAt).toLocaleString('es-VE')}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ));
+                })()}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination Controls */}
+          {(() => {
+            const displayPendingCount = Math.max(rechargeCounts.pending, recharges.filter((r) => r.status === 'pending').length);
+            const displayApprovedCount = Math.max(rechargeCounts.approved, recharges.filter((r) => r.status === 'approved').length);
+            const displayRejectedCount = Math.max(rechargeCounts.rejected, recharges.filter((r) => r.status === 'rejected').length);
+            const displayAllCount = Math.max(rechargeCounts.all, recharges.length, displayPendingCount + displayApprovedCount + displayRejectedCount);
+
+            const currentTabTotalItems =
+              rechargeFilterStatus === 'approved'
+                ? displayApprovedCount
+                : rechargeFilterStatus === 'rejected'
+                ? displayRejectedCount
+                : rechargeFilterStatus === 'pending'
+                ? displayPendingCount
+                : Math.min(100, displayAllCount);
+
+            const rechargePageSize = rechargeFilterStatus === 'all' ? 100 : 50;
+            const totalRechargePages = Math.max(1, Math.ceil(currentTabTotalItems / rechargePageSize));
+
+            return (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200 text-xs text-slate-600">
+                <div className="flex items-center gap-2">
+                  <span>
+                    Mostrando página <strong className="text-slate-900 font-bold">{rechargePage}</strong> de{' '}
+                    <strong className="text-slate-900 font-bold">{totalRechargePages}</strong>
+                  </span>
+                  <span className="text-slate-300">|</span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    (Carga liviana de máximo 50 por página &bull; Preservación total en Supabase)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleRechargePageChange(rechargePage - 1)}
+                    disabled={rechargePage <= 1}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    Anterior
+                  </button>
+                  <div className="px-3 py-1 text-xs font-black text-slate-900 bg-slate-100 rounded-lg border border-slate-200">
+                    {rechargePage} / {totalRechargePages}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRechargePageChange(rechargePage + 1)}
+                    disabled={rechargePage >= totalRechargePages}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                  >
+                    Siguiente
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 3: GESTIÓN DE RETIROS */}
+      {/* ======================================================== */}
+      {activeTab === 'withdrawals' && (
+        <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 space-y-4">
+          {/* Security Notice for Non-Privileged Roles */}
+          {!canManageWithdrawals && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-center gap-3 text-amber-900 text-xs">
+              <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
+              <div>
+                <span className="font-bold block">Control de Acceso Activo: Modo de Solo Lectura</span>
+                <span>
+                  Tu rol actual (<strong>{currentRoleConfig.displayName}</strong>) no posee privilegios para liquidar o rechazar pagos. Estas acciones están restringidas exclusivamente a <strong>Superadministrador</strong> y <strong>Operador Financiero</strong>.
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-slate-900 text-base">
+                  Solicitudes de Retiro de Fondos
+                </h3>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                    canManageWithdrawals
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {canManageWithdrawals ? 'Permiso Autorizado' : 'Solo Lectura'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Transfiere a los datos bancarios del usuario y marca como Completado.
+              </p>
+            </div>
+            <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-xl">
+              {pendingWithdrawalsCount} por liquidar
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                  <th className="pb-2.5">Beneficiario</th>
+                  <th className="pb-2.5">Canal y Banco</th>
+                  <th className="pb-2.5">Cuenta / Teléfono</th>
+                  <th className="pb-2.5">Monto (VES)</th>
+                  <th className="pb-2.5">Fecha</th>
+                  <th className="pb-2.5">Estado</th>
+                  <th className="pb-2.5 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {withdrawals.map((wth) => (
+                  <tr key={wth.id} className="hover:bg-slate-50">
+                    <td className="py-3 font-semibold text-slate-900">
+                      <div>{wth.titularName}</div>
+                      <div className="text-[10px] text-slate-400 font-mono">RIF/CI: {wth.documentId}</div>
+                    </td>
+                    <td className="py-3">
+                      <span className="font-bold text-slate-800">{wth.bankDest}</span>
+                      <div className="text-[10px] text-slate-500 uppercase">{wth.channel}</div>
+                    </td>
+                    <td className="py-3 font-mono font-bold text-indigo-900">
+                      {wth.phoneOrAccount}
+                    </td>
+                    <td className="py-3 font-mono font-black text-sm text-slate-900">
+                      {formatMoney(wth.amountVes)}
+                    </td>
+                    <td className="py-3 text-slate-500 text-[11px]">
+                      {wth?.createdAt ? new Date(wth.createdAt).toLocaleString('es-VE') : ''}
+                    </td>
+                    <td className="py-3">
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                          wth.status === 'completed'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : wth.status === 'pending'
+                            ? 'bg-amber-100 text-amber-900 animate-pulse'
+                            : 'bg-rose-100 text-rose-800'
+                        }`}
+                      >
+                        {wth.status === 'completed' ? 'Completado' : wth.status === 'pending' ? 'Pendiente' : 'Rechazado'}
+                      </span>
+                    </td>
+                    <td className="py-3 text-right">
+                      {wth.status === 'pending' ? (
+                        canManageWithdrawals ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => completeWithdrawal(wth.id)}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1"
+                              title="Marcar como pagado y liquidado"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Liquidado / Pagado</span>
+                            </button>
+                            <button
+                              onClick={() => setRejectWithdrawalId(wth.id)}
+                              className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1"
+                              title="Rechazar y devolver fondos al jugador"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>Rechazar</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-1 text-slate-400 font-medium text-[11px] italic">
+                            <Lock className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Requiere Op. Financiero</span>
+                          </div>
+                        )
+                      ) : (
+                        <span className="text-[10px] text-slate-400">
+                          {wth?.processedBy || 'Operador'} {wth?.processedAt ? `(${new Date(wth.processedAt).toLocaleTimeString('es-VE')})` : ''}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 4: GESTIÓN DE SORTEOS & CRONOGRAMAS */}
+      {/* ======================================================== */}
+      {activeTab === 'rounds' && (
+        <div className="space-y-6">
+          {/* Create New Round Form (SorteoForm) - con orden calculado seguro */}
+          <SorteoForm nextOrder={calculatedNextOrder} />
+
+          {/* Feedback Toast */}
+          {savedRoundFeedback && (
+            <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-3 rounded-2xl text-xs font-bold flex items-center justify-between animate-in fade-in">
+              <span>{savedRoundFeedback}</span>
+              <button
+                onClick={() => setSavedRoundFeedback(null)}
+                className="text-emerald-700 hover:text-emerald-950 font-black"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Existing Rounds Table - Listado de Rondas y Monitor Financiero */}
+          <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+                  <span>Listado de Rondas y Monitor Financiero en Tiempo Real</span>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    RAM Optimizada
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Muestra la recaudación en vivo, el pozo de premios calculado y la ganancia de la casa. Todos los sorteos finalizados son eliminados directa y permanentemente de la vista sin funcionalidad de archivo, conservando únicamente los sorteos prioritarios o programados (máximo 7).
+                </p>
+              </div>
+
+              {/* Controles de ventana de sorteos activos y programados (máximo 7) */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold border border-slate-200">
+                  <div className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 bg-indigo-950 text-amber-300 shadow-xs">
+                    <span>⚡ Sorteos Visibles</span>
+                    <span className="text-[10px] bg-amber-400/20 text-amber-200 px-1.5 py-0.5 rounded-md font-mono">
+                      {visibleActiveRounds.length}/{roundsWindowLimit}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Selector de límite (hasta 7 sorteos visibles) */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold border border-slate-200">
+                  <span className="text-[10px] text-slate-400 uppercase font-black px-1.5 hidden sm:inline">Límite:</span>
+                  <button
+                    type="button"
+                    onClick={() => setRoundsWindowLimit(6)}
+                    className={`px-2.5 py-1 rounded-lg transition-all text-xs font-bold cursor-pointer ${
+                      roundsWindowLimit === 6
+                        ? 'bg-white text-indigo-950 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                    title="Mantener un máximo de 6 sorteos activos o programados en la vista"
+                  >
+                    6 Máx
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRoundsWindowLimit(7)}
+                    className={`px-2.5 py-1 rounded-lg transition-all text-xs font-bold cursor-pointer ${
+                      roundsWindowLimit === 7
+                        ? 'bg-white text-indigo-950 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                    title="Mantener un máximo de 7 sorteos activos o programados en la vista"
+                  >
+                    7 Máx
+                  </button>
+                </div>
+
+                {/* Botón de Purga Inmediata de Expirados */}
+                <button
+                  type="button"
+                  onClick={() => purgeCompletedRounds()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold border border-slate-200 transition-all cursor-pointer shadow-xs"
+                  title="Purgar de inmediato sorteos finalizados o antiguos con hora expirada para liberar espacio en la tabla"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Purgar Expirados</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Banner informativo de purga automática de sorteos finalizados o expirados */}
+            <div className="bg-emerald-50/70 border border-emerald-200/80 px-4 py-2.5 rounded-2xl flex items-center justify-between gap-2 text-xs text-emerald-900 font-medium">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">⚡</span>
+                <span>
+                  <strong>Purga Automática en Tiempo Real:</strong> Cualquier sorteo que ya figure con estado finalizado o cuya hora de inicio ya haya expirado (incluyendo sorteos antiguos en estado 'LIVE' o 'Cerrado') es eliminado automáticamente de la vista. Esto libera espacio de forma permanente para nuevos sorteos programados, respetando estrictamente el límite visual configurado (máximo {roundsWindowLimit}).
+                </span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                    <th className="pb-2.5">Orden / Ronda</th>
+                    <th className="pb-2.5">Estado</th>
+                    <th className="pb-2.5">Horario Inicio</th>
+                    <th className="pb-2.5">Precio Cartón</th>
+                    <th className="pb-2.5">% Premio</th>
+                    <th className="pb-2.5">Vendidos</th>
+                    <th className="pb-2.5">Recaudado</th>
+                    <th className="pb-2.5">Premio Actual</th>
+                    <th className="pb-2.5">Ganancia Casa</th>
+                    <th className="pb-2.5 text-right">Acciones y Config</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {currentTableRounds.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="py-8 text-center text-slate-400 font-medium">
+                        No hay sorteos programados o activos en la interfaz visual en este momento. Al programar o abrir nuevos sorteos aparecerán aquí automáticamente.
+                      </td>
+                    </tr>
+                  )}
+                  {currentTableRounds.map((round) => {
+                    const statusLower = String(round.status || '').toLowerCase();
+                    const isStarted = statusLower !== 'scheduled';
+                    const effectivePrice =
+                      editingRoundConfigs[round.id]?.card_price !== undefined
+                        ? editingRoundConfigs[round.id].card_price
+                        : round.card_price || round.cardPriceVes || 25;
+                    const effectivePrizePct =
+                      editingRoundConfigs[round.id]?.prize_percentage !== undefined
+                        ? editingRoundConfigs[round.id].prize_percentage
+                        : round.prize_percentage !== undefined
+                        ? round.prize_percentage
+                        : 70;
+
+                    const totalSold = round.totalCardsSold || 0;
+                    const totalRecaudado = totalSold * effectivePrice;
+                    const calculatedPrize = Math.max(
+                      round.jackpotVes || 0,
+                      totalRecaudado * (effectivePrizePct / 100)
+                    );
+                    const gananciaCasa = totalRecaudado - (round.status === 'finished' ? (round.totalPrizesPaidVes || 0) : calculatedPrize);
+
+                    return (
+                      <tr key={round.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 font-bold text-slate-900">
+                          <div className="flex items-center gap-1.5">
+                            <span className="bg-indigo-950 text-amber-300 px-2 py-0.5 rounded font-mono text-[11px]">
+                              #{round.order || round.roundNumber}
+                            </span>
+                            <span className="truncate max-w-[140px]" title={round.title}>
+                              {round.title}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="py-3">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase inline-flex items-center gap-1 ${
+                                statusLower === 'open'
+                                  ? 'bg-emerald-100 text-emerald-800 animate-pulse'
+                                  : statusLower === 'scheduled'
+                                  ? 'bg-indigo-100 text-indigo-900'
+                                  : statusLower === 'closed' || statusLower === 'cerrado'
+                                  ? 'bg-amber-100 text-amber-900'
+                                  : statusLower === 'live' || statusLower === 'drawing'
+                                  ? 'bg-rose-100 text-rose-800 animate-pulse'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {(statusLower === 'open' || statusLower === 'live' || statusLower === 'drawing') && (
+                                <span className={`w-1.5 h-1.5 rounded-full ${statusLower === 'open' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                              )}
+                              {isRoundResultsLocked(round)
+                                ? 'CERRADO (VALIDADO)'
+                                : (statusLower === 'closed' || statusLower === 'cerrado' || round.isBettingClosed)
+                                ? 'APUESTAS CERRADAS (ESPERANDO RESULTADOS)'
+                                : round.status}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="py-3 text-slate-500">
+                          {(() => {
+                            const raw = round?.starts_at || round?.openBetAt || round?.drawAt || round?.created_at;
+                            const d = raw ? new Date(raw) : null;
+                            return !d || isNaN(d.getTime()) ? 'Próximamente' : d.toLocaleString('es-VE', {
+                              timeZone: 'America/Caracas',
+                              month: 'numeric',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            });
+                          })()}
+                        </td>
+
+                        {/* Editable or Locked Card Price */}
+                        <td className="py-3">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              disabled={isStarted}
+                              value={effectivePrice}
+                              onChange={(e) => {
+                                const val = Math.max(1, Number(e.target.value));
+                                setEditingRoundConfigs((prev) => ({
+                                  ...prev,
+                                  [round.id]: {
+                                    card_price: val,
+                                    prize_percentage: effectivePrizePct,
+                                  },
+                                }));
+                              }}
+                              className={`w-16 px-2 py-1 rounded-lg text-xs font-mono font-bold border ${
+                                isStarted
+                                  ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed'
+                                  : 'bg-white border-amber-400 text-slate-900 focus:outline-none'
+                              }`}
+                              title={isStarted ? 'Bloqueado una vez iniciado el sorteo' : 'Editable'}
+                            />
+                            {isStarted && <Lock className="w-3 h-3 text-slate-400" />}
+                          </div>
+                        </td>
+
+                        {/* Editable Prize Percentage */}
+                        <td className="py-3">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="10"
+                              max="95"
+                              value={effectivePrizePct}
+                              onChange={(e) => {
+                                const val = Math.min(95, Math.max(10, Number(e.target.value)));
+                                setEditingRoundConfigs((prev) => ({
+                                  ...prev,
+                                  [round.id]: {
+                                    card_price: effectivePrice,
+                                    prize_percentage: val,
+                                  },
+                                }));
+                              }}
+                              className="w-14 px-2 py-1 rounded-lg text-xs font-mono font-bold border bg-white border-indigo-300 text-slate-900 focus:outline-none"
+                            />
+                            <span className="text-slate-400 font-bold">%</span>
+                          </div>
+                        </td>
+
+                        <td className="py-3 font-mono font-bold text-slate-800">
+                          {totalSold}
+                        </td>
+
+                        <td className="py-3 font-mono font-bold text-indigo-950">
+                          {formatMoney(totalRecaudado)}
+                        </td>
+
+                        <td className="py-3 font-mono font-black text-amber-600">
+                          {formatMoney(calculatedPrize)}
+                        </td>
+
+                        <td className="py-3 font-mono font-black text-emerald-600">
+                          {formatMoney(gananciaCasa)}
+                        </td>
+
+                        <td className="py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {editingRoundConfigs[round.id] && (
+                              <button
+                                onClick={() => {
+                                  updateRoundConfig(round.id, editingRoundConfigs[round.id]);
+                                  setSavedRoundFeedback(`Configuración actualizada para ${round.title}`);
+                                  setEditingRoundConfigs((prev) => {
+                                    const copy = { ...prev };
+                                    delete copy[round.id];
+                                    return copy;
+                                  });
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] px-2 py-1 rounded-lg shadow-sm cursor-pointer"
+                              >
+                                Guardar
+                              </button>
+                            )}
+
+                            {statusLower === 'scheduled' && (
+                              <button
+                                onClick={() => setRoundStatus(round.id, 'open')}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] px-2 py-1 rounded-lg cursor-pointer"
+                              >
+                                Abrir Apuestas
+                              </button>
+                            )}
+                            {statusLower === 'open' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRoundStatus(round.id, 'closed');
+                                  setSelectedRoundForResult(round.id);
+                                }}
+                                title="Inhabilita la compra de cartones y mantiene la sesión activa para el ingreso de resultados"
+                                className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg cursor-pointer flex items-center gap-1 shadow-sm transition-all active:scale-95"
+                              >
+                                <Lock className="w-3 h-3" />
+                                <span>Cerrar Apuesta</span>
+                              </button>
+                            )}
+                            {isRoundResultsLocked(round) ? (
+                              <button
+                                type="button"
+                                disabled
+                                title="Figuras ya guardadas y validadas. Sorteo en estado Cerrado para evitar cambios posteriores."
+                                className="bg-slate-200 text-slate-500 font-bold text-[10px] px-2 py-1 rounded-lg cursor-not-allowed border border-slate-300 flex items-center gap-1 opacity-75 shadow-none"
+                              >
+                                <Lock className="w-3 h-3 text-slate-500" />
+                                <span>Figuras Validadas</span>
+                              </button>
+                            ) : statusLower !== 'finished' ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedRoundForResult(round.id);
+                                  setActiveTab('results');
+                                }}
+                                className={`font-bold text-[10px] px-2.5 py-1 rounded-lg cursor-pointer flex items-center gap-1 shadow-sm transition-all ${
+                                  statusLower === 'closed' || statusLower === 'cerrado'
+                                    ? 'bg-indigo-900 hover:bg-indigo-800 text-amber-300 border border-amber-500/50 animate-pulse'
+                                    : 'bg-indigo-900 hover:bg-indigo-800 text-amber-300'
+                                }`}
+                              >
+                                <Edit3 className="w-3 h-3 text-amber-400" />
+                                <span>Ingresar Figuras</span>
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 5: INGRESO SEGURO DE RESULTADOS (70-FICHA SELECTOR) */}
+      {/* ======================================================== */}
+      {activeTab === 'results' && (
+        <div className="bg-white rounded-3xl p-5 sm:p-7 shadow-lg border border-slate-200 space-y-5">
+          {/* Security Notice for Non-Privileged Roles */}
+          {!canManageResults && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-center gap-3 text-amber-900 text-xs">
+              <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
+              <div>
+                <span className="font-bold block">Control de Acceso Activo: Modo de Solo Lectura</span>
+                <span>
+                  Tu rol actual (<strong>{currentRoleConfig.displayName}</strong>) no tiene autorización para emitir o certificar resultados de sorteos. Esta acción está restringida exclusivamente a <strong>Superadministrador</strong> y <strong>Operador Financiero</strong>.
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-slate-900 text-lg">
+                  Ingreso Seguro de Figuras Ganadoras (Punto Único de Verdad)
+                </h3>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                    canManageResults
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {canManageResults ? 'Emisión Oficial Habilitada' : 'Solo Lectura'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                El resultado ingresado aquí es el único dato válido que se distribuirá en tiempo real a todos los clientes (en vivo y retransmisión).
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedRoundForResult}
+                onChange={(e) => setSelectedRoundForResult(e.target.value)}
+                disabled={!canManageResults}
+                className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 disabled:opacity-60"
+              >
+                {visibleActiveRounds.map((r) => {
+                  const isLocked = isRoundResultsLocked(r);
+                  return (
+                    <option key={r.id} value={r.id}>
+                      {r.title} (#{r.roundNumber}) - {r.status === 'closed' ? 'Cerrado' : r.status} {isLocked ? '🔒 (Figuras Guardadas)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          {/* Banner de estado: Sorteo Cerrado con Figuras Validadas */}
+          {isCurrentRoundResultsLocked && (
+            <div className="bg-slate-900 text-white rounded-2xl p-4 border-2 border-amber-500 shadow-md flex items-center gap-3 animate-in fade-in">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-indigo-950 flex items-center justify-center shrink-0 shadow-md">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-black text-sm text-amber-300 uppercase tracking-wide">
+                    Sorteo #{currentResultRound?.roundNumber} • Estado: Cerrado
+                  </span>
+                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    Figuras Guardadas y Validadas Oficialmente
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1">
+                  La opción <strong>"Ingresar Figuras"</strong> se encuentra deshabilitada para este sorteo porque las figuras ya fueron guardadas y validadas, y el estado cambió a <strong>Cerrado</strong> para evitar cambios posteriores y blindar la transparencia de los resultados.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Feedback banner */}
+          {resultSubmitMessage && (
+            <div
+              className={`p-4 rounded-2xl text-xs font-bold flex items-center gap-2 ${
+                resultSubmitMessage.success
+                  ? 'bg-emerald-50 text-emerald-900 border border-emerald-300'
+                  : 'bg-rose-50 text-rose-900 border border-rose-300'
+              }`}
+            >
+              {resultSubmitMessage.success ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <AlertTriangle className="w-5 h-5 text-rose-600" />}
+              <span>{resultSubmitMessage.text}</span>
+            </div>
+          )}
+
+          {/* Selector Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-700">Figuras Seleccionadas:</span>
+              <span className="font-mono font-black text-sm bg-indigo-950 text-amber-300 px-2.5 py-0.5 rounded-lg">
+                {selectedResultFichas.length} / 20
+              </span>
+              {isCurrentRoundResultsLocked && (
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> Bloqueado (Solo Lectura)
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={!canManageResults || isCurrentRoundResultsLocked}
+                onClick={handleAutoSelect20Fichas}
+                className="bg-indigo-100 hover:bg-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-900 font-bold text-xs px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+              >
+                🍏 Auto-Seleccionar 20 Figuras Aleatorias
+              </button>
+              <button
+                type="button"
+                disabled={!canManageResults || isCurrentRoundResultsLocked}
+                onClick={() => !isCurrentRoundResultsLocked && setSelectedResultFichas([])}
+                className="bg-slate-200 hover:bg-slate-300 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-bold text-xs px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+              >
+                Limpiar Selección
+              </button>
+            </div>
+          </div>
+
+          {/* 70 Fichas Grid */}
+          <div className="grid grid-cols-4 sm:grid-cols-7 md:grid-cols-10 gap-2 max-h-[420px] overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-200">
+            {FICHAS_POOL.map((ficha) => {
+              const isSelected = selectedResultFichas.includes(ficha.id);
+              const isDisabled = !canManageResults || isCurrentRoundResultsLocked;
+              return (
+                <div
+                  key={ficha.id}
+                  onClick={() => {
+                    if (canManageResults && !isCurrentRoundResultsLocked) toggleFichaSelection(ficha.id);
+                  }}
+                  className={`p-2 rounded-2xl border-2 text-center transition-all flex flex-col items-center justify-center ${
+                    isDisabled ? 'cursor-not-allowed opacity-85' : 'cursor-pointer'
+                  } ${
+                    isSelected
+                      ? 'bg-gradient-to-b from-amber-300 to-yellow-300 border-amber-500 shadow-md scale-102 font-black text-indigo-950 ring-2 ring-amber-400'
+                      : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                  }`}
+                >
+                  <span className="text-[9px] font-mono opacity-70">#{ficha.id}</span>
+                  <span className="text-2xl my-1">{ficha.emoji}</span>
+                  <span className="text-[10px] font-bold truncate max-w-full">{ficha.name}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Submit Trigger Button */}
+          <div className="flex justify-end pt-3">
+            {isCurrentRoundResultsLocked ? (
+              <button
+                type="button"
+                disabled
+                className="px-6 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2 bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300"
+              >
+                <Lock className="w-4 h-4 text-slate-500" />
+                <span>Opción Deshabilitada: Figuras Guardadas y Validadas (Sorteo Cerrado)</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={selectedResultFichas.length < 16 || !canManageResults}
+                onClick={() => setShowResultConfirmModal(true)}
+                className={`px-6 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 cursor-pointer ${
+                  selectedResultFichas.length < 16 || !canManageResults
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-indigo-950 shadow-amber-500/25 active:scale-95'
+                }`}
+              >
+                <Lock className="w-4 h-4" />
+                <span>Validar y Procesar Liquidación Oficial ({selectedResultFichas.length} Fichas)</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 6: CONFIGURACIÓN COMERCIAL & RIESGO */}
+      {/* ======================================================== */}
+      {activeTab === 'commercial' && (
+        <form onSubmit={handleSaveCommercialConfig} className="bg-white rounded-3xl p-5 sm:p-7 shadow-lg border border-slate-200 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+            <div>
+              <h3 className="font-black text-slate-900 text-lg">
+                Parámetros Comerciales y Control de Riesgo
+              </h3>
+              <p className="text-xs text-slate-500">
+                Ajusta las cuentas receptoras de Pago Móvil, precios de paquetes y multiplicadores de premio. Se sincronizan en vivo con todos los jugadores.
+              </p>
+            </div>
+            {configSavedToast && (
+              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3.5 py-2 rounded-xl border border-emerald-200 flex items-center gap-1.5 shadow-sm animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>{configSaveMsg || '¡Configuración Guardada y Sincronizada!'}</span>
+              </span>
+            )}
+          </div>
+
+          {/* Admin Bank Details */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-black uppercase text-indigo-950 tracking-wider">
+                Datos Bancarios para Recepción de Pago Móvil (Públicos para Recargas)
+              </h4>
+              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                Transmisión en tiempo real
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nombre del Banco</label>
+                <input
+                  type="text"
+                  value={configBankName}
+                  onChange={(e) => setConfigBankName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none transition-all"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Teléfono Receptor Pago Móvil</label>
+                <input
+                  type="text"
+                  value={configPhone}
+                  onChange={(e) => setConfigPhone(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:bg-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none transition-all"
+                  placeholder="0424-8653039"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">RIF / C.I. Titular</label>
+                <input
+                  type="text"
+                  value={configRif}
+                  onChange={(e) => setConfigRif(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:bg-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none transition-all"
+                  placeholder="J-50769027-0"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Razón Social / Titular</label>
+                <input
+                  type="text"
+                  value={configHolder}
+                  onChange={(e) => setConfigHolder(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none transition-all"
+                  placeholder="Nombre de la empresa o titular"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Pricing & Calculated Packs */}
+          <div className="pt-4 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-black uppercase text-indigo-950 tracking-wider">
+                Precios de Paquetes de Cartones y Precio Base
+              </h4>
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                Packs calculados dinámicamente
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs font-black text-indigo-950 mb-1 flex items-center justify-between">
+                  <span>PRECIO 1 CARTON (VES)</span>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-1.5 py-0.5 rounded">Maestro</span>
+                </label>
+                <div className="relative">
+                  <input
+                    id="input-precio-carton-base-ves"
+                    name="precio_carton_base_ves"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={precioCartonBaseVes}
+                    onChange={(e) => setPrecioCartonBaseVes(Math.max(1, Number(e.target.value) || 0))}
+                    className="w-full bg-amber-50/60 border-2 border-amber-400 rounded-xl px-3 py-2 text-xs font-mono font-black text-indigo-950 focus:bg-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none transition-all shadow-xs"
+                    required
+                  />
+                  <span className="absolute right-3 top-2 text-[11px] font-bold text-amber-700">VES</span>
+                </div>
+                <span className="text-[10px] text-slate-500 font-medium mt-1 block">Precio base por unidad</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Pack 2 Cartones (VES)
+                </label>
+                <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-black text-slate-900 flex items-center justify-between min-h-[34px]">
+                  <span>{formatMoney(precioCartonBaseVes * 2)}</span>
+                  <span className="text-[10px] font-semibold text-slate-500 font-sans">2x</span>
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block">Auto: Base × 2</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Pack 4 Cartones (VES)
+                </label>
+                <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-black text-slate-900 flex items-center justify-between min-h-[34px]">
+                  <span>{formatMoney(precioCartonBaseVes * 4)}</span>
+                  <span className="text-[10px] font-semibold text-slate-500 font-sans">4x</span>
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block">Auto: Base × 4</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Pack 6 Cartones (VES)
+                </label>
+                <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-black text-slate-900 flex items-center justify-between min-h-[34px]">
+                  <span>{formatMoney(precioCartonBaseVes * 6)}</span>
+                  <span className="text-[10px] font-semibold text-slate-500 font-sans">6x</span>
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block">Auto: Base × 6</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-3">
+            <div className="text-[11px] text-slate-500 font-medium">
+              Al guardar, los datos se enviarán inmediatamente a la base de datos y a la vista de recargas de todos los usuarios.
+            </div>
+            <button
+              type="submit"
+              disabled={isSavingConfig}
+              className="bg-indigo-950 hover:bg-indigo-900 disabled:opacity-50 text-amber-300 font-black text-xs px-6 py-3 rounded-2xl shadow-lg transition-all flex items-center gap-2"
+            >
+              {isSavingConfig ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-amber-300" />
+                  <span>Sincronizando...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-amber-300" />
+                  <span>Guardar Parámetros Comerciales</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 7: LIBRO CONTABLE & BITÁCORA DE AUDITORÍA */}
+      {/* ======================================================== */}
+      {activeTab === 'audit' && (
+        <div className="space-y-6">
+          {currentRoleConfig.isReadOnly && (
+            <div className="bg-cyan-50 border border-cyan-200 rounded-2xl p-4 flex items-center gap-3 text-cyan-900">
+              <div className="w-9 h-9 rounded-xl bg-cyan-600 text-white flex items-center justify-center flex-shrink-0 font-black">
+                <Eye className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-black text-xs uppercase tracking-wider">Modo Solo Lectura - Acceso Auditor</h4>
+                <p className="text-xs text-cyan-700">
+                  Usted tiene permisos de supervisión y verificación de registros. No se permiten modificaciones ni alteración de datos.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Libro Contable Mayor con Filtros por Fecha */}
+          <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+                  <span>Libro Contable Mayor (General Ledger)</span>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-900 font-black px-2 py-0.5 rounded-full">
+                    Auditoría Financiera
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Registro cronológico exhaustivo de ingresos, egresos y variaciones de balance.
+                </p>
+              </div>
+
+              {/* Filtros de Fecha */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase px-1">Desde:</span>
+                  <input
+                    type="date"
+                    value={ledgerDateFrom}
+                    onChange={(e) => setLedgerDateFrom(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono text-slate-800 outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase px-1">Hasta:</span>
+                  <input
+                    type="date"
+                    value={ledgerDateTo}
+                    onChange={(e) => setLedgerDateTo(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono text-slate-800 outline-none"
+                  />
+                </div>
+                {(ledgerDateFrom || ledgerDateTo) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLedgerDateFrom('');
+                      setLedgerDateTo('');
+                    }}
+                    className="text-xs font-bold text-rose-600 hover:text-rose-800 px-2 py-1 bg-rose-50 rounded-lg border border-rose-200"
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Totales Agregados Cuadrados con Transacciones Reales */}
+            {(() => {
+              const filteredLedgerEntries = ledger.filter((entry) => {
+                if (!entry.createdAt) return true;
+                const d = new Date(entry.createdAt).getTime();
+                if (ledgerDateFrom && d < new Date(ledgerDateFrom + 'T00:00:00').getTime()) return false;
+                if (ledgerDateTo && d > new Date(ledgerDateTo + 'T23:59:59').getTime()) return false;
+                return true;
+              });
+
+              const periodIngresos = filteredLedgerEntries
+                .filter((e) =>
+                  e.type === 'recharge_approved' ||
+                  e.type === 'recharge' ||
+                  e.type === 'CARD_PURCHASE' ||
+                  e.type === 'card_purchase' ||
+                  e.type === 'admin_adjustment_credit'
+                )
+                .reduce((sum, e) => sum + Math.abs(e.amountVes || 0), 0);
+
+              const periodEgresos = filteredLedgerEntries
+                .filter((e) =>
+                  e.type === 'withdrawal_paid' ||
+                  e.type === 'withdrawal' ||
+                  e.type === 'prize_payout' ||
+                  e.type === 'admin_adjustment_debit'
+                )
+                .reduce((sum, e) => sum + Math.abs(e.amountVes || 0), 0);
+
+              const periodNeto = periodIngresos - periodEgresos;
+
+              return (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block mb-1">
+                        Ingresos Totales (Período)
+                      </span>
+                      <div className="text-2xl font-mono font-black text-emerald-700">
+                        {formatMoney(periodIngresos)}
+                      </div>
+                      <span className="text-[10px] text-emerald-600 font-medium mt-1 block">
+                        Recargas aprobadas + Ventas cartones
+                      </span>
+                    </div>
+
+                    <div className="bg-rose-50/70 border border-rose-200 rounded-2xl p-4">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-rose-800 block mb-1">
+                        Egresos Totales (Período)
+                      </span>
+                      <div className="text-2xl font-mono font-black text-rose-700">
+                        {formatMoney(periodEgresos)}
+                      </div>
+                      <span className="text-[10px] text-rose-600 font-medium mt-1 block">
+                        Retiros liquidados + Premios distribuidos
+                      </span>
+                    </div>
+
+                    <div className="bg-indigo-950 text-white rounded-2xl p-4 border border-indigo-800">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 block mb-1">
+                        Balance Neto Operativo
+                      </span>
+                      <div className={`text-2xl font-mono font-black ${periodNeto >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {formatMoney(periodNeto)}
+                      </div>
+                      <span className="text-[10px] text-slate-300 font-medium mt-1 block">
+                        Ingresos − Egresos en tiempo real
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto max-h-[340px]">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                          <th className="pb-2">Fecha / Hora</th>
+                          <th className="pb-2">Operación / Tipo</th>
+                          <th className="pb-2">Usuario / Titular</th>
+                          <th className="pb-2">Concepto / Referencia</th>
+                          <th className="pb-2 text-right">Monto (VES)</th>
+                          <th className="pb-2 text-right">Saldo Resultante</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {filteredLedgerEntries.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-8 text-center text-slate-400">
+                              No hay movimientos contables en el rango de fechas seleccionado.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredLedgerEntries.map((entry) => {
+                            const isIncome =
+                              entry.type === 'recharge_approved' ||
+                              entry.type === 'recharge' ||
+                              entry.type === 'CARD_PURCHASE' ||
+                              entry.type === 'card_purchase' ||
+                              entry.type === 'admin_adjustment_credit';
+
+                            return (
+                              <tr key={entry.id} className="hover:bg-slate-50">
+                                <td className="py-2.5 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                                  {entry?.createdAt ? new Date(entry.createdAt).toLocaleString('es-VE') : ''}
+                                </td>
+                                <td className="py-2.5">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                    isIncome ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                  }`}>
+                                    {entry.type}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 font-bold text-slate-900">{entry.userName || 'Sistema'}</td>
+                                <td className="py-2.5 text-slate-600 max-w-xs truncate">{entry.description || '-'}</td>
+                                <td className={`py-2.5 text-right font-mono font-black ${
+                                  isIncome ? 'text-emerald-600' : 'text-rose-600'
+                                }`}>
+                                  {isIncome ? '+' : '-'}{formatMoney(Math.abs(entry.amountVes || 0))}
+                                </td>
+                                <td className="py-2.5 text-right font-mono text-slate-700">
+                                  {entry.balanceAfter !== undefined ? formatMoney(entry.balanceAfter) : '-'}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
+          {/* Audit Logs */}
+          <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200">
+            <h3 className="font-black text-slate-900 text-base mb-1">
+              Bitácora de Auditoría de Operadores (Audit Trail)
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Registro inalterable de cada acción administrativa ejecutada en el Backoffice.
+            </p>
+
+            <div className="overflow-x-auto max-h-[380px]">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                    <th className="pb-2">Timestamp</th>
+                    <th className="pb-2">Operador / Rol</th>
+                    <th className="pb-2">Acción</th>
+                    <th className="pb-2">Detalles</th>
+                    <th className="pb-2 text-right">IP</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {auditLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50">
+                      <td className="py-2.5 text-slate-500 text-[11px] whitespace-nowrap">
+                        {log?.timestamp ? new Date(log.timestamp).toLocaleString('es-VE') : ''}
+                      </td>
+                      <td className="py-2.5">
+                        <span className="font-bold text-slate-900">{log.operatorName}</span>
+                        <div className="text-[10px] text-purple-700 font-semibold">{log.operatorRole}</div>
+                      </td>
+                      <td className="py-2.5">
+                        <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md font-mono text-[10px] font-bold">
+                          {log.action}
+                        </span>
+                      </td>
+                      <td className="py-2.5 text-slate-700 max-w-sm">{log.details}</td>
+                      <td className="py-2.5 text-right font-mono text-slate-400">{log.ip}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 8: USUARIOS Y JUGADORES REGISTRADOS (/admin) */}
+      {/* ======================================================== */}
+      {activeTab === 'users' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl p-5 shadow-lg border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-black text-slate-900 text-base">
+                  Auditoría Financiera de Balances de Usuario
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Cargado directo desde Supabase. Permite modificar saldos de manera autorizada y registrada.
+                </p>
+              </div>
+              <span className="text-xs font-bold text-indigo-900 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-xl">
+                {users.length} jugadores en base de datos
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                    <th className="pb-2.5">Usuario</th>
+                    <th className="pb-2.5">C.I. / RIF</th>
+                    <th className="pb-2.5">Disponible</th>
+                    <th className="pb-2.5">Pendiente</th>
+                    <th className="pb-2.5">Bloqueado</th>
+                    <th className="pb-2.5">Total Ganado</th>
+                    <th className="pb-2.5 text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {users.map((u) => (
+                    <tr key={u.id} className="hover:bg-slate-50">
+                      <td className="py-3 font-semibold text-slate-900">
+                        <div>{u.name}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{u.phone}</div>
+                      </td>
+                      <td className="py-3 font-mono font-bold text-slate-700">{u.documentId}</td>
+                      <td className="py-3 font-mono font-black text-emerald-600">
+                        {formatMoney(u.availableBalance)}
+                      </td>
+                      <td className="py-3 font-mono font-bold text-amber-600">
+                        {formatMoney(u.pendingBalance)}
+                      </td>
+                      <td className="py-3 font-mono font-bold text-indigo-600">
+                        {formatMoney(u.lockedBalance)}
+                      </td>
+                      <td className="py-3 font-mono font-bold text-slate-800">
+                        {formatMoney(u.totalWonVes)}
+                      </td>
+                      <td className="py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingBalanceUser(u);
+                            setEditBalanceAmount(u.availableBalance || 0);
+                            setEditBalanceReason('Ajuste contable manual');
+                          }}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] px-3 py-1.5 rounded-xl shadow-xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Editar Saldo</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDITAR SALDO DE JUGADOR (TAB 8) */}
+      {editingBalanceUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-900 flex items-center justify-center font-bold">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm">Modificar Saldo del Jugador</h3>
+                  <p className="text-[11px] text-slate-500">Actualización en Supabase (jugadores_bingo.saldo)</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingBalanceUser(null)}
+                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-1">
+                <div className="text-xs font-bold text-slate-800">{editingBalanceUser.name}</div>
+                <div className="text-[11px] text-slate-500">C.I.: {editingBalanceUser.documentId} | Tel: {editingBalanceUser.phone}</div>
+                <div className="text-xs text-slate-700 font-medium pt-1">
+                  Saldo Actual: <span className="font-mono font-black text-emerald-600">{formatMoney(editingBalanceUser.availableBalance || 0)}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-800 mb-1">
+                  Nuevo Saldo Disponible (VES) *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editBalanceAmount}
+                  onChange={(e) => setEditBalanceAmount(Number(e.target.value))}
+                  className="w-full bg-amber-50/50 border-2 border-amber-400 rounded-xl px-3.5 py-2 text-sm font-mono font-black text-indigo-950 outline-none focus:bg-white focus:border-indigo-600"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Motivo / Concepto del Ajuste *
+                </label>
+                <input
+                  type="text"
+                  value={editBalanceReason}
+                  onChange={(e) => setEditBalanceReason(e.target.value)}
+                  placeholder="Ej: Acreditación manual, corrección comprobante"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 outline-none focus:bg-white focus:border-indigo-600"
+                  required
+                />
+              </div>
+
+              {balanceSaveSuccessMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-800 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{balanceSaveSuccessMsg}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingBalanceUser(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingBalance}
+                  onClick={handleSavePlayerBalance}
+                  className="px-4 py-2 text-xs font-black text-white bg-indigo-950 hover:bg-indigo-900 rounded-xl transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingBalance ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Confirmar y Actualizar Saldo</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 9: GESTIÓN DE PERSONAL Y OPERADORES */}
+      {/* ======================================================== */}
+      {activeTab === 'operators' && <OperatorManagementView />}
+
+      {/* ======================================================== */}
+      {/* MODAL: REVISIÓN Y APROBACIÓN DE RECARGA PAGO MÓVIL */}
+      {/* ======================================================== */}
+      {selectedRechargeForReview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center font-black">
+                  <ShieldCheck className="w-5 h-5 stroke-[2.5]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Revisión y Auditoría de Recarga Pago Móvil
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Comprueba los datos contra tu extracto bancario oficial y confirma el ingreso efectivo.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedRechargeForReview(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+              {/* Voucher Preview Card */}
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-slate-700 block">
+                  Captura del Comprobante:
+                </span>
+                <div className="relative group rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center min-h-[220px]">
+                  <img
+                    src={selectedRechargeForReview.voucherImageUrl}
+                    alt="Comprobante Adjunto"
+                    className="w-full h-56 object-cover cursor-pointer group-hover:scale-105 transition-transform"
+                    onClick={() => setSelectedVoucherForModal(selectedRechargeForReview.voucherImageUrl)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVoucherForModal(selectedRechargeForReview.voucherImageUrl)}
+                    className="absolute bottom-3 right-3 bg-slate-900/80 hover:bg-slate-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-md backdrop-blur-xs"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Ampliar Imagen</span>
+                  </button>
+                </div>
+                <div className="text-[10px] text-slate-400 text-center">
+                  Haz clic para ver el comprobante en tamaño completo
+                </div>
+              </div>
+
+              {/* Data Verification Card */}
+              <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                <div className="border-b border-slate-200 pb-2">
+                  <span className="text-[10px] uppercase font-extrabold text-slate-400 block">
+                    Monto Reportado
+                  </span>
+                  <span className="text-2xl font-black font-mono text-emerald-600">
+                    {formatMoney(selectedRechargeForReview.amountVes)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block">Nro. Referencia:</span>
+                    <span className="font-mono font-black text-indigo-950 bg-indigo-100/60 px-2 py-0.5 rounded inline-block">
+                      {selectedRechargeForReview.referenceNumber}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block">Banco Emisor:</span>
+                    <span className="font-bold text-slate-800">
+                      {selectedRechargeForReview.bankOrigin}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block">Nombre del Pagador:</span>
+                    <span className="font-semibold text-slate-800">
+                      {selectedRechargeForReview.payerName || selectedRechargeForReview.userName}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block">Cédula / RIF Pagador:</span>
+                    <span className="font-mono font-bold text-slate-800">
+                      {selectedRechargeForReview.payerDocumentId || 'No reportada'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block">Teléfono Emisor:</span>
+                    <span className="font-mono text-slate-700">
+                      {selectedRechargeForReview.payerPhone || selectedRechargeForReview.userPhone}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block">Usuario en Plataforma:</span>
+                    <span className="font-bold text-indigo-900">
+                      {selectedRechargeForReview.userName}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200 text-[10px] text-slate-500">
+                  <div>Registrado: {selectedRechargeForReview?.createdAt ? new Date(selectedRechargeForReview.createdAt).toLocaleString('es-VE') : ''}</div>
+                  {selectedRechargeForReview?.updatedAt && (
+                    <div className="text-amber-800 font-semibold">
+                      Última modificación: {selectedRechargeForReview.updatedAt ? new Date(selectedRechargeForReview.updatedAt).toLocaleString('es-VE') : ''}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Target Account Reference */}
+            <div className="bg-indigo-950 text-indigo-100 p-3.5 rounded-2xl text-xs mb-5 flex items-center justify-between border border-indigo-900">
+              <div className="space-y-0.5">
+                <span className="text-[10px] uppercase font-black text-amber-400 tracking-wider block">
+                  Cuenta Receptora Institucional:
+                </span>
+                <p className="font-medium text-white text-xs">
+                  {commercialConfig.adminBank.bankName} • {commercialConfig.adminBank.phone} • RIF: {commercialConfig.adminBank.rif}
+                </p>
+                <p className="text-[11px] text-indigo-300">
+                  Titular: {commercialConfig.adminBank.holderName}
+                </p>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-mono bg-indigo-900 text-indigo-200 px-2 py-1 rounded-lg">
+                  Pago Móvil Oficial
+                </span>
+              </div>
+            </div>
+
+            {/* Confirmation Checkbox */}
+            <div className="mb-6 p-4 rounded-2xl bg-amber-50 border-2 border-amber-300/80">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={confirmBankArrivalChecked}
+                  onChange={(e) => setConfirmBankArrivalChecked(e.target.checked)}
+                  className="w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 mt-0.5 cursor-pointer"
+                />
+                <div className="text-xs">
+                  <span className="font-black text-slate-900 block">
+                    Confirmación de Ingreso Efectivo en Cuenta Bancaria *
+                  </span>
+                  <p className="text-slate-600 text-[11px] mt-0.5 leading-relaxed">
+                    Certifico como <strong>{currentRoleConfig.displayName}</strong> que he contrastado esta transacción con el extracto bancario en línea de la cuenta receptora y confirmo que los <strong>{formatMoney(selectedRechargeForReview.amountVes)}</strong> se encuentran acreditados y disponibles.
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* Action CTAs */}
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setRejectRechargeId(selectedRechargeForReview.id);
+                  setSelectedRechargeForReview(null);
+                }}
+                className="w-full sm:w-auto px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-xs transition-colors border border-rose-200"
+              >
+                Rechazar Transacción
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedRechargeForReview(null)}
+                className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+              >
+                Cerrar
+              </button>
+
+              <button
+                type="button"
+                disabled={!confirmBankArrivalChecked}
+                onClick={() => {
+                  const res = approveRecharge(selectedRechargeForReview.id);
+                  if (res.success) {
+                    setSelectedRechargeForReview(null);
+                  }
+                }}
+                className={`w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg ${
+                  confirmBankArrivalChecked
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white cursor-pointer shadow-emerald-500/20 active:scale-95'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Confirmar Ingreso y Cambiar Estatus a 'Aprobado'</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: HIGH-RES VOUCHER VIEWER */}
+      {/* ======================================================== */}
+      {selectedVoucherForModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-5 shadow-2xl relative">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+              <h4 className="font-black text-slate-900 text-sm">
+                Visualizador de Comprobante en Alta Resolución
+              </h4>
+              <button
+                onClick={() => setSelectedVoucherForModal(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+
+            <img
+              src={selectedVoucherForModal}
+              alt="Comprobante Alta Resolución"
+              className="w-full h-auto max-h-[70vh] object-contain rounded-2xl border border-slate-200"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: REJECT RECHARGE REASON */}
+      {/* ======================================================== */}
+      {rejectRechargeId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 shadow-2xl">
+            <h4 className="font-black text-slate-900 text-base mb-2">
+              Motivo del Rechazo de Recarga
+            </h4>
+            <p className="text-xs text-slate-500 mb-3">
+              Este motivo será notificado directamente al usuario.
+            </p>
+
+            <textarea
+              value={rechargeRejectReason}
+              onChange={(e) => setRechargeRejectReason(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 mb-4 h-24"
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRejectRechargeId(null)}
+                className="w-1/2 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  rejectRecharge(rejectRechargeId, rechargeRejectReason);
+                  setRejectRechargeId(null);
+                }}
+                className="w-1/2 py-2 bg-rose-600 text-white font-bold rounded-xl text-xs"
+              >
+                Confirmar Rechazo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: REJECT WITHDRAWAL REASON */}
+      {/* ======================================================== */}
+      {rejectWithdrawalId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 shadow-2xl">
+            <h4 className="font-black text-slate-900 text-base mb-2">
+              Motivo del Rechazo de Retiro
+            </h4>
+            <p className="text-xs text-slate-500 mb-3">
+              Los fondos reservados serán reintegrados de inmediato al saldo disponible del jugador y este motivo le será notificado.
+            </p>
+
+            <textarea
+              value={withdrawalRejectReason}
+              onChange={(e) => setWithdrawalRejectReason(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 mb-4 h-24"
+              placeholder="Explica el motivo (ej. Cuenta no coincide con titular, datos incorrectos...)"
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRejectWithdrawalId(null)}
+                className="w-1/2 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  if (!canManageWithdrawals) {
+                    alert('Acceso Denegado: Tu rol actual no tiene autorización para rechazar retiros.');
+                    setRejectWithdrawalId(null);
+                    return;
+                  }
+                  rejectWithdrawal(rejectWithdrawalId, withdrawalRejectReason);
+                  setRejectWithdrawalId(null);
+                }}
+                disabled={!canManageWithdrawals}
+                className="w-1/2 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs"
+              >
+                Confirmar Rechazo y Reembolso
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: DOUBLE CONFIRMATION & 2FA FOR DRAW RESULTS */}
+      {/* ======================================================== */}
+      {showResultConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-indigo-950/85 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+            <div className="flex items-center gap-3 text-amber-600 mb-3">
+              <AlertTriangle className="w-8 h-8" />
+              <div>
+                <h4 className="font-black text-slate-900 text-base">
+                  Doble Confirmación: Liquidación Oficial de Premios
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Esta acción es irreversible y bloqueará la ronda de forma permanente.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-2xl p-3.5 mb-4 text-xs">
+              <span className="font-bold text-slate-700 block mb-1">
+                Figuras Ganadoras a Certificar ({selectedResultFichas.length} seleccionadas):
+              </span>
+              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                {selectedResultFichas.map((fId) => {
+                  const f = getFichaById(fId);
+                  return (
+                    <span key={fId} className="bg-white px-2 py-0.5 rounded-md border text-[11px] font-bold">
+                      {f.emoji} #{f.id} {f.name}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2FA Security OTP */}
+            <div className="mb-5">
+              <label className="block text-xs font-black text-slate-700 mb-1">
+                Autenticación de 2 Factores (Código 2FA OTP) *
+              </label>
+              <input
+                id="input-otp"
+                type="text"
+                value={otpInput}
+                onChange={(e) => {
+                  setOtpInput(e.target.value);
+                  if (otpModalFeedback) setOtpModalFeedback(null);
+                }}
+                placeholder="Ingresa código de 6 dígitos"
+                maxLength={6}
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-center font-mono font-black text-base text-indigo-950 tracking-widest outline-none focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-200"
+              />
+              {otpModalFeedback && (
+                <div
+                  id="otp-feedback-msg"
+                  className={`mt-2 p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-1 ${
+                    otpModalFeedback.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  {otpModalFeedback.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{otpModalFeedback.text}</span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', marginTop: '20px' }}>
+              <button
+                id="btn-revisar"
+                type="button"
+                onClick={() => setShowResultConfirmModal(false)}
+                style={{ flex: 1, padding: '10px', fontSize: '14px' }}
+                className="rounded-xl border border-slate-200 text-slate-700 font-bold hover:bg-slate-100 transition-colors"
+              >
+                Revisar Figuras
+              </button>
+              <button
+                id="btn-solicitar-otg"
+                type="button"
+                onClick={handleRequestOtp}
+                style={{ flex: 1, padding: '10px', fontSize: '14px', background: '#e0e0e0' }}
+                className="rounded-xl font-bold text-slate-800 hover:bg-slate-300 transition-colors"
+              >
+                {otpRequestStatus}
+              </button>
+              <button
+                id="btn-firmar"
+                type="button"
+                disabled={isSigningResult}
+                onClick={handleExecuteResultSubmission}
+                style={{ flex: 1.2, padding: '10px', fontSize: '14px', background: '#facc15', fontWeight: 'bold' }}
+                className="rounded-xl text-indigo-950 shadow-md hover:brightness-105 transition-all disabled:opacity-50"
+              >
+                {isSigningResult ? 'Firmando...' : 'Firmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
