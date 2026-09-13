@@ -89,19 +89,19 @@ serve(async (req: Request) => {
         await supabase.from('recargas_pago_movil').update(updateData).eq('referencia', referencia);
       }
 
-      // b) Incrementar saldo en jugadores_bingo de forma atómica
+      // b) Incrementar saldo en profiles de forma atómica
       let jugador: any = null;
 
       // 1. Búsqueda por ID directo
       if (usuarioId) {
-        const { data: jById } = await supabase.from('jugadores_bingo').select('*').eq('id', usuarioId).maybeSingle();
+        const { data: jById } = await supabase.from('profiles').select('*').eq('id', usuarioId).maybeSingle();
         if (jById) jugador = jById;
       }
 
       // 2. Búsqueda por correo
       const effectiveEmail = correo || (recargaDb && (recargaDb.correo || recargaDb.email));
       if (!jugador && effectiveEmail) {
-        const { data: jByEmail } = await supabase.from('jugadores_bingo').select('*').ilike('correo', effectiveEmail).maybeSingle();
+        const { data: jByEmail } = await supabase.from('profiles').select('*').ilike('correo', effectiveEmail).maybeSingle();
         if (jByEmail) jugador = jByEmail;
       }
 
@@ -109,7 +109,7 @@ serve(async (req: Request) => {
       const effectiveCedula = cleanCedula || (recargaDb && (recargaDb.cedula_pagador || recargaDb.pagador_ci || '').replace(/\D/g, ''));
       if (!jugador && effectiveCedula) {
         const { data: jByCedula } = await supabase
-          .from('jugadores_bingo')
+          .from('profiles')
           .select('*')
           .or(`cedula.eq.${effectiveCedula},cedula.eq.V-${effectiveCedula},cedula.eq.E-${effectiveCedula}`)
           .maybeSingle();
@@ -120,7 +120,7 @@ serve(async (req: Request) => {
       const effectivePhone = cleanPhone || (recargaDb && (recargaDb.telefono_pagador || recargaDb.userPhone || '').replace(/\D/g, ''));
       if (!jugador && effectivePhone && effectivePhone.length >= 7) {
         const { data: jByPhone } = await supabase
-          .from('jugadores_bingo')
+          .from('profiles')
           .select('*')
           .ilike('telefono', `%${effectivePhone.slice(-7)}%`)
           .maybeSingle();
@@ -135,7 +135,7 @@ serve(async (req: Request) => {
         saldoPosterior = saldoAnterior + montoVes;
 
         const { error: errSaldo } = await supabase
-          .from('jugadores_bingo')
+          .from('profiles')
           .update({
             saldo: saldoPosterior,
             updated_at: new Date().toISOString(),
