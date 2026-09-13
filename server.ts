@@ -714,56 +714,29 @@ app.post(['/api/recargas/aprobar', '/api/recharges/approve'], async (req, res) =
        try { await supabaseServerClient.from('recargas_pago_movil').update({ estado: 'aprobada', updated_at: nowIso }).eq('id', rechargeId); } catch {}
     }
 
-       // 3. ACREDITAR SALDO - LEER DE DONDE TU APP REALMENTE LEE
-    // Tu GameContext.tsx linea 757 lee de jugadores_bingo.saldo, no de profiles
-    
-    // Primero intentamos leer de jugadores_bingo (fuente de verdad de tu app)
-    const { data: jugadorBingo } = await supabaseServerClient
-      .from('jugadores_bingo')
-      .select('id, saldo')
-      .eq('id', userId)
-      .maybeSingle();
+       // 3. ACREDITAR SALDO - SOLO profiles
+const { data: perfilReal } = await supabaseServerClient
+  .from('profiles')
+  .select('saldo, available_balance, balance')
+  .eq('id', userId)
+  .maybeSingle();
 
-    // Si no existe en jugadores_bingo, intentamos por user_id o profiles
-    let saldoActual = 0;
-    if (jugadorBingo?.saldo != null) {
-      saldoActual = Number(jugadorBingo.saldo);
-    } else {
-      // Fallback: leer de profiles si jugadores_bingo no tiene
-      const { data: profileFallback } = await supabaseServerClient
-        .from('profiles')
-        .select('saldo, available_balance')
-        .eq('id', userId)
-        .maybeSingle();
-      saldoActual = Number((profileFallback as any)?.saldo || (profileFallback as any)?.available_balance || 0);
-    }
+const saldoActual = Number((perfilReal as any)?.saldo ?? (perfilReal as any)?.available_balance ?? (perfilReal as any)?.balance ?? 0);
+const nuevoSaldo = saldoActual + montoRecarga;
 
-    const nuevoSaldo = saldoActual + montoRecarga;
-    console.log(`[APROBAR] userId=${userId} saldoViejo=${saldoActual} + ${montoRecarga} = ${nuevoSaldo}`);
+console.log(`[APROBAR] userId=${userId} viejo=${saldoActual} + ${montoRecarga} = ${nuevoSaldo}`);
 
-    // Actualizamos en las 3 tablas para que no se desfase nunca
-    await supabaseServerClient.from('profiles').update({
-      saldo: nuevoSaldo,
-      available_balance: nuevoSaldo,
-      pending_balance: 0
-    }).eq('id', userId);
+await supabaseServerClient.from('profiles').update({
+  saldo: nuevoSaldo,
+  available_balance: nuevoSaldo,
+  balance: nuevoSaldo
+}).eq('id', userId);
 
-    try { await supabaseServerClient.from('users').update({ saldo: nuevoSaldo, available_balance: nuevoSaldo }).eq('id', userId); } catch {}
-
-    // ESTA ES LA IMPORTANTE - la que lee tu frontend
-    try { 
-      const { error: errBingo } = await supabaseServerClient.from('jugadores_bingo').update({ saldo: nuevoSaldo }).eq('id', userId);
-      if (errBingo) {
-        // Si falla por id, intenta por user_id
-        await supabaseServerClient.from('jugadores_bingo').update({ saldo: nuevoSaldo }).eq('user_id', userId);
-      }
-    } catch {}
-    return res.json({ 
-      success: true, 
-      message: `Acreditados ${montoRecarga} Bs. Saldo final: ${nuevoSaldo} Bs.`,
-      balanceAfter: nuevoSaldo
-    });
-
+return res.json({
+  success: true,
+  message: `Acreditados ${montoRecarga} Bs. Saldo final: ${nuevoSaldo} Bs.`,
+  balanceAfter: nuevoSaldo
+});
   } catch (err: any) {
     console.error('Error aprobar:', err);
     return res.status(500).json({ success: false, error: err.message });
