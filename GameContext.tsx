@@ -744,29 +744,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const fetchJugadores = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.from('jugadores_bingo').select('*');
-      if (!error && data && data.length > 0) {
-        setUsers((prev) => {
-          const map = new Map(data.map((jb: any) => [String(jb.id), jb]));
-          return prev.map((u) => {
-            const jb = map.get(u.id) as any;
-            if (jb) {
-              return {
-                ...u,
-                availableBalance: Number(jb.saldo ?? u.availableBalance),
-                phone: jb.telefono || u.phone,
-                documentId: jb.cedula || u.documentId,
-              };
-            }
-            return u;
-          });
+  try {
+    const { data, error } = await supabase.from('profiles').select('*');
+    if (!error && data && data.length > 0) {
+      setUsers((prev) => {
+        const map = new Map(data.map((p: any) => [String(p.id), p]));
+        return prev.map((u) => {
+          const p = map.get(u.id) as any;
+          if (p) {
+            return {
+            ...u,
+              availableBalance: Number(p.saldo?? p.available_balance?? p.balance?? u.availableBalance),
+              phone: p.telefono || u.phone,
+              documentId: p.cedula || u.documentId,
+            };
+          }
+          return u;
         });
-      }
-    } catch (err) {
-      console.warn('[GameContext] fetchJugadores error:', err);
+      });
     }
-  }, []);
+  } catch (err) {
+    console.warn('[GameContext] fetchJugadores error:', err);
+  }
+}, []);
 
   const fetchCommercialConfig = useCallback(async () => {
     try {
