@@ -1090,14 +1090,17 @@ app.post(['/api/withdrawals/reject', '/api/retiros/rechazar'], async (req, res) 
             pending_balance: newPending,
           }).eq('id', uid);
         }
+const { data: perfilReal } = await supabaseServerClient
+  .from('profiles')
+  .select('available_balance')
+  .eq('id', userId)
+  .maybeSingle();
 
-        // Reintegrar en jugadores_bingo
-        const { data: jb } = await supabaseServerClient.from('jugadores_bingo').select('saldo').eq('id', uid).maybeSingle();
-        if (jb) {
-          await supabaseServerClient.from('jugadores_bingo').update({
-            saldo: Number(jb.saldo || 0) + amount,
-          }).eq('id', uid);
-        }
+const saldoActual = Number((perfilReal as any)?.available_balance ?? 0);
+const nuevoSaldo = saldoActual + montoRecarga;
+console.log(`[APROBAR] userId=${userId} viejo=${saldoActual} + ${montoRecarga} = ${nuevoSaldo}`);
+await supabaseServerClient.from('profiles').update({ available_balance: nuevoSaldo }).eq('id', userId);
+     
 
         // Registrar reintegro en libro mayor
         await supabaseServerClient.from('ledger').insert({
