@@ -101,11 +101,11 @@ interface GameContextType {
 const STORAGE_KEY = 'Millioneire_Destiny_Lottery_v1';
 const DEFAULT_CONFIG: CommercialConfig = {
   adminBank: { bankName: 'Banco de Venezuela (0102)', phone: '424-8653930', rif: 'J-50769027-0', holderName: 'Grupo Agro Cajigal S.A.', type: 'Pago Móvil' },
-  precio_carton_base_ves: 25, singleCardPriceVes: 25,
-  cardPrices: { pack2: 50, pack4: 100, pack6: 150 },
-  exchangeRateVesUsd: 60,
+  precio_carton_base_ves: 100, singleCardPriceVes: 100,
+  cardPrices: { pack2: 200, pack4: 400, pack6: 600 },
+  exchangeRateVesUsd: 1,
   prizeMultipliers: { fullCard: 50, fourCorners: 8, box: 6, lineHorizontal: 3, lineVertical: 3, lineDiagonal: 4 },
-  drawDrawTotalCount: 32, maxRiskPerRound: 50000, closingBufferMinutes: 3, twoFactorOtpDemo: '123456',
+  drawDrawTotalCount: 20, maxRiskPerRound: 15000, closingBufferMinutes: 3, twoFactorOtpDemo: '123456',
 };
 
 const INITIAL_USERS: AppUser[] = [
