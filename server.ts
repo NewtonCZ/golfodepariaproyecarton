@@ -804,13 +804,7 @@ app.post(['/api/recargas/aprobar', '/api/recharges/approve'], async (req, res) =
           .update({ available_balance: nuevoSaldo })
           .eq('id', userId);
 
-        // Mantener sincronizado también en jugadores_bingo por compatibilidad
-        try {
-          await supabaseServerClient
-            .from('jugadores_bingo')
-            .update({ saldo: nuevoSaldo })
-            .eq('id', userId);
-        } catch {}
+        
 
         // Sincronizar en tabla alternativa 'jugadores' si existe
         try {
