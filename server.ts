@@ -716,19 +716,20 @@ app.post(['/api/recargas/aprobar', '/api/recharges/approve'], async (req, res) =
 
     // 3. ACREDITAR SALDO - SOLO profiles - TODO EN BS
 const { data: perfilReal } = await supabaseServerClient
-  .from('profiles')
-  .select('saldo')
-  .eq('id', userId)
+  .from("profiles")
+  .select("available_balance")
+  .eq("id", userId)
   .maybeSingle();
 
-const saldoActual = Number((perfilReal as any)?.saldo ?? 0);
+const saldoActual = Number((perfilReal as any)?.available_balance || 0);
 const nuevoSaldo = saldoActual + montoRecarga;
 
 console.log(`[APROBAR] userId=${userId} viejo=${saldoActual} + ${montoRecarga} = ${nuevoSaldo}`);
 
-await supabaseServerClient.from('profiles').update({
-  saldo: nuevoSaldo
-}).eq('id', userId);
+await supabaseServerClient
+  .from("profiles")
+  .update({ available_balance: nuevoSaldo })
+  .eq("id", userId);
 
 return res.json({
   success: true,
