@@ -521,10 +521,11 @@ export const AdminPortal: React.FC = () => {
 
   const refreshLiveDashboardMetrics = useCallback(async () => {
     try {
-      // 1. Total Jugadores: exact count from jugadores_bingo
-      const { count: jbCount } = await supabase
-        .from('jugadores_bingo')
-        .select('*', { count: 'exact', head: true });
+     // 1. Total Jugadores: exact count from profiles
+   const { count: jbCount } = await supabase
+  .from('profiles')
+  .select('*', { count: 'exact', head: true })
+  .eq('role', 'Player');
 
       // 2. Recargas Pendientes: count and sum(monto_ves) from recargas_pago_movil
       const { data: recData, count: rCount } = await supabase
