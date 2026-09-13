@@ -1423,11 +1423,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (error) console.warn('[GameContext] Supabase update round error:', error);
         });
 
-        // Sincronizar saldo de usuario en jugadores_bingo
-        supabase.from('jugadores_bingo').update({
-          saldo: balAfter,
-        }).eq('id', targetUserId).then(() => {});
-      } catch (err) {}
+       // Sincronizar saldo en profiles (oficial)
+supabase.from('profiles').update({
+  available_balance: balAfter,
+}).eq('id', targetUserId).then(() => {});
 
       try {
         syncEngine.broadcastCardsPurchased({
