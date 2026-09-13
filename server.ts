@@ -678,41 +678,69 @@ app.post(['/api/rounds', '/api/sorteos'], async (req, res) => {
 // 5. MÓDULO DE RECARGAS PAGO MÓVIL: ACREDITACIÓN EXACTA Y ATÓMICA DE SALDO
 // ======================================================================
 // POST /api/recargas/aprobar (y /api/recharges/approve)
-  app.post(['/api/recargas/aprobar', '/api/recharges/approve'], async (req, res) => {
+app.post(['/api/recargas/aprobar', '/api/recharges/approve'], async (req, res) => {
   try {
-    const { rechargeId, processedBy, procesado_por } = req.body || {};
-    const id = String(rechargeId || '').trim();
-    const auditor = String(processedBy || procesado_por || 'Auditor Central').trim();
+    const { rechargeId } = req.body;
+    if (!rechargeId) return res.status(400).json({ success: false, error: 'rechargeId requerido' });
+
     const nowIso = new Date().toISOString();
-    if (!id) return res.status(400).json({ success: false, error: 'Se requiere rechargeId' });
-    if (!supabaseServerClient) return res.status(500).json({ success: false, error: 'Supabase no inicializado' });
-
-    const { data: recharge } = await supabaseServerClient.from('recharges').select('*').eq('id', id).maybeSingle();
-    if (!recharge || (recharge as any).status === 'approved') {
-      return res.status(404).json({ success: false, error: 'Recarga no encontrada o ya procesada' });
+    
+    // 1. Buscar recarga en Supabase (fuente real, no dbState)
+    const { data: recarga, error: findErr } = await supabaseServerClient
+      .from('recharges')
+      .select('*')
+      .eq('id', rechargeId)
+      .maybeSingle();
+    
+    if (findErr || !recarga) return res.status(404).json({ success: false, error: 'Recarga no encontrada' });
+    if (recarga.status === 'approved' || recarga.estado === 'aprobada') {
+      return res.json({ success: true, message: 'Ya estaba aprobada', recharge: recarga });
     }
 
-    const userIdResolved = (recharge as any).userId || (recharge as any).user_id;
-    const finalCreditedAmount = Number((recharge as any).monto || (recharge as any).amount || 0);
-    if (!userIdResolved || finalCreditedAmount <= 0) {
-      return res.status(400).json({ success: false, error: 'Datos inválidos' });
+    const userId = recarga.user_id || (recarga as any).userId;
+    const montoRecarga = Number((recarga as any).monto || recarga.amount || 0);
+    if (!userId || montoRecarga <= 0) return res.status(400).json({ success: false, error: 'Datos de recarga inválidos' });
+
+    // 2. Marcar como aprobada en ambos idiomas (para que no se tranque)
+    await supabaseServerClient.from('recharges').update({
+      status: 'approved',
+      estado: 'aprobada',
+      processed_at: nowIso,
+      aprobado_en: nowIso,
+      updated_at: nowIso
+    }).eq('id', rechargeId);
+
+    if ((supabaseServerClient as any).from) {
+       try { await supabaseServerClient.from('recargas_pago_movil').update({ estado: 'aprobada', updated_at: nowIso }).eq('id', rechargeId); } catch {}
     }
 
-    await supabaseServerClient.from('recharges').update({ status: 'approved', processed_at: nowIso, processed_by: auditor }).eq('id', id);
+    // 3. ACREDITAR SALDO - Lógica tomada de tu código bueno
+    // Buscamos saldo actual en profiles
+    const { data: profile } = await supabaseServerClient.from('profiles').select('id, saldo, available_balance').eq('id', userId).maybeSingle();
+    const saldoActual = Number(profile?.saldo || (profile as any)?.available_balance || 0);
+    const nuevoSaldo = saldoActual + montoRecarga;
 
-    const { data: antes } = await supabaseServerClient.from('profiles').select('saldo,balance,available_balance').eq('id', userIdResolved).maybeSingle();
-    const balanceBefore = Number((antes as any)?.saldo ?? (antes as any)?.balance ?? 0);
-    const nuevoSaldo = balanceBefore + finalCreditedAmount;
+    // Actualizamos en las 3 tablas para que no se desfase nunca
+    await supabaseServerClient.from('profiles').update({ 
+      saldo: nuevoSaldo, 
+      available_balance: nuevoSaldo,
+      pending_balance: 0
+    }).eq('id', userId);
 
-    await supabaseServerClient.from('profiles').update({ saldo: nuevoSaldo, available_balance: nuevoSaldo, balance: nuevoSaldo }).eq('id', userIdResolved);
-    try { await supabaseServerClient.from('users').update({ available_balance: nuevoSaldo }).eq('id', userIdResolved); } catch {}
-    try { await supabaseServerClient.from('jugadores_bingo').update({ saldo: nuevoSaldo }).eq('id', userIdResolved); } catch {}
+    try { await supabaseServerClient.from('users').update({ saldo: nuevoSaldo, available_balance: nuevoSaldo }).eq('id', userId); } catch {}
+    try { await supabaseServerClient.from('jugadores_bingo').update({ saldo: nuevoSaldo }).eq('id', userId); } catch {}
 
-    return res.status(200).json({ success: true, message: `Acreditados ${finalCreditedAmount} Bs.`, balanceAfter: nuevoSaldo, userId: userIdResolved });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, error: error?.message });
+    return res.json({ 
+      success: true, 
+      message: `Acreditados ${montoRecarga} Bs. Saldo final: ${nuevoSaldo} Bs.`,
+      balanceAfter: nuevoSaldo
+    });
+
+  } catch (err: any) {
+    console.error('Error aprobar:', err);
+    return res.status(500).json({ success: false, error: err.message });
   }
-});      
+});     
 // POST /api/recargas/rechazar (y /api/recharges/reject)
 app.post(['/api/recargas/rechazar', '/api/recharges/reject'], async (req, res) => {
   try {
