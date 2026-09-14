@@ -1546,7 +1546,7 @@ supabase.from('profiles').update({
           })
         );
 
-        // 3. Persistir crédito en profiles.saldo y jugadores_bingo.saldo
+        // 3. Persistir crédito en profiles.saldo y profiles.saldo
         supabase
           .from('profiles')
           .select('saldo')
@@ -1559,14 +1559,14 @@ supabase.from('profiles').update({
           });
 
         supabase
-          .from('jugadores_bingo')
+          .from('profiles')
           .select('saldo')
           .eq('id', targetUserId)
           .maybeSingle()
           .then(({ data: jb }) => {
             if (jb) {
               const newSaldo = Number(jb.saldo || 0) + targetAmount;
-              supabase.from('jugadores_bingo').update({ saldo: newSaldo }).eq('id', targetUserId).then(() => {});
+              supabase.from('profiles').update({ saldo: newSaldo }).eq('id', targetUserId).then(() => {});
             }
           });
       }
@@ -1794,11 +1794,11 @@ supabase.from('profiles').update({
           created_at: newWithdrawal.createdAt,
         }).then(() => {});
 
-        // Descontar en jugadores_bingo
-        supabase.from('jugadores_bingo').select('saldo').eq('id', currentUser.id).maybeSingle().then(({ data: jb }) => {
+        // Descontar en profiles
+        supabase.from('profiles').select('saldo').eq('id', currentUser.id).maybeSingle().then(({ data: jb }) => {
           if (jb) {
             const currentJb = Number(jb.saldo || 0);
-            supabase.from('jugadores_bingo').update({ saldo: Math.max(0, currentJb - amount) }).eq('id', currentUser.id).then(() => {});
+            supabase.from('profiles').update({ saldo: Math.max(0, currentJb - amount) }).eq('id', currentUser.id).then(() => {});
           }
         });
       } catch {}
@@ -1918,7 +1918,7 @@ supabase.from('profiles').update({
         }).catch(() => {});
       } catch {}
 
-      // Supabase sync: Reintegrar balance en jugadores_bingo.saldo y actualizar status en withdrawals
+      // Supabase sync: Reintegrar balance en profiles.saldo y actualizar status en withdrawals
       try {
         supabase
           .from('withdrawals')
@@ -1942,9 +1942,9 @@ supabase.from('profiles').update({
           created_at: processedAt,
         }).then(() => {});
 
-        // Reintegrar en jugadores_bingo
+        // Reintegrar en profiles
         supabase
-          .from('jugadores_bingo')
+          .from('profiles')
           .select('saldo')
           .eq('id', target.userId)
           .maybeSingle()
@@ -1952,7 +1952,7 @@ supabase.from('profiles').update({
             if (jb) {
               const currentSaldo = Number(jb.saldo || 0);
               supabase
-                .from('jugadores_bingo')
+                .from('profiles')
                 .update({ saldo: currentSaldo + target.amountVes })
                 .eq('id', target.userId)
                 .then(() => {});
@@ -2214,7 +2214,7 @@ supabase.from('profiles').update({
         mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, finalCards, 'high');
       }
 
-      // Acreditar saldo a ganadores en memoria, en jugadores_bingo y en libro contable (ledger)
+      // Acreditar saldo a ganadores en memoria, en profiles y en libro contable (ledger)
       if (userPrizeMap.size > 0) {
         const newLedgerEntries: WalletLedgerEntry[] = [];
         setUsers((prevUsers) =>
@@ -2238,16 +2238,16 @@ supabase.from('profiles').update({
               };
               newLedgerEntries.push(ledgerItem);
 
-              // Persistir en jugadores_bingo.saldo
+              // Persistir en profiles.saldo
               supabase
-                .from('jugadores_bingo')
+                .from('profiles')
                 .select('saldo')
                 .eq('id', u.id)
                 .maybeSingle()
                 .then(({ data: jb }) => {
                   if (jb) {
                     const newSaldo = Number(jb.saldo || 0) + wonAmount;
-                    supabase.from('jugadores_bingo').update({ saldo: newSaldo }).eq('id', u.id).then(() => {});
+                    supabase.from('profiles').update({ saldo: newSaldo }).eq('id', u.id).then(() => {});
                   }
                 });
 
@@ -2720,7 +2720,7 @@ supabase.from('profiles').update({
         kyc_status: 'Aprobado',
       }).then(() => {});
 
-      supabase.from('jugadores_bingo').upsert({
+      supabase.from('profiles').upsert({
         id: newUser.id,
         nombre: newUser.name,
         cedula: newUser.documentId,
@@ -2762,16 +2762,16 @@ supabase.from('profiles').update({
       })
     );
 
-    // Persistir ajuste en jugadores_bingo.saldo
+    // Persistir ajuste en profiles.saldo
     supabase
-      .from('jugadores_bingo')
+      .from('profiles')
       .select('saldo')
       .eq('id', userId)
       .maybeSingle()
       .then(({ data: jb }) => {
         if (jb) {
           const newSaldo = Math.max(0, Number(jb.saldo || 0) + amountVes);
-          supabase.from('jugadores_bingo').update({ saldo: newSaldo }).eq('id', userId).then(() => {});
+          supabase.from('profiles').update({ saldo: newSaldo }).eq('id', userId).then(() => {});
         }
       });
 
