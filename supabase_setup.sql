@@ -103,8 +103,8 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_of_age BOOLEAN DEFAULT TRUE
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS age_confirmed_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS kyc_status TEXT DEFAULT 'Aprobado';
 
--- 2.1 TABLA: jugadores_bingo (utilizada para sincronización directa de perfil y saldo)
-CREATE TABLE IF NOT EXISTS public.jugadores_bingo (
+-- 2.1 TABLA: profiles (utilizada para sincronización directa de perfil y saldo)
+CREATE TABLE IF NOT EXISTS public.profiles (
     id TEXT PRIMARY KEY,
     nombre TEXT NOT NULL,
     apellido TEXT,
@@ -120,13 +120,13 @@ CREATE TABLE IF NOT EXISTS public.jugadores_bingo (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.jugadores_bingo ADD COLUMN IF NOT EXISTS saldo NUMERIC(14, 2) DEFAULT 0.00;
-ALTER TABLE public.jugadores_bingo ADD COLUMN IF NOT EXISTS is_of_age BOOLEAN DEFAULT TRUE;
-ALTER TABLE public.jugadores_bingo ADD COLUMN IF NOT EXISTS fecha_nacimiento TEXT;
-ALTER TABLE public.jugadores_bingo ADD COLUMN IF NOT EXISTS age_confirmed_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS saldo NUMERIC(14, 2) DEFAULT 0.00;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_of_age BOOLEAN DEFAULT TRUE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS fecha_nacimiento TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS age_confirmed_at TIMESTAMPTZ DEFAULT NOW();
 
 -- 2.2 TABLA: jugadores (tabla alternativa de respaldo de jugadores)
-CREATE TABLE IF NOT EXISTS public.jugadores (
+CREATE TABLE IF NOT EXISTS public.profiles (
     id TEXT PRIMARY KEY,
     nombre TEXT,
     cedula TEXT,
@@ -397,14 +397,14 @@ BEGIN
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.retiros; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.rounds; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.comercial; EXCEPTION WHEN duplicate_object THEN END;
-    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.jugadores_bingo; EXCEPTION WHEN duplicate_object THEN END;
+    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.users; EXCEPTION WHEN duplicate_object THEN END;
     BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.ledger; EXCEPTION WHEN duplicate_object THEN END;
 END $$;
 
 -- 11. HABILITAR RLS Y POLÍTICAS PERMISIVAS
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.jugadores_bingo ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jugadores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rounds ENABLE ROW LEVEL SECURITY;
@@ -427,7 +427,7 @@ DECLARE
     tbl text;
 BEGIN
     FOR tbl IN SELECT unnest(ARRAY[
-        'users', 'jugadores_bingo', 'jugadores', 'admin_users', 'rounds', 'cards',
+        'users', 'profiles', 'jugadores', 'admin_users', 'rounds', 'cards',
         'user_cards', 'cartones_comprados',
         'recharges', 'recargas_pago_movil', 'withdrawals', 'retiros', 'comercial',
         'ledger', 'otp_codes', 'audit_logs', 'support_tickets', 'reclamos'
