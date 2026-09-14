@@ -1423,12 +1423,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (error) console.warn('[GameContext] Supabase update round error:', error);
         });
 
-        // Sincronizar saldo en profiles (oficial) - columnas unificadas
-supabase.from('profiles').update({
-  saldo: balAfter,
-  available_balance: balAfter,
-  balance: balAfter,
-}).eq('id', targetUserId).then(() => {});
+        // Sincronizar saldo de usuario en profiles
+        supabase.from('profiles').update({
+          saldo: balAfter,
+        }).eq('id', targetUserId).then(() => {});
+      } catch (err) {}
 
       try {
         syncEngine.broadcastCardsPurchased({
@@ -1548,25 +1547,17 @@ supabase.from('profiles').update({
           })
         );
 
-       // 3. Persistir crédito en profiles (columnas unificadas)
-supabase
-  .from('profiles')
-  .select('saldo')
-  .eq('id', targetUserId)
-  .maybeSingle()
-  .then(({ data: prof }) => {
-    const currentSaldo = Number(prof?.saldo || 0);
-    const newSaldo = currentSaldo + targetAmount;
-    supabase
-      .from('profiles')
-      .update({
-        saldo: newSaldo,
-        available_balance: newSaldo,
-        balance: newSaldo,
-      })
-      .eq('id', targetUserId)
-      .then(() => {});
-  }); 
+        // 3. Persistir crédito en profiles.saldo y profiles.saldo
+        supabase
+          .from('profiles')
+          .select('saldo')
+          .eq('id', targetUserId)
+          .maybeSingle()
+          .then(({ data: prof }) => {
+            const currentSaldo = Number(prof?.saldo || 0);
+            const newSaldo = currentSaldo + targetAmount;
+            supabase.from('profiles').update({ saldo: newSaldo }).eq('id', targetUserId).then(() => {});
+          });
 
         supabase
           .from('profiles')
