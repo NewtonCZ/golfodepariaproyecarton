@@ -1548,17 +1548,25 @@ supabase.from('profiles').update({
           })
         );
 
-        // 3. Persistir crédito en profiles.saldo y profiles.saldo
-        supabase
-          .from('profiles')
-          .select('saldo')
-          .eq('id', targetUserId)
-          .maybeSingle()
-          .then(({ data: prof }) => {
-            const currentSaldo = Number(prof?.saldo || 0);
-            const newSaldo = currentSaldo + targetAmount;
-            supabase.from('profiles').update({ saldo: newSaldo }).eq('id', targetUserId).then(() => {});
-          });
+       // 3. Persistir crédito en profiles (columnas unificadas)
+supabase
+  .from('profiles')
+  .select('saldo')
+  .eq('id', targetUserId)
+  .maybeSingle()
+  .then(({ data: prof }) => {
+    const currentSaldo = Number(prof?.saldo || 0);
+    const newSaldo = currentSaldo + targetAmount;
+    supabase
+      .from('profiles')
+      .update({
+        saldo: newSaldo,
+        available_balance: newSaldo,
+        balance: newSaldo,
+      })
+      .eq('id', targetUserId)
+      .then(() => {});
+  }); 
 
         supabase
           .from('profiles')
