@@ -1,6 +1,6 @@
 /**
  * Player Storage Service
- * Handles cloud database persistence for 'jugadores_bingo' using Supabase.
+ * Handles cloud database persistence for 'profiles' using Supabase.
  * Strictly stores: id, nombre, apellido, cedula, correo, telefono, fechaNacimiento, fechaRegistro.
  * No photo/avatar/image properties.
  */
@@ -66,9 +66,9 @@ function mapToJugadorBingo(item: any): JugadorBingo {
 export async function getJugadores(): Promise<JugadorBingo[]> {
   try {
     if (supabase.isConfigured || supabase.rawClient) {
-      // 1. Intentar consultar en la tabla principal 'jugadores_bingo'
+      // 1. Intentar consultar en la tabla principal 'profiles'
       const { data, error } = await supabase
-        .from('jugadores_bingo')
+        .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
 
@@ -91,7 +91,7 @@ export async function getJugadores(): Promise<JugadorBingo[]> {
       }
 
       if (error && error.code !== 'PGRST116') {
-        console.warn('[playerStorage] Consulta en jugadores_bingo:', error.message);
+        console.warn('[playerStorage] Consulta en profiles:', error.message);
       }
     }
   } catch (error) {
@@ -153,8 +153,8 @@ export async function saveJugador(
         telefono: cleanRecord.telefono,
       };
 
-      // Upsert en la tabla 'jugadores_bingo'
-      const { error } = await supabase.from('jugadores_bingo').upsert(dbPayload, { onConflict: 'id' });
+      // Upsert en la tabla 'profiles'
+      const { error } = await supabase.from('profiles').upsert(dbPayload, { onConflict: 'id' });
 
       // También sincronizar en tabla 'users'
       try {
@@ -169,7 +169,7 @@ export async function saveJugador(
       } catch {}
 
       if (error) {
-        console.warn('[playerStorage] Fallback a tabla jugadores tras error en jugadores_bingo:', error.message);
+        console.warn('[playerStorage] Fallback a tabla jugadores tras error en profiles:', error.message);
         await supabase.from('jugadores').upsert(
           {
             id: cleanRecord.id,
@@ -196,7 +196,7 @@ export async function saveJugador(
 
   // Notificación para actualización instantánea en la interfaz
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('jugadores_bingo_updated', { detail: cachedJugadores }));
+    window.dispatchEvent(new CustomEvent('profiles_updated', { detail: cachedJugadores }));
   }
 
   return cachedJugadores;
@@ -208,7 +208,7 @@ export async function saveJugador(
 export async function deleteJugador(id: string): Promise<JugadorBingo[]> {
   try {
     if (supabase.isConfigured || supabase.rawClient) {
-      await supabase.from('jugadores_bingo').delete().eq('id', id);
+      await supabase.from('profiles').delete().eq('id', id);
       await supabase.from('jugadores').delete().eq('id', id);
     }
   } catch (error) {
@@ -218,7 +218,7 @@ export async function deleteJugador(id: string): Promise<JugadorBingo[]> {
   cachedJugadores = cachedJugadores.filter((j) => j.id !== id);
 
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('jugadores_bingo_updated', { detail: cachedJugadores }));
+    window.dispatchEvent(new CustomEvent('profiles_updated', { detail: cachedJugadores }));
   }
 
   return cachedJugadores;
