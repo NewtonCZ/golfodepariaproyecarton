@@ -1404,7 +1404,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (error) console.warn('[GameContext] Supabase insert cards error:', error);
         });
 
-        supabase.from('ledger').insert([newLedger]).then(({ error }) => {
+               // Mapear camelCase → snake_case para Supabase (ledger)
+        const ledgerDbPayload = {
+          id: newLedger.id,
+          user_id: newLedger.userId,
+          user_name: newLedger.userName,
+          type: newLedger.type,
+          amount_ves: newLedger.amountVes,
+          balance_before: newLedger.balanceBefore,
+          balance_after: newLedger.balanceAfter,
+          description: newLedger.description,
+          reference_id: newLedger.referenceId,
+          created_at: newLedger.createdAt,
+        };
+
+        supabase.from('ledger').insert([ledgerDbPayload]).then(({ error }) => {
           if (error) console.warn('[GameContext] Supabase insert ledger error:', error);
         });
 
