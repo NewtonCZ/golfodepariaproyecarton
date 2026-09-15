@@ -1971,16 +1971,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         fechaCaracas = new Date(drawAt);
       }
 
-            // Lógica correcta de fechas:
-      // - draw_at:    cuando se juega el sorteo (fechaCaracas)
-      // - starts_at:  cuando el sorteo se hace visible y se abren apuestas (ahora)
-      // - ends_at:    cuando cierran las apuestas (draw_at - 5 min)
-      // - open_bet_at: alias de starts_at (ahora)
+           // Lógica correcta:
+      // - draw_at:      fechaCaracas (cuando se juega el sorteo)
+      // - close_bet_at: fechaCaracas - 5 min (cierre de apuestas)
+      // - start_at:     ahora mismo (apertura de apuestas)
+      // - openDate:     ahora mismo (alias de start_at)
       const draw_at = fechaCaracas.toISOString();
-      const now_iso = new Date().toISOString();
-      const start_at = customTimes?.start_at || now_iso;
       const close_bet_at = customTimes?.close_bet_at || new Date(fechaCaracas.getTime() - 5 * 60000).toISOString();
-      const openDate = new Date(now_iso);
+      const start_at = customTimes?.start_at || new Date().toISOString();
+      const openDate = new Date();
 
       const price = cardPriceVes || commercialConfig.singleCardPriceVes || 100;
       const prizePct = prizePercentage || 70;
@@ -1988,16 +1987,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // 1- Generación de ID siempre único con timestamp y sufijo aleatorio
       const roundId = `round-${Date.now()}`;
 
-      const newRound: GameRound = {
+            const newRound: GameRound = {
         id: roundId,
         roundNumber: newRoundNumber,
         order: order || rounds.length + 1,
         title: title || `Sorteo #${newRoundNumber}`,
-        openBetAt: openDate.toISOString(),
-        closeBetAt: close_bet_at,
-        drawAt: start_at,
-        starts_at: start_at,
-        ends_at: close_bet_at,
+        openBetAt: openDate.toISOString(),      // ahora
+        closeBetAt: close_bet_at,               // fechaCaracas - 5 min
+        drawAt: draw_at,                        // ← FIX: fechaCaracas (18:00)
+        starts_at: start_at,                    // ahora
+        ends_at: close_bet_at,                  // fechaCaracas - 5 min
         status: 'scheduled',
         drawnFichas: [],
         totalCardsSold: 0,
@@ -2034,7 +2033,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         result_locked: false,
         starts_at: start_at,
         ends_at: close_bet_at,
-        draw_at: start_at,
+        draw_at: draw_at,
         open_bet_at: openDate.toISOString(),
         close_bet_at: close_bet_at,
         created_at: new Date().toISOString(),
