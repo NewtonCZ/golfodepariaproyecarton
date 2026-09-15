@@ -179,14 +179,11 @@ export async function saveJugador(
 
   return cachedJugadores;
 }
-/**
- * Elimina un jugador de la base de datos Supabase y de la memoria
- */
 export async function deleteJugador(id: string): Promise<JugadorBingo[]> {
   try {
     if (supabase.isConfigured || supabase.rawClient) {
+      // ✅ Solo borrar de 'profiles'
       await supabase.from('profiles').delete().eq('id', id);
-      await supabase.from('jugadores').delete().eq('id', id);
     }
   } catch (error) {
     console.error('[playerStorage] Error al eliminar jugador en Supabase:', error);
@@ -200,5 +197,3 @@ export async function deleteJugador(id: string): Promise<JugadorBingo[]> {
 
   return cachedJugadores;
 }
-
-
