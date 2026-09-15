@@ -1747,14 +1747,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }).catch(() => {});
       } catch {}
 
-      // 2. Bloquear saldo y persistir en Supabase directamente
+           // 2. Bloquear saldo y persistir en Supabase directamente
       try {
-        // En withdrawals solo existen: id, user_id, amount, status, created_at
+        // NO enviar 'id' (Supabase lo genera con gen_random_uuid())
+        // Los detalles van en columna 'data' (jsonb)
         const withdrawalDbPayload = {
-          id: newWithdrawal.id,
           user_id: currentUser.id,
           amount: amount,
           status: 'pending',
+          data: {
+            userName: currentUser.name,
+            userPhone: currentUser.phone,
+            channel: newWithdrawal.channel,
+            bankDest: newWithdrawal.bankDest,
+            phoneOrAccount: newWithdrawal.phoneOrAccount,
+            documentId: newWithdrawal.documentId,
+            titularName: newWithdrawal.titularName,
+            accountType: newWithdrawal.accountType,
+            localId: newWithdrawal.id,
+          },
           created_at: newWithdrawal.createdAt,
         };
         supabase.from('withdrawals').insert([withdrawalDbPayload]).then(({ error }) => {
@@ -1775,11 +1786,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           created_at: newWithdrawal.createdAt,
         }).then(() => {});
 
-        // Descontar en profiles
-        supabase.from('profiles').select('saldo').eq('id', currentUser.id).maybeSingle().then(({ data: jb }) => {
+        // Descontar en profiles (saldo + pending_balance)
+        supabase.from('profiles').select('saldo, pending_balance').eq('id', currentUser.id).maybeSingle().then(({ data: jb }) => {
           if (jb) {
-            const currentJb = Number(jb.saldo || 0);
-            supabase.from('profiles').update({ saldo: Math.max(0, currentJb - amount) }).eq('id', currentUser.id).then(() => {});
+            const currentSaldo = Number(jb.saldo || 0);
+            const currentPending = Number(jb.pending_balance || 0);
+            supabase.from('profiles').update({ 
+              saldo: Math.max(0, currentSaldo - amount),
+              pending_balance: currentPending + amount,
+            }).eq('id', currentUser.id).then(() => {});
           }
         });
       } catch {}
