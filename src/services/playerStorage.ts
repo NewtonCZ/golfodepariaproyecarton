@@ -152,11 +152,7 @@ export async function saveJugador(
         email: cleanRecord.correo,
         telefono: cleanRecord.telefono,
       };
-
       // Upsert en la tabla 'profiles'
-      const { error } = await supabase.from('profiles').upsert(dbPayload, { onConflict: 'id' });
-
-          // Upsert en la tabla 'profiles'
       const { error } = await supabase.from('profiles').upsert(dbPayload, { onConflict: 'id' });
 
       // También sincronizar en tabla 'users'
