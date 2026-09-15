@@ -3,6 +3,9 @@
  * Handles cloud database persistence for 'profiles' using Supabase.
  * Strictly stores: id, nombre, apellido, cedula, correo, telefono, fechaNacimiento, fechaRegistro.
  * No photo/avatar/image properties.
+ *
+ * NOTA: La única tabla fuente de verdad es 'profiles'.
+ * Las tablas 'users', 'jugadores' y 'perfiles' están deprecadas.
  */
 
 import { supabase } from './supabaseClient';
@@ -42,7 +45,9 @@ function mapToJugadorBingo(item: any): JugadorBingo {
     cedula: String(item.cedula || item.document_id || item.documentId || '').trim().toUpperCase(),
     correo: String(item.correo || item.email || '').trim().toLowerCase(),
     telefono: String(item.telefono || item.phone || '0412-0000000').trim(),
-    fechaNacimiento: String(item.fecha_nacimiento || item.fechaNacimiento || item.birth_date || item.birthDate || '').trim(),
+    fechaNacimiento: String(
+      item.fecha_nacimiento || item.fechaNacimiento || item.birth_date || item.birthDate || ''
+    ).trim(),
     fechaRegistro:
       item.fecha_registro ||
       item.fechaRegistro ||
@@ -66,32 +71,19 @@ function mapToJugadorBingo(item: any): JugadorBingo {
 export async function getJugadores(): Promise<JugadorBingo[]> {
   try {
     if (supabase.isConfigured || supabase.rawClient) {
-      // 1. Intentar consultar en la tabla principal 'profiles'
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
 
+      if (error && error.code !== 'PGRST116') {
+        console.warn('[playerStorage] Consulta en profiles:', error.message);
+      }
+
       if (!error && Array.isArray(data) && data.length > 0) {
         const formatted = data.map(mapToJugadorBingo);
         cachedJugadores = formatted;
         return formatted;
-      }
-
-      // 2. Si la tabla alternativa 'jugadores' existe y tiene datos
-      const { data: dataAlt, error: errorAlt } = await supabase
-        .from('jugadores')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!errorAlt && Array.isArray(dataAlt) && dataAlt.length > 0) {
-        const formatted = dataAlt.map(mapToJugadorBingo);
-        cachedJugadores = formatted;
-        return formatted;
-      }
-
-      if (error && error.code !== 'PGRST116') {
-        console.warn('[playerStorage] Consulta en profiles:', error.message);
       }
     }
   } catch (error) {
@@ -109,7 +101,8 @@ export function getJugadoresSync(): JugadorBingo[] {
 }
 
 /**
- * Guarda o actualiza un jugador directamente en Supabase y actualiza la caché local
+ * Guarda o actualiza un jugador directamente en Supabase y actualiza la caché local.
+ * Única tabla destino: 'profiles'.
  */
 export async function saveJugador(
   jugador: Partial<JugadorBingo> & { id: string; cedula: string }
@@ -152,35 +145,15 @@ export async function saveJugador(
         email: cleanRecord.correo,
         telefono: cleanRecord.telefono,
       };
-      // Upsert en la tabla 'profiles'
-      const { error } = await supabase.from('profiles').upsert(dbPayload, { onConflict: 'id' });
 
-      // También sincronizar en tabla 'users'
-      try {
-        await supabase.from('users').upsert(
-          {
-            id: cleanRecord.id,
-            email: cleanRecord.correo,
-            role: 'Player',
-          },
-          { onConflict: 'id' }
-        );
-      } catch {}
+      // Único upsert: 'profiles' es la fuente de verdad
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert(dbPayload, { onConflict: 'id' });
 
-      if (error) {
-        console.warn('[playerStorage] Fallback a tabla jugadores tras error en profiles:', error.message);
-        await supabase.from('jugadores').upsert(
-          {
-            id: cleanRecord.id,
-            nombre: `${cleanRecord.nombre} ${cleanRecord.apellido}`.trim(),
-            cedula: cleanRecord.cedula,
-            correo: cleanRecord.correo,
-            telefono: cleanRecord.telefono,
-            fecha_nacimiento: cleanRecord.fechaNacimiento,
-            is_of_age: true,
-          },
-          { onConflict: 'id' }
-        );
+      if (profileError) {
+        console.error('[playerStorage] Error en upsert profiles:', profileError);
+        throw profileError;
       }
     }
   } catch (error) {
@@ -219,4 +192,3 @@ export async function deleteJugador(id: string): Promise<JugadorBingo[]> {
 
   return cachedJugadores;
 }
-
