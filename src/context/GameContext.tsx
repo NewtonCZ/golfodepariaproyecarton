@@ -1531,7 +1531,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         prev.map((r) => (r.id === transactionId ? { ...r, status: 'approved', processedAt, processedBy } : r))
       );
 
-      // 2. Acreditar saldo en memoria y en currentUser
+           // 2. Acreditar saldo en memoria (solo UI)
       const targetUserId = target.userId;
       let balBefore = 0;
       let balAfter = 0;
@@ -1546,32 +1546,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return u;
           })
         );
-
-        // 3. Persistir crédito en profiles.saldo y profiles.saldo
-        supabase
-          .from('profiles')
-          .select('saldo')
-          .eq('id', targetUserId)
-          .maybeSingle()
-          .then(({ data: prof }) => {
-            const currentSaldo = Number(prof?.saldo || 0);
-            const newSaldo = currentSaldo + targetAmount;
-            supabase.from('profiles').update({ saldo: newSaldo }).eq('id', targetUserId).then(() => {});
-          });
-
-        supabase
-          .from('profiles')
-          .select('saldo')
-          .eq('id', targetUserId)
-          .maybeSingle()
-          .then(({ data: jb }) => {
-            if (jb) {
-              const newSaldo = Number(jb.saldo || 0) + targetAmount;
-              supabase.from('profiles').update({ saldo: newSaldo }).eq('id', targetUserId).then(() => {});
-            }
-          });
+        // El trigger de Supabase (on_recarga_pago_movil_approved) acredita
+        // automáticamente profiles.saldo y available_balance. NO escribir aquí.
       }
-
       // 4. Actualizar estado en recargas_pago_movil y recharges
       try {
         supabase
