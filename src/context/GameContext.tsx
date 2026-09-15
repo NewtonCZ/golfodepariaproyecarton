@@ -480,21 +480,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay' || st === 'closed' || st === 'cerrado';
     });
 
-    if (activeOrScheduled.length <= MAX_ACTIVE_ROUNDS) {
-      if (nonFinished.length !== currentRounds.length) {
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, nonFinished, 'high');
-      }
-      return nonFinished;
-    }
-
-    // Ordenar cronológicamente ascendente: más antiguos primero
-    const sorted = [...activeOrScheduled].sort((a, b) => {
-      const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt || a.created_at);
-      const timeB = timeSync.parseIsoToEpochMs(b.starts_at || b.openBetAt || b.drawAt || b.created_at);
-      if (timeA !== timeB) return timeA - timeB;
-      return (a.order || a.roundNumber || 0) - (b.order || b.roundNumber || 0);
-    });
-
+         // No purgar sorteos activos. Solo devolver los no-expirados.
+    // Si son muchos, es decisión del admin, no del frontend.
+    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, nonFinished, 'high');
+    return nonFinished;
     // Mantener los 7 sorteos más prioritarios
     const preservedRounds = sorted.slice(0, MAX_ACTIVE_ROUNDS);
     const preservedIds = new Set(preservedRounds.map(r => r.id));
