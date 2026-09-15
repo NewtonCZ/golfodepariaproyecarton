@@ -1971,11 +1971,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         fechaCaracas = new Date(drawAt);
       }
 
-      const start_at = customTimes?.start_at || fechaCaracas.toISOString();
+            // Lógica correcta de fechas:
+      // - draw_at:    cuando se juega el sorteo (fechaCaracas)
+      // - starts_at:  cuando el sorteo se hace visible y se abren apuestas (ahora)
+      // - ends_at:    cuando cierran las apuestas (draw_at - 5 min)
+      // - open_bet_at: alias de starts_at (ahora)
+      const draw_at = fechaCaracas.toISOString();
+      const now_iso = new Date().toISOString();
+      const start_at = customTimes?.start_at || now_iso;
       const close_bet_at = customTimes?.close_bet_at || new Date(fechaCaracas.getTime() - 5 * 60000).toISOString();
-      const openDate = new Date(fechaCaracas.getTime() - 60 * 60 * 1000);
+      const openDate = new Date(now_iso);
 
-      const price = cardPriceVes || commercialConfig.singleCardPriceVes || 25;
+      const price = cardPriceVes || commercialConfig.singleCardPriceVes || 100;
       const prizePct = prizePercentage || 70;
 
       // 1- Generación de ID siempre único con timestamp y sufijo aleatorio
