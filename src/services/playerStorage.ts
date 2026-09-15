@@ -150,16 +150,38 @@ export async function saveJugador(
         apellido: cleanRecord.apellido,
         cedula: cleanRecord.cedula,
         email: cleanRecord.correo,
-        correo: cleanRecord.correo,
         telefono: cleanRecord.telefono,
-        fecha_nacimiento: cleanRecord.fechaNacimiento || null,
       };
 
-      // ✅ Única escritura: en 'profiles'
+      // Upsert en la tabla 'profiles'
       const { error } = await supabase.from('profiles').upsert(dbPayload, { onConflict: 'id' });
 
+      // También sincronizar en tabla 'users'
+      try {
+        await supabase.from('users').upsert(
+          {
+            id: cleanRecord.id,
+            email: cleanRecord.correo,
+            role: 'Player',
+          },
+          { onConflict: 'id' }
+        );
+      } catch {}
+
       if (error) {
-        console.warn('[playerStorage] Error al guardar en profiles:', error.message);
+        console.warn('[playerStorage] Fallback a tabla jugadores tras error en profiles:', error.message);
+        await supabase.from('jugadores').upsert(
+          {
+            id: cleanRecord.id,
+            nombre: `${cleanRecord.nombre} ${cleanRecord.apellido}`.trim(),
+            cedula: cleanRecord.cedula,
+            correo: cleanRecord.correo,
+            telefono: cleanRecord.telefono,
+            fecha_nacimiento: cleanRecord.fechaNacimiento,
+            is_of_age: true,
+          },
+          { onConflict: 'id' }
+        );
       }
     }
   } catch (error) {
@@ -179,6 +201,7 @@ export async function saveJugador(
 
   return cachedJugadores;
 }
+
 export async function deleteJugador(id: string): Promise<JugadorBingo[]> {
   try {
     if (supabase.isConfigured || supabase.rawClient) {
@@ -197,3 +220,4 @@ export async function deleteJugador(id: string): Promise<JugadorBingo[]> {
 
   return cachedJugadores;
 }
+
