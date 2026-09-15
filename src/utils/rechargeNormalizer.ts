@@ -54,7 +54,7 @@ export function normalizeRechargeTransaction(raw: any): RechargeTransaction {
     ...raw,
     id: String(raw.id || `rch-${Date.now()}-${Math.floor(Math.random() * 1000)}`),
     userId: String(raw.userId || raw.user_id || raw.usuario_id || ''),
-    userName: String(raw.userName || raw.user_name || raw.usuario_nombre || raw.pagador_nombre || 'Usuario'),
+    userName: String( raw.userName || raw.user_name || raw.nombre_usuario || raw.usuario_nombre || raw.pagador_nombre || 'Usuario'),
     userPhone: String(raw.userPhone || raw.user_phone || raw.usuario_telefono || raw.telefono_pagador || raw.payerPhone || raw.payer_phone || ''),
     amountVes: isNaN(amount) ? 0 : amount,
     payerPhone: String(raw.payerPhone || raw.payer_phone || raw.telefono_pagador || raw.usuario_telefono || ''),
