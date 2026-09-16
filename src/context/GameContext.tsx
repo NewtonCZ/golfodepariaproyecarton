@@ -1832,7 +1832,7 @@ const fetchJugadores = useCallback(async () => {
           user_id: currentUser.id,
           user_name: currentUser.name,
           type: 'withdrawal_lock',
-          amount_ves: amount,
+          amount_ves: -amount,
           balance_before: balBefore,
           balance_after: balAfter,
           description: `Solicitud de retiro (${newWithdrawal.channel === 'pago_movil' ? 'Pago Móvil' : 'Transferencia'})`,
@@ -1898,28 +1898,46 @@ const fetchJugadores = useCallback(async () => {
       } catch {}
 
       // Supabase sync: En withdrawals solo existe status
-      try {
-        supabase
-          .from('withdrawals')
-          .update({ status: 'completed' })
-          .eq('id', transactionId)
-          .then(({ error }) => {
-            if (error) console.warn('[GameContext] Supabase update withdrawal error:', error);
-          });
+     try {
+  supabase
+    .from('withdrawals')
+    .update({ status: 'completed' })
+    .eq('id', transactionId)
+    .then(({ error }) => {
+      if (error) console.warn('[GameContext] Supabase update withdrawal error:', error);
+    });
 
+  // ✅ Verificar que no exista un withdrawal_completed para este retiro (evita duplicados)
+  supabase
+    .from('ledger')
+    .select('id')
+    .eq('reference_id', transactionId)
+    .eq('type', 'withdrawal_completed')
+    .limit(1)
+    .then(({ data: existing, error: checkError }) => {
+      if (checkError) {
+        console.warn('[GameContext] Error verificando duplicado withdrawal_completed:', checkError);
+        return;
+      }
+      if (!existing || existing.length === 0) {
+        // ✅ Solo insertar si no existe (monto negativo porque es egreso)
         supabase.from('ledger').insert({
           id: `led-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           user_id: target.userId,
           user_name: target.userName,
           type: 'withdrawal_completed',
-          amount_ves: target.amountVes,
+          amount_ves: -Math.abs(target.amountVes),
           balance_before: 0,
           balance_after: 0,
           description: `Retiro ${transactionId} completado y liquidado`,
           reference_id: transactionId,
           created_at: processedAt,
         }).then(() => {});
-      } catch {}
+      } else {
+        console.log('[GameContext] withdrawal_completed ya existe para:', transactionId);
+      }
+    });
+} catch {}
 
       addAuditLog('COMPLETAR_RETIRO', `Retiro ${transactionId} de ${formatMoney(target.amountVes)} completado para ${target.userName}`);
       return { success: true, message: 'Retiro marcado como completado y transferido.' };
