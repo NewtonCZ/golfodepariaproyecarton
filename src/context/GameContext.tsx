@@ -732,30 +732,80 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const fetchJugadores = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.from('profiles').select('*');
-      if (!error && data && data.length > 0) {
-        setUsers((prev) => {
-          const map = new Map(data.map((jb: any) => [String(jb.id), jb]));
-          return prev.map((u) => {
-            const jb = map.get(u.id) as any;
-            if (jb) {
-              return {
-                ...u,
-                availableBalance: Number(jb.saldo ?? u.availableBalance),
-                phone: jb.telefono || u.phone,
-                documentId: jb.cedula || u.documentId,
-              };
-            }
-            return u;
-          });
+const fetchJugadores = useCallback(async () => {
+  try {
+    const { data, error } = await supabase.from('profiles').select('*');
+    if (!error && data && data.length > 0) {
+      setUsers((prev) => {
+        const map = new Map(data.map((p: any) => [String(p.id), p]));
+        const prevIds = new Set(prev.map((u) => String(u.id)));
+
+        // 1. Actualizar usuarios que ya existen en el array local
+        const updated = prev.map((u) => {
+          const p = map.get(String(u.id)) as any;
+          if (p) {
+            const fullName = p.nombre
+              ? `${p.nombre} ${p.apellido || ''}`.trim()
+              : u.name;
+            return {
+              ...u,
+              name: fullName,
+              firstName: p.nombre || u.firstName,
+              lastName: p.apellido || u.lastName,
+              email: p.email || p.correo || u.email,
+              phone: p.telefono || u.phone,
+              documentId: p.cedula || u.documentId,
+              availableBalance: Number(p.saldo ?? p.available_balance ?? p.balance ?? u.availableBalance),
+              pendingBalance: Number(p.pending_balance ?? u.pendingBalance ?? 0),
+              lockedBalance: Number(p.locked_balance ?? u.lockedBalance ?? 0),
+              totalWonVes: Number(p.total_won_ves ?? u.totalWonVes ?? 0),
+              totalSpentVes: Number(p.total_spent_ves ?? u.totalSpentVes ?? 0),
+              kycStatus: p.kyc_status || u.kycStatus,
+              status: p.status || u.status,
+            };
+          }
+          return u;
         });
-      }
-    } catch (err) {
-      console.warn('[GameContext] fetchJugadores error:', err);
+
+        // 2. Agregar usuarios que vienen de Supabase y NO están en el array local
+        const nuevos = data
+          .filter((p: any) => !prevIds.has(String(p.id)))
+          .map((p: any) => {
+            const fullName = p.nombre
+              ? `${p.nombre} ${p.apellido || ''}`.trim()
+              : 'Jugador';
+            return {
+              id: String(p.id),
+              name: fullName,
+              firstName: p.nombre || '',
+              lastName: p.apellido || '',
+              email: p.email || p.correo || '',
+              phone: p.telefono || '',
+              documentId: p.cedula || '',
+              birthDate: p.fecha_nacimiento || '',
+              country: 'Venezuela',
+              role: p.role || 'Player',
+              status: p.status || 'active',
+              availableBalance: Number(p.saldo ?? p.available_balance ?? p.balance ?? 0),
+              pendingBalance: Number(p.pending_balance || 0),
+              lockedBalance: Number(p.locked_balance || 0),
+              totalWonVes: Number(p.total_won_ves || 0),
+              totalSpentVes: Number(p.total_spent_ves || 0),
+              createdAt: p.created_at || new Date().toISOString(),
+              kycStatus: p.kyc_status || 'Pendiente',
+              is_of_age: p.is_of_age,
+              isAdult: p.is_of_age,
+              isOfAge: p.is_of_age,
+            };
+          });
+
+        return [...nuevos, ...updated];
+      });
     }
-  }, []);
+  } catch (err) {
+    console.warn('[GameContext] fetchJugadores error:', err);
+  }
+}, []);
 
   const fetchCommercialConfig = useCallback(async () => {
     try {
