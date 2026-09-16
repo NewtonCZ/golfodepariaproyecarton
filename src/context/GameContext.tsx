@@ -679,31 +679,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('[GameContext] fetchAuditLogs error:', err);
     }
   }, []);
-  const fetchWithdrawals = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.from('withdrawals').select('*').order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) {
-        const mapped: WithdrawalTransaction[] = data.map((row: any) => ({
+ const fetchWithdrawals = useCallback(async () => {
+  try {
+    const { data, error } = await supabase.from('withdrawals').select('*').order('created_at', { ascending: false });
+    if (!error && data && data.length > 0) {
+      const mapped: WithdrawalTransaction[] = data.map((row: any) => {
+        const d = row.data || {}; // ← datos del titular guardados en jsonb
+        return {
           id: String(row.id),
           userId: String(row.user_id || ''),
-          userName: row.user_name || row.titular_name || 'Jugador',
-          userPhone: row.phone_or_account || '',
+          userName: d.titularName || d.userName || row.user_name || 'Jugador',
+          userPhone: d.userPhone || d.phoneOrAccount || row.phone_or_account || '',
           amountVes: Number(row.amount || row.amount_ves || 0),
-          channel: row.channel || 'pago_movil',
-          bankDest: row.bank_dest || 'Banco de Venezuela',
-          phoneOrAccount: row.phone_or_account || '',
-          documentId: row.document_id || '',
-          titularName: row.titular_name || row.user_name || 'Jugador',
+          channel: d.channel || row.channel || 'pago_movil',
+          bankDest: d.bankDest || row.bank_dest || 'Banco de Venezuela',
+          phoneOrAccount: d.phoneOrAccount || row.phone_or_account || '',
+          documentId: d.documentId || row.document_id || '',
+          titularName: d.titularName || d.userName || row.titular_name || 'Jugador',
+          accountType: d.accountType || row.account_type || '',
           status: row.status || 'pending',
           createdAt: row.created_at || new Date().toISOString(),
           processedAt: row.processed_at,
           processedBy: row.processed_by,
-        }));
-        setWithdrawals(mapped);
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_withdrawals`, mapped, 'normal');
-      }
-    } catch (err) { console.warn('[GameContext] fetchWithdrawals:', err); }
-  }, []);
+        };
+      });
+      setWithdrawals(mapped);
+      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_withdrawals`, mapped, 'normal');
+    }
+  } catch (err) { console.warn('[GameContext] fetchWithdrawals:', err); }
+}, []);
 
   const fetchLedger = useCallback(async () => {
     try {
