@@ -148,41 +148,45 @@ export const isPermanentlyDeletedRound = (r: GameRound): boolean => {
 
 export const isRoundCompletedOrExpired = (r: GameRound, nowMs?: number): boolean => {
   if (!r) return true;
-  // Eliminación directa y permanente de sorteos específicos solicitados (#7 y #10)
+
+  // Eliminación directa solo de sorteos marcados explícitamente (#7 y #10)
   if (isPermanentlyDeletedRound(r)) return true;
 
   const now = nowMs || timeSync.getServerNow();
   const st = String(r.status || '').toLowerCase().trim();
 
-  // Regla estricta de eliminación directa y permanente: sorteos cerrados o finalizados se purgan de inmediato de la memoria y la vista
-  if (st === 'finished' || st === 'completado' || st === 'closed' || st === 'cerrado') return true;
+  // ✅ REGLA 1: Solo eliminar si está REALMENTE terminado
+  if (st === 'finished' || st === 'completado') return true;
 
-  const rawDraw = r.drawAt || r.starts_at || r.openBetAt;
-  const drawMs = rawDraw ? timeSync.parseIsoToEpochMs(rawDraw) : 0;
-  const rawStart = r.starts_at || r.openBetAt || r.drawAt;
-  const startMs = rawStart ? timeSync.parseIsoToEpochMs(rawStart) : drawMs;
-  const effectiveStartMs = startMs || drawMs;
-  const transmissionEndMs = r.transmission_ends_at ? new Date(r.transmission_ends_at).getTime() : 0;
-
-  // 1. Sorteo con figuras ya guardadas y validadas
-  if (r.resultLocked) {
-    if (transmissionEndMs > 0 && now >= transmissionEndMs) return true;
-    if (effectiveStartMs > 0 && now > effectiveStartMs + 10 * 60 * 1000) return true;
+  // ✅ REGLA 2: Sorteos "closed/cerrado" solo se eliminan si tienen resultLocked = true
+  //    Y pasó al menos 60 min desde la hora del sorteo (así el usuario alcanza a verlos)
+  if (st === 'closed' || st === 'cerrado') {
+    if (r.resultLocked) {
+      const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at);
+      if (!isNaN(drawMs) && drawMs > 0 && now > drawMs + 60 * 60 * 1000) return true;
+    }
+    return false;
   }
 
-  // 2. Retransmisión concluida (7 minutos)
+  // ✅ REGLA 3: Replay solo se elimina si ya pasó su transmission_ends_at
   if (st === 'replay') {
+    const transmissionEndMs = r.transmission_ends_at ? new Date(r.transmission_ends_at).getTime() : 0;
     if (transmissionEndMs > 0 && now >= transmissionEndMs) return true;
-    if (effectiveStartMs > 0 && now > effectiveStartMs + 15 * 60 * 1000) return true;
+    return false;
   }
 
-  // 3. Sorteos antiguos con estado 'live' o 'drawing' cuya hora de inicio ya expiró
-  // Una emisión en vivo dura entre 5 y 10 minutos. Si ya pasaron más de 15 minutos desde el inicio,
-  // el sorteo finalizó por completo.
+  // ✅ REGLA 4: live/drawing solo se eliminan si pasaron más de 30 min
   if (st === 'live' || st === 'drawing') {
+    const transmissionEndMs = r.transmission_ends_at ? new Date(r.transmission_ends_at).getTime() : 0;
     if (transmissionEndMs > 0 && now >= transmissionEndMs) return true;
-    if (effectiveStartMs > 0 && now > effectiveStartMs + 15 * 60 * 1000) return true;
+    const startMs = timeSync.parseIsoToEpochMs(r.starts_at || r.drawAt || (r as any).draw_at);
+    if (!isNaN(startMs) && startMs > 0 && now > startMs + 30 * 60 * 1000) return true;
+    return false;
   }
+
+  // ✅ REGLA 5: open/scheduled NUNCA se eliminan automáticamente
+  //    (solo el admin decide cuándo cerrarlos desde el panel)
+  if (st === 'open' || st === 'scheduled') return false;
 
   return false;
 };
@@ -467,33 +471,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * o cuya hora de inicio ya expiró (sorteos antiguos con estado 'LIVE' o 'Cerrado').
    * Mantiene visibles únicamente los sorteos prioritarios o programados (máximo 7).
    */
-  const enforceAutoCleanupRounds = useCallback((currentRounds: GameRound[]): GameRound[] => {
-    const MAX_ACTIVE_ROUNDS = 7;
-    const now = timeSync.getServerNow();
+ const enforceAutoCleanupRounds = useCallback((currentRounds: GameRound[]): GameRound[] => {
+  const now = timeSync.getServerNow();
 
-    // Lógica de purga directa y permanente: purgar de raíz cualquier sorteo finalizado o expirado
-    const nonFinished = currentRounds.filter((r) => !isRoundCompletedOrExpired(r, now));
+  // Filtrar solo los realmente terminados/expirados
+  const nonFinished = currentRounds.filter((r) => !isRoundCompletedOrExpired(r, now));
 
-    // Filtrar sorteos válidos para la vista operativa
-    const activeOrScheduled = nonFinished.filter((r) => {
-      const st = String(r.status || '').toLowerCase().trim();
-      return st === 'scheduled' || st === 'open' || st === 'live' || st === 'drawing' || st === 'replay' || st === 'closed' || st === 'cerrado';
-    });
+  // Deduplicar por id (por si acaso hay duplicados)
+  const deduped = Array.from(new Map(nonFinished.map((r) => [r.id, r])).values());
 
-         // No purgar sorteos activos. Solo devolver los no-expirados.
-    // Si son muchos, es decisión del admin, no del frontend.
-    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, nonFinished, 'high');
-    return nonFinished;
-    // Mantener los 7 sorteos más prioritarios
-    const preservedRounds = sorted.slice(0, MAX_ACTIVE_ROUNDS);
-    const preservedIds = new Set(preservedRounds.map(r => r.id));
+  // Ordenar por prioridad: live > drawing > open > scheduled > replay
+  const priority: Record<string, number> = { live: 0, drawing: 1, open: 2, scheduled: 3, replay: 4 };
+  const sorted = [...deduped].sort((a, b) => {
+    const pa = priority[String(a.status || '').toLowerCase()] ?? 99;
+    const pb = priority[String(b.status || '').toLowerCase()] ?? 99;
+    if (pa !== pb) return pa - pb;
+    const ta = timeSync.parseIsoToEpochMs(a.starts_at || a.drawAt || (a as any).draw_at);
+    const tb = timeSync.parseIsoToEpochMs(b.starts_at || b.drawAt || (b as any).draw_at);
+    return (ta || 0) - (tb || 0);
+  });
 
-    const cleanedRounds = nonFinished.filter(r => preservedIds.has(r.id));
-    mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleanedRounds, 'high');
-
-    return cleanedRounds;
-  }, []);
-
+  mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, sorted, 'high');
+  return sorted;
+}, []);
   // FIX CRITICO DE ROUNDS WITH SURGICAL INVALIDATION & ENDPOINT SYNC
   const fetchActiveRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
     try {
