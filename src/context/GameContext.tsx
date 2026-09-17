@@ -1246,7 +1246,7 @@ const fetchJugadores = useCallback(async () => {
           }
         }
 
-        // CAMBIO 2: Al llegar la hora start_at / drawAt, si tiene bolas_cantadas pasa a live
+                // CAMBIO 2: Al llegar la hora start_at / drawAt, si tiene bolas_cantadas pasa a live
         const hasBolas = (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length > 0) ||
                          (Array.isArray(round.drawnFichas) && round.drawnFichas.length > 0);
         if (!isNaN(drawMs) && now >= drawMs && hasBolas) {
@@ -1260,26 +1260,22 @@ const fetchJugadores = useCallback(async () => {
           mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
           return {...round, status: 'open' as RoundStatus };
         }
-        if ((st === 'open' || st === 'scheduled') && !isNaN(closeMs) && now >= closeMs) {
+
+        // ✅ CAMBIO 3: Período de gracia de 5 min antes de cerrar
+        const GRACE_PERIOD_MS = 5 * 60 * 1000;
+        if ((st === 'open' || st === 'scheduled') && !isNaN(closeMs) && closeMs > 0 && now >= closeMs + GRACE_PERIOD_MS) {
           hasChanges = true;
           mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
           return {...round, status: 'closed' as RoundStatus };
         }
         return round;
       });
-      const hasFinishedOrExpired = rounds.some(r => isRoundCompletedOrExpired(r, now));
 
-      if (hasChanges || hasFinishedOrExpired) {
+      // ✅ CAMBIO 3: Solo purgar si hubo cambios reales. NO purgar "por si acaso".
+      if (hasChanges) {
         const cleaned = enforceAutoCleanupRounds(updated);
         setRounds(cleaned);
         mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
-      } else {
-        // Verificación proactiva de la regla de mantener visibles únicamente un máximo de 7 sorteos programados o en curso
-        const activeCount = rounds.filter(r => !isRoundCompletedOrExpired(r, now)).length;
-        if (activeCount > 7) {
-          const cleaned = enforceAutoCleanupRounds(rounds);
-          setRounds(cleaned);
-        }
       }
     }; check(); const i = setInterval(check, 3000); return () => clearInterval(i);
   }, [rounds, enforceAutoCleanupRounds]);
