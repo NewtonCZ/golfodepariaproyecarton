@@ -883,16 +883,17 @@ const fetchJugadores = useCallback(async () => {
         fetchJugadores();
       }
     };
-    window.addEventListener('visibilitychange', handleVis);
-    window.addEventListener('focus', handleVis);
-    const intervalTimer = setInterval(() => {
-      fetchCommercialConfig();
-      fetchWithdrawals();
-      fetchUserCards();
-      fetchPendingRecharges();
-      fetchLedger();
-    }, 30000);
-    return () => {
+   window.addEventListener('visibilitychange', handleVis);
+window.addEventListener('focus', handleVis);
+const intervalTimer = setInterval(() => {
+  fetchCommercialConfig();
+  fetchWithdrawals();
+  fetchUserCards();
+  fetchPendingRecharges();
+  fetchLedger();
+  fetchActiveRounds({ bypassCache: true }); // ✅ AGREGADO: refresca rounds cada 30 seg
+}, 30000);
+return () => {
       clearInterval(intervalTimer);
       window.removeEventListener('visibilitychange', handleVis);
       window.removeEventListener('focus', handleVis);
