@@ -61,28 +61,12 @@ export class LotteryTimeSyncService {
    */
   public async syncTime(): Promise<number> {
     const t0 = Date.now();
-     /**
-   * Performs high-precision time synchronization with the server time endpoint or HTTP headers.
-   * Returns calculated offset in milliseconds.
-   */
-  public async syncTime(): Promise<number> {
-    const t0 = Date.now();
         // ✅ FIX: salida temprana. El resto del código queda pero no se ejecuta.
     this.serverOffsetMs = 0;
     this.isSynchronized = true;
     this.lastSyncMs = Date.now();
     return 0;
 
-
-    try {
-      // 1. Attempt to fetch dedicated ISO 8601 time endpoint with no-cache
-      const res = await fetch('/api/time', {
-        method: 'GET',
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
-      });
-
-      if (r
 
     try {
       // 1. Attempt to fetch dedicated ISO 8601 time endpoint with no-cache
