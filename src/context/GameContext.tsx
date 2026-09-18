@@ -2102,29 +2102,33 @@ return () => {
         return enforceAutoCleanupRounds(combined);
       });
 
-      // Mapeo exacto de Supabase en snake_case para prevenir error PGRST204
-      const roundPayload = {
-        id: newRound.id,
-        title: newRound.title,
-        status: newRound.status,
-        order: newRound.order,
-        round_number: newRound.roundNumber,
-        card_price_ves: price,
-        card_price: price,
-        prize_percentage: prizePct,
-        jackpot_ves: manualJackpotVes || 15000,
-        total_cards_sold: 0,
-        drawn_fichas: [],
-        winning_cards_count: 0,
-        total_prizes_paid_ves: 0,
-        result_locked: false,
-        starts_at: start_at,
-        ends_at: close_bet_at,
-        draw_at: draw_at,
-        open_bet_at: openDate.toISOString(),
-        close_bet_at: close_bet_at,
-        created_at: new Date().toISOString(),
-      };
+     // Mapeo exacto de Supabase en snake_case + camelCase para compatibilidad total
+const roundPayload = {
+  id: newRound.id,
+  title: newRound.title,
+  name: newRound.title,                    // ✅ NUEVO
+  status: newRound.status,
+  order: newRound.order,
+  round_number: newRound.roundNumber,
+  roundNumber: newRound.roundNumber,       // ✅ NUEVO
+  card_price_ves: price,
+  card_price: price,
+  prize_percentage: prizePct,
+  jackpot_ves: manualJackpotVes || 15000,
+  total_cards_sold: 0,
+  drawn_fichas: [],
+  winning_cards_count: 0,
+  total_prizes_paid_ves: 0,
+  result_locked: false,
+  starts_at: start_at,
+  startsAt: start_at,                      // ✅ NUEVO
+  ends_at: close_bet_at,
+  draw_at: draw_at,
+  drawAt: draw_at,                         // ✅ NUEVO
+  open_bet_at: openDate.toISOString(),
+  close_bet_at: close_bet_at,
+  created_at: new Date().toISOString(),
+};
 
       console.log('[GameContext] Supabase upsert round payload:', roundPayload);
 
