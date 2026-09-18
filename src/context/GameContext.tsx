@@ -554,10 +554,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })) as GameRound[];
         }
       }
-      
-if (fetchedRounds.length === 0) return;
 
-setRounds(prev => {
+      if (fetchedRounds.length === 0) return;
+
+     setRounds(prev => {
   const fetchedMap = new Map(fetchedRounds.map(r => [r.id, r]));
 
   // ✅ FIX: Solo actualizar rounds que realmente cambiaron (evita parpadeo cada 30 seg)
@@ -567,6 +567,7 @@ setRounds(prev => {
 
     const hasServerBolas = Array.isArray(serverR.bolas_cantadas) && serverR.bolas_cantadas.length > 0;
 
+    // Comparar campos que pueden cambiar para detectar si hay diferencia real
     const hasChanges =
       r.status !== serverR.status ||
       r.totalCardsSold !== serverR.totalCardsSold ||
@@ -579,8 +580,10 @@ setRounds(prev => {
       r.drawAt !== serverR.drawAt ||
       r.starts_at !== serverR.starts_at;
 
+    // ✅ Si NO hay cambios → misma referencia → React NO re-renderiza
     if (!hasChanges) return r;
 
+    // ✅ Si hay cambios → actualizar solo lo necesario
     return {
       ...r,
       ...serverR,
@@ -591,7 +594,6 @@ setRounds(prev => {
     };
   });
 
-  // ✅ ESTA PARTE FALTABA EN TU PEGADO
   const existingIds = new Set(prev.map(r => r.id));
   const newServerRounds = fetchedRounds.filter(r => !existingIds.has(r.id));
   const combined = [...newServerRounds, ...updated];
@@ -600,17 +602,7 @@ setRounds(prev => {
   const cleaned = enforceAutoCleanupRounds(deduped);
   mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
   return cleaned;
-});  // ← cierre del setRounds
-        const existingIds = new Set(prev.map(r => r.id));
-        const newServerRounds = fetchedRounds.filter(r => !existingIds.has(r.id));
-        const combined = [...newServerRounds, ...updated];
-        const deduped = Array.from(new Map(combined.map(r => [r.id, r])).values());
-        
-        // Aplicar regla de limpieza automática en tiempo real garantizando máximo 6 programados/en curso
-        const cleaned = enforceAutoCleanupRounds(deduped);
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
-        return cleaned;
-      });
+});
     } catch (err) {
       console.warn('[GameContext] fetchActiveRounds:', err);
     }
