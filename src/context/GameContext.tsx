@@ -557,23 +557,52 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (fetchedRounds.length === 0) return;
 
-      setRounds(prev => {
-        const fetchedMap = new Map(fetchedRounds.map(r => [r.id, r]));
-        const updated = prev.map(r => {
-          const serverR = fetchedMap.get(r.id);
-          if (serverR) {
-            const hasServerBolas = Array.isArray(serverR.bolas_cantadas) && serverR.bolas_cantadas.length > 0;
-            return {
-              ...r,
-              ...serverR,
-              bolas_cantadas: serverR.bolas_cantadas || r.bolas_cantadas,
-              drawnFichas: hasServerBolas
-                ? serverR.bolas_cantadas!
-                : (r.drawnFichas && r.drawnFichas.length > 0 ? r.drawnFichas : serverR.drawnFichas || []),
-            };
-          }
-          return r;
-        });
+     setRounds(prev => {
+  const fetchedMap = new Map(fetchedRounds.map(r => [r.id, r]));
+
+  // ✅ FIX: Solo actualizar rounds que realmente cambiaron (evita parpadeo cada 30 seg)
+  const updated = prev.map(r => {
+    const serverR = fetchedMap.get(r.id);
+    if (!serverR) return r;
+
+    const hasServerBolas = Array.isArray(serverR.bolas_cantadas) && serverR.bolas_cantadas.length > 0;
+
+    // Comparar campos que pueden cambiar para detectar si hay diferencia real
+    const hasChanges =
+      r.status !== serverR.status ||
+      r.totalCardsSold !== serverR.totalCardsSold ||
+      r.jackpotVes !== serverR.jackpotVes ||
+      r.winningCardsCount !== serverR.winningCardsCount ||
+      r.resultLocked !== serverR.resultLocked ||
+      JSON.stringify(r.bolas_cantadas || []) !== JSON.stringify(serverR.bolas_cantadas || []) ||
+      JSON.stringify(r.drawnFichas || []) !== JSON.stringify(serverR.drawnFichas || []) ||
+      r.title !== serverR.title ||
+      r.drawAt !== serverR.drawAt ||
+      r.starts_at !== serverR.starts_at;
+
+    // ✅ Si NO hay cambios → misma referencia → React NO re-renderiza
+    if (!hasChanges) return r;
+
+    // ✅ Si hay cambios → actualizar solo lo necesario
+    return {
+      ...r,
+      ...serverR,
+      bolas_cantadas: serverR.bolas_cantadas || r.bolas_cantadas,
+      drawnFichas: hasServerBolas
+        ? serverR.bolas_cantadas!
+        : (r.drawnFichas && r.drawnFichas.length > 0 ? r.drawnFichas : serverR.drawnFichas || []),
+    };
+  });
+
+  const existingIds = new Set(prev.map(r => r.id));
+  const newServerRounds = fetchedRounds.filter(r => !existingIds.has(r.id));
+  const combined = [...newServerRounds, ...updated];
+  const deduped = Array.from(new Map(combined.map(r => [r.id, r])).values());
+
+  const cleaned = enforceAutoCleanupRounds(deduped);
+  mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
+  return cleaned;
+});
         const existingIds = new Set(prev.map(r => r.id));
         const newServerRounds = fetchedRounds.filter(r => !existingIds.has(r.id));
         const combined = [...newServerRounds, ...updated];
