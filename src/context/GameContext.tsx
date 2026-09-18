@@ -554,9 +554,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })) as GameRound[];
         }
       }
-
-      if (fetchedRounds.length === 0) return;
-
+      
 if (fetchedRounds.length === 0) return;
 
 setRounds(prev => {
