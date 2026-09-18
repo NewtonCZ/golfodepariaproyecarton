@@ -1208,8 +1208,6 @@ return () => {
   );
 
   useEffect(() => {
-   
-  useEffect(() => {
     const check = () => {
       const now = timeSync.getServerNow();
       let hasChanges = false;
