@@ -1215,9 +1215,7 @@ return () => {
       const updated = currentRounds.map(round => {
         const st = String(round.status || '').toLowerCase();
         if (st === 'finished' || st === 'completado') return round;
-        const st = String(round.status || '').toLowerCase();
-        if (st === 'finished' || st === 'completado') return round;
-
+       
         // CAMBIO 2: Verificar fin de los 7 minutos de retransmisión
         if (st === 'replay') {
           const replayEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
