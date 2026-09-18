@@ -212,6 +212,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, filtered, 'critical');
     return filtered;
   });
+
+  // ✅ FIX: ref para evitar re-montar el useEffect del check cada 3 seg
+  const roundsRef = React.useRef<GameRound[]>(rounds);
+  useEffect(() => {
+    roundsRef.current = rounds;
+  }, [rounds]);
+
   const [cards, setCards] = useState<MatrixCard[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_cards`, []));
   const [recharges, setRecharges] = useState<RechargeTransaction[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_recharges`, []));
   const [withdrawals, setWithdrawals] = useState<WithdrawalTransaction[]>(() => mobileCacheManager.safeGetItem(`${STORAGE_KEY}_withdrawals`, []));
@@ -1201,9 +1208,15 @@ return () => {
   );
 
   useEffect(() => {
+   
+  useEffect(() => {
     const check = () => {
-      const now = timeSync.getServerNow(); let hasChanges = false;
-      const updated = rounds.map(round => {
+      const now = timeSync.getServerNow();
+      let hasChanges = false;
+      const currentRounds = roundsRef.current;
+      const updated = currentRounds.map(round => {
+        const st = String(round.status || '').toLowerCase();
+        if (st === 'finished' || st === 'completado') return round;
         const st = String(round.status || '').toLowerCase();
         if (st === 'finished' || st === 'completado') return round;
 
