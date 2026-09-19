@@ -1226,15 +1226,16 @@ return () => {
     (currentUser.id && String(c.userId) === String(currentUser.id))
   );
 
-  useEffect(() => {
-    const check = () => {
-      const now = timeSync.getServerNow();
+ useEffect(() => {
+  const check = () => {
+    const now = timeSync.getServerNow();
+
+    setRounds(prev => {
       let hasChanges = false;
-      const currentRounds = roundsRef.current;
-      const updated = currentRounds.map(round => {
+      const updated = prev.map(round => {
         const st = String(round.status || '').toLowerCase();
         if (st === 'finished' || st === 'completado') return round;
-       
+
         // CAMBIO 2: Verificar fin de los 7 minutos de retransmisión
         if (st === 'replay') {
           const replayEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
@@ -1247,7 +1248,7 @@ return () => {
           return round;
         }
 
-        // Sorteo en vivo / extracción: si su tiempo concluyó o su hora de inicio ya expiró hace más de 15 minutos:
+        // Sorteo en vivo / extracción
         if (st === 'drawing' || st === 'live') {
           const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
           const transmissionEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
@@ -1265,7 +1266,6 @@ return () => {
         const closeMs = timeSync.parseIsoToEpochMs(round.ends_at || round.closeBetAt);
         const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
 
-        // Si está en 'closed' o 'cerrado', verificar si ya concluyó su sorteo (hora de inicio expirada > 15 min o figuras validadas)
         if (st === 'closed' || st === 'cerrado') {
           const isExpiredClosed = (!isNaN(drawMs) && now > drawMs + 15 * 60 * 1000) || round.resultLocked;
           if (isExpiredClosed) {
@@ -1275,7 +1275,6 @@ return () => {
           }
         }
 
-                // CAMBIO 2: Al llegar la hora start_at / drawAt, si tiene bolas_cantadas pasa a live
         const hasBolas = (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length > 0) ||
                          (Array.isArray(round.drawnFichas) && round.drawnFichas.length > 0);
         if (!isNaN(drawMs) && now >= drawMs && hasBolas) {
@@ -1300,15 +1299,21 @@ return () => {
         return round;
       });
 
-      // ✅ CAMBIO 3: Solo purgar si hubo cambios reales. NO purgar "por si acaso".
-      if (hasChanges) {
-        const cleaned = enforceAutoCleanupRounds(updated);
-        setRounds(cleaned);
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
+      // ✅ FIX PARPADEO: Si no hay cambios reales, devolver la MISMA referencia
+      if (!hasChanges) {
+        return prev;
       }
-    }; check(); const i = setInterval(check, 3000); return () => clearInterval(i);
-  }, [rounds, enforceAutoCleanupRounds]);
 
+      const cleaned = enforceAutoCleanupRounds(updated);
+      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
+      return cleaned;
+    });
+  };
+
+  check();
+  const i = setInterval(check, 3000);
+  return () => clearInterval(i);
+}, [enforceAutoCleanupRounds]);  // ✅ FIX: sin `rounds`
   const upcomingRounds = useMemo(() => {
     return rounds.filter(r => !isRoundCompletedOrExpired(r))
      .sort((a, b) => {
