@@ -521,9 +521,9 @@ export const AdminPortal: React.FC = () => {
 
   const refreshLiveDashboardMetrics = useCallback(async () => {
     try {
-      // 1. Total Jugadores: exact count from profiles
+      // 1. Total Jugadores: exact count from jugadores_bingo
       const { count: jbCount } = await supabase
-        .from('profiles')
+        .from('jugadores_bingo')
         .select('*', { count: 'exact', head: true });
 
       // 2. Recargas Pendientes: count and sum(monto_ves) from recargas_pago_movil
@@ -571,7 +571,7 @@ export const AdminPortal: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recargas_pago_movil' }, () => refreshLiveDashboardMetrics())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawals' }, () => refreshLiveDashboardMetrics())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cards' }, () => refreshLiveDashboardMetrics())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => refreshLiveDashboardMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jugadores_bingo' }, () => refreshLiveDashboardMetrics())
       .subscribe();
 
     return () => {
@@ -600,14 +600,14 @@ export const AdminPortal: React.FC = () => {
       const newBal = Number(editBalanceAmount);
       const oldBal = Number(editingBalanceUser.availableBalance || 0);
 
-      // 1. UPDATE real en Supabase tabla profiles
+      // 1. UPDATE real en Supabase tabla jugadores_bingo
       const { error: dbError } = await supabase
-        .from('profiles')
+        .from('jugadores_bingo')
         .update({ saldo: newBal })
         .eq('id', targetUserId);
 
       if (dbError) {
-        console.warn('[AdminPortal] Error updating balance in 'profiles', dbError);
+        console.warn('[AdminPortal] Error updating balance in jugadores_bingo:', dbError);
       }
 
       // 2. Actualizar estado y auditoría usando adjustUserBalance
