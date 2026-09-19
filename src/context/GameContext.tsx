@@ -155,27 +155,29 @@ export const isRoundCompletedOrExpired = (r: GameRound, nowMs?: number): boolean
   const now = nowMs || timeSync.getServerNow();
   const st = String(r.status || '').toLowerCase().trim();
 
-  // ✅ REGLA 1: Solo eliminar si está REALMENTE terminado
+  // ✅ REGLA 1: Sorteo realmente terminado
   if (st === 'finished' || st === 'completado') return true;
 
-  // ✅ REGLA 2: Sorteos "closed/cerrado" solo se eliminan si tienen resultLocked = true
-  //    Y pasó al menos 60 min desde la hora del sorteo (así el usuario alcanza a verlos)
+  // ✅ REGLA 2: Sorteo cerrado
+  //    - Con resultados: purgar después de 60 min
+  //    - Sin resultados: purgar después de 2 horas (evita sorteos huérfanos)
   if (st === 'closed' || st === 'cerrado') {
-    if (r.resultLocked) {
-      const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at);
-      if (!isNaN(drawMs) && drawMs > 0 && now > drawMs + 60 * 60 * 1000) return true;
+    const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at);
+    if (!isNaN(drawMs) && drawMs > 0) {
+      if (r.resultLocked && now > drawMs + 60 * 60 * 1000) return true;
+      if (!r.resultLocked && now > drawMs + 2 * 60 * 60 * 1000) return true;
     }
     return false;
   }
 
-  // ✅ REGLA 3: Replay solo se elimina si ya pasó su transmission_ends_at
+  // ✅ REGLA 3: Replay concluido
   if (st === 'replay') {
     const transmissionEndMs = r.transmission_ends_at ? new Date(r.transmission_ends_at).getTime() : 0;
     if (transmissionEndMs > 0 && now >= transmissionEndMs) return true;
     return false;
   }
 
-  // ✅ REGLA 4: live/drawing solo se eliminan si pasaron más de 30 min
+  // ✅ REGLA 4: Live/drawing expirados
   if (st === 'live' || st === 'drawing') {
     const transmissionEndMs = r.transmission_ends_at ? new Date(r.transmission_ends_at).getTime() : 0;
     if (transmissionEndMs > 0 && now >= transmissionEndMs) return true;
@@ -184,13 +186,17 @@ export const isRoundCompletedOrExpired = (r: GameRound, nowMs?: number): boolean
     return false;
   }
 
-  // ✅ REGLA 5: open/scheduled NUNCA se eliminan automáticamente
-  //    (solo el admin decide cuándo cerrarlos desde el panel)
-  if (st === 'open' || st === 'scheduled') return false;
+  // ✅ REGLA 5: Open/scheduled expirados (FIX PRINCIPAL)
+  //    Si su draw_at ya pasó hace más de 30 min, purgar.
+  //    Si no, mantener visible.
+  if (st === 'open' || st === 'scheduled') {
+    const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at);
+    if (!isNaN(drawMs) && drawMs > 0 && now > drawMs + 30 * 60 * 1000) return true;
+    return false;
+  }
 
   return false;
 };
-
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
