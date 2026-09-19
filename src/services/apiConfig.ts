@@ -24,8 +24,8 @@ export const getApiBaseUrl = (): string => {
 };
 
 export const API_ENDPOINTS = {
-  SEND_OTP: `${getApiBaseUrl()}/send-otp`,
-  VERIFY_OTP: `${getApiBaseUrl()}/verify-otp`,
+ SEND_OTP: `${SUPABASE_URL}/functions/v1/send-otp`,
+ VERIFY_OTP: `${SUPABASE_URL}/functions/v1/verify-otp`,
   HEALTH: `${getApiBaseUrl()}/health`,
   AUTH_SEND_RECOVERY: `${getApiBaseUrl()}/api/auth/send-recovery-code`,
   AUTH_VERIFY_RECOVERY: `${getApiBaseUrl()}/api/auth/verify-recovery-code`,
