@@ -98,26 +98,89 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-lock onto active drawing round if present
+   // Auto-lock SOLO si el usuario tiene cartones en la ronda en vivo
   useEffect(() => {
-    if (isLiveDrawing && activeRound?.id) {
+    if (!isLiveDrawing || !activeRound?.id) return;
+    const tieneCartonesAqui = (userCards || []).some(
+      (c) => c.roundId === activeRound.id
+    );
+    if (tieneCartonesAqui) {
       setLockedRoundId(activeRound.id);
     }
-  }, [isLiveDrawing, activeRound?.id]);
+  }, [isLiveDrawing, activeRound?.id, userCards]);
 
-  // Determine the target round to display:
-  // 0. Pinned round if this room session was already watching it
-  // 1. If a round is actively drawing or marked live
-  // 2. If no drawing round, check if there's a finished round <= 7 minutes ago
-  // 3. Else check open round or activeRound
+   // =========================================================================
+  // RONDA OBJETIVO — Prioriza la ronda donde el usuario tiene cartones
+  // 0. Ronda bloqueada SOLO si el usuario tiene cartones allí
+  // 1. Ronda en vivo/drawing donde el usuario tiene cartones
+  // 2. Ronda finalizada ≤ 7 min donde el usuario tiene cartones
+  // 3. Próxima ronda programada donde el usuario tiene cartones
+  // 4. Ronda en vivo global
+  // 5. Ronda finalizada global ≤ 7 min
+  // 6. Ronda abierta / activeRound / primera
+  // =========================================================================
   const targetRound: GameRound | null = useMemo(() => {
-    // 0. If user is in the room watching a specific round that was drawn or completed in this session
+    const roundIdsWithCards = new Set((userCards || []).map((c) => c.roundId));
+    const userHasCardsIn = (roundId?: string) =>
+      Boolean(roundId && roundIdsWithCards.has(roundId));
+
+    // 0. Ronda bloqueada, pero solo si el usuario tiene cartones allí
     if (lockedRoundId) {
       const locked = rounds.find((r) => r.id === lockedRoundId);
-      if (locked) return locked;
+      if (locked && userHasCardsIn(locked.id)) return locked;
     }
 
-    // 1. Live drawing round
+    // 1. Ronda en vivo donde el usuario tiene cartones
+    const liveRoundWithCards = rounds.find(
+      (r) =>
+        userHasCardsIn(r.id) &&
+        (String(r.status).toLowerCase() === 'drawing' ||
+          String(r.status).toLowerCase() === 'en_vivo' ||
+          (isLiveDrawing && r.id === activeRound?.id))
+    );
+    if (liveRoundWithCards) return liveRoundWithCards;
+
+    // 2. Ronda finalizada ≤ 7 min donde el usuario tiene cartones
+    const finishedRoundsWithCards = rounds
+      .filter(
+        (r) =>
+          userHasCardsIn(r.id) &&
+          (String(r.status).toLowerCase() === 'finished' ||
+            String(r.status).toLowerCase() === 'completado') &&
+          Array.isArray(r.drawnFichas) &&
+          r.drawnFichas.length > 0
+      )
+      .sort((a, b) => {
+        const tA = new Date(a.resultSubmittedAt || a.updatedAt || a.drawAt || 0).getTime();
+        const tB = new Date(b.resultSubmittedAt || b.updatedAt || b.drawAt || 0).getTime();
+        return tB - tA;
+      });
+
+    if (finishedRoundsWithCards.length > 0) {
+      const latest = finishedRoundsWithCards[0];
+      const finishMs = new Date(
+        latest.resultSubmittedAt || latest.updatedAt || latest.drawAt || nowTimestamp
+      ).getTime();
+      if ((nowTimestamp - finishMs) / (1000 * 60) <= 7) return latest;
+    }
+
+    // 3. Próxima ronda programada donde el usuario tiene cartones
+    const upcomingWithCards = rounds
+      .filter(
+        (r) =>
+          userHasCardsIn(r.id) &&
+          ['open', 'scheduled', 'upcoming', 'pending'].includes(
+            String(r.status).toLowerCase()
+          )
+      )
+      .sort((a, b) => {
+        const tA = new Date(a.drawAt || a.starts_at || a.closeBetAt || 0).getTime();
+        const tB = new Date(b.drawAt || b.starts_at || b.closeBetAt || 0).getTime();
+        return tA - tB;
+      });
+    if (upcomingWithCards.length > 0) return upcomingWithCards[0];
+
+    // 4. Ronda en vivo global (fallback si el usuario no tiene cartones en ninguna)
     const liveRound = rounds.find(
       (r) =>
         String(r.status).toLowerCase() === 'drawing' ||
@@ -126,7 +189,7 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     );
     if (liveRound) return liveRound;
 
-    // 2. Finished round within 7 minutes
+    // 5. Ronda finalizada global ≤ 7 min
     const finishedRounds = rounds
       .filter(
         (r) =>
@@ -136,33 +199,34 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
           r.drawnFichas.length > 0
       )
       .sort((a, b) => {
-        const timeA = new Date(a.resultSubmittedAt || a.updatedAt || a.drawAt || 0).getTime();
-        const timeB = new Date(b.resultSubmittedAt || b.updatedAt || b.drawAt || 0).getTime();
-        return timeB - timeA;
+        const tA = new Date(a.resultSubmittedAt || a.updatedAt || a.drawAt || 0).getTime();
+        const tB = new Date(b.resultSubmittedAt || b.updatedAt || b.drawAt || 0).getTime();
+        return tB - tA;
       });
-
     if (finishedRounds.length > 0) {
       const latestFinished = finishedRounds[0];
-      const finishTimeMs = new Date(
+      const finishMs = new Date(
         latestFinished.resultSubmittedAt ||
           latestFinished.updatedAt ||
           latestFinished.drawAt ||
           nowTimestamp
       ).getTime();
-      const diffMinutes = (nowTimestamp - finishTimeMs) / (1000 * 60);
-      if (diffMinutes <= 7) {
-        return latestFinished;
-      }
+      if ((nowTimestamp - finishMs) / (1000 * 60) <= 7) return latestFinished;
     }
 
-    // 3. Open round
+    // 6. Ronda abierta / activeRound / primera
     const openRound = rounds.find((r) => String(r.status).toLowerCase() === 'open');
     if (openRound) return openRound;
 
-    // 4. Default to activeRound or first round
     return activeRound || rounds[0] || null;
-  }, [rounds, activeRound, isLiveDrawing, nowTimestamp, lockedRoundId]);
-
+  }, [
+    rounds,
+    activeRound,
+    isLiveDrawing,
+    nowTimestamp,
+    lockedRoundId,
+    userCards,
+  ]);
   // Lock target round once drawing starts to avoid switching to a future round upon completion
   useEffect(() => {
     if (targetRound?.id && !lockedRoundId) {
