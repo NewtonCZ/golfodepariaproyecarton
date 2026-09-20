@@ -894,7 +894,7 @@ const fetchJugadores = useCallback(async () => {
     }
   }, []);
 
-  useEffect(() => {
+ useEffect(() => {
     fetchActiveRounds({ bypassCache: true });
     fetchPendingRecharges();
     fetchWithdrawals();
@@ -903,6 +903,31 @@ const fetchJugadores = useCallback(async () => {
     fetchAuditLogs();
     fetchLedger();
     fetchJugadores();
+
+    let intervalTimer: any = null;
+
+    const runPolling = () => {
+      if (document.visibilityState !== 'visible') return;
+      fetchCommercialConfig();
+      fetchWithdrawals();
+      fetchUserCards();
+      fetchPendingRecharges();
+      fetchLedger();
+      fetchActiveRounds({ bypassCache: true });
+    };
+
+    const startPolling = () => {
+      if (intervalTimer) return;
+      intervalTimer = setInterval(runPolling, 60000);
+    };
+
+    const stopPolling = () => {
+      if (intervalTimer) {
+        clearInterval(intervalTimer);
+        intervalTimer = null;
+      }
+    };
+
     const handleVis = () => {
       if (document.visibilityState === 'visible') {
         fetchCommercialConfig();
@@ -913,20 +938,21 @@ const fetchJugadores = useCallback(async () => {
         fetchAuditLogs();
         fetchLedger();
         fetchJugadores();
+        startPolling();
+      } else {
+        stopPolling();
       }
     };
-   window.addEventListener('visibilitychange', handleVis);
-window.addEventListener('focus', handleVis);
-const intervalTimer = setInterval(() => {
-  fetchCommercialConfig();
-  fetchWithdrawals();
-  fetchUserCards();
-  fetchPendingRecharges();
-  fetchLedger();
-  fetchActiveRounds({ bypassCache: true }); // ✅ AGREGADO: refresca rounds cada 30 seg
-}, 30000);
-return () => {
-      clearInterval(intervalTimer);
+
+    if (document.visibilityState === 'visible') {
+      startPolling();
+    }
+
+    window.addEventListener('visibilitychange', handleVis);
+    window.addEventListener('focus', handleVis);
+
+    return () => {
+      stopPolling();
       window.removeEventListener('visibilitychange', handleVis);
       window.removeEventListener('focus', handleVis);
     };
