@@ -27,9 +27,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { LotteryStorageService } from '../../services/storageService';
-import {
-  saveJugador,
-  JugadorBingo,
+import { saveJugador, JugadorBingo,
 } from '../../services/playerStorage';
 import { supabase } from '../../services/supabaseClient';
 import { SuperSparkleBadge } from './SuperSparkleBadge';
