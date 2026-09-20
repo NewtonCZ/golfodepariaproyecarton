@@ -2513,7 +2513,7 @@ export const AdminPortal: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-black text-slate-900 text-sm">Modificar Saldo del Jugador</h3>
-                  <p className="text-[11px] text-slate-500">Actualización en Supabase (jugadores_bingo.saldo)</p>
+                  <p className="text-[11px] text-slate-500">Actualización en Supabase (profiles.saldo)</p>
                 </div>
               </div>
               <button
