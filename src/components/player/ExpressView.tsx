@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useGame } from '../../context/GameContext';
-import { FICHAS_POOL, getFichaById } from '../../data/fichasPool';
+import { getFichaById } from '../../data/fichasPool';
+import { FichaBadge } from '../cards/FichaBadge';
 import { Sparkles, Zap, Trophy, AlertCircle, RotateCcw, Play } from 'lucide-react';
 
 interface PlayResult {
@@ -17,7 +18,6 @@ type Phase = 'idle' | 'dealing' | 'drawing' | 'result';
 
 const DRAW_INTERVAL_MS = 2000; // 2 seg por ficha
 const DEAL_DELAY_MS = 300;     // stagger entre cartones
-const REVEAL_MATCH_MS = 250;   // tiempo para marcar el cartón
 
 export const ExpressView: React.FC = () => {
   const { playExpress, formatMoney, commercialConfig, currentUser } = useGame();
@@ -27,8 +27,8 @@ export const ExpressView: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Estado de animación
-  const [dealtCardsCount, setDealtCardsCount] = useState(0);   // cartones ya volteados
-  const [drawnFichas, setDrawnFichas] = useState<number[]>([]); // fichas ya "cantadas"
+  const [dealtCardsCount, setDealtCardsCount] = useState(0);
+  const [drawnFichas, setDrawnFichas] = useState<number[]>([]);
   const [currentFichaId, setCurrentFichaId] = useState<number | null>(null);
   const [showWinnerBanner, setShowWinnerBanner] = useState(false);
 
@@ -338,10 +338,7 @@ const CardOnTable: React.FC<{
   const matrix: number[] = Array.isArray(card.matrix) ? card.matrix : [];
 
   return (
-    <div
-      className="relative"
-      style={{ perspective: '1200px' }}
-    >
+    <div className="relative" style={{ perspective: '1200px' }}>
       <div
         className="relative transition-transform duration-700"
         style={{
@@ -368,25 +365,26 @@ const CardOnTable: React.FC<{
             {matrix.map((fichaId, idx) => {
               const isMarked = drawnSet.has(fichaId);
               const isLatest = fichaId === currentFichaId;
-              const ficha = getFichaById ? getFichaById(fichaId) : FICHAS_POOL.find((f) => f.id === fichaId);
 
               return (
                 <div
                   key={idx}
-                  className={`aspect-square rounded-lg flex items-center justify-center text-2xl relative transition-all duration-300 ${
+                  className={`transition-all duration-300 ${
                     isLatest
-                      ? 'bg-amber-400 ring-4 ring-amber-300 scale-110 z-10 shadow-lg shadow-amber-500/50'
+                      ? 'ring-4 ring-amber-400 rounded-xl scale-110 z-10 shadow-lg shadow-amber-500/50'
                       : isMarked
-                      ? 'bg-emerald-500/30 ring-2 ring-emerald-400'
-                      : 'bg-slate-800'
+                      ? 'ring-2 ring-emerald-400 rounded-xl'
+                      : ''
                   }`}
                 >
-                  <span>{ficha?.emoji || '?'}</span>
-                  {isMarked && !isLatest && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-black flex items-center justify-center shadow">
-                      ✓
-                    </span>
-                  )}
+                  <FichaBadge
+                    fichaId={fichaId}
+                    size="sm"
+                    showName={false}
+                    showNumber={false}
+                    isMatched={isMarked && !isLatest}
+                    isRecent={isLatest}
+                  />
                 </div>
               );
             })}
@@ -412,7 +410,7 @@ const CardOnTable: React.FC<{
 
 /** Ficha actual grande */
 const CurrentFichaDisplay: React.FC<{ fichaId: number }> = ({ fichaId }) => {
-  const ficha = getFichaById ? getFichaById(fichaId) : FICHAS_POOL.find((f) => f.id === fichaId);
+  const ficha = getFichaById(fichaId);
   if (!ficha) return null;
 
   return (
@@ -420,19 +418,21 @@ const CurrentFichaDisplay: React.FC<{ fichaId: number }> = ({ fichaId }) => {
       key={fichaId}
       className="flex flex-col items-center animate-in zoom-in-50 duration-500"
     >
-      <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-gradient-to-br from-amber-400 via-orange-400 to-amber-500 flex items-center justify-center shadow-2xl shadow-amber-500/60 border-4 border-amber-300">
-        <span className="text-5xl sm:text-6xl">{ficha.emoji}</span>
+      <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-amber-400 via-orange-400 to-amber-500 flex items-center justify-center shadow-2xl shadow-amber-500/60 border-4 border-amber-300 relative">
+        <span className="text-6xl sm:text-7xl drop-shadow-lg">{ficha.emoji}</span>
       </div>
-      <p className="text-white font-black text-lg sm:text-xl mt-3 capitalize">
-        {ficha.name}
-      </p>
+      <div className="mt-3 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/30 to-orange-500/30 border border-amber-400/50">
+        <p className="text-white font-black text-base sm:text-lg capitalize tracking-wide">
+          {ficha.name}
+        </p>
+      </div>
     </div>
   );
 };
 
 /** Chip pequeño de ficha cantada */
 const FichaChip: React.FC<{ fichaId: number; isLatest: boolean }> = ({ fichaId, isLatest }) => {
-  const ficha = getFichaById ? getFichaById(fichaId) : FICHAS_POOL.find((f) => f.id === fichaId);
+  const ficha = getFichaById(fichaId);
   if (!ficha) return null;
 
   return (
