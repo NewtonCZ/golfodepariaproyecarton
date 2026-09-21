@@ -15,7 +15,12 @@ export const ExpressView: React.FC = () => {
   const [result, setResult] = useState<PlayResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const packPrices = commercialConfig.cardPrices || { pack2: 150, pack4: 300, pack6: 450 };
+  const cfgAny = commercialConfig as any;
+const packPrices = {
+  pack2: cfgAny.expressPack2Price || 150,
+  pack4: cfgAny.expressPack4Price || 300,
+  pack6: cfgAny.expressPack6Price || 450,
+};
 
   const handlePlay = async (packCount: 2 | 4 | 6) => {
     setErrorMsg(null);
