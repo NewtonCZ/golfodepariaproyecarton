@@ -71,13 +71,14 @@ const AppContent: React.FC = () => {
           </ProtectedRoute>
         ) : (
           <>
-            {activeTab === 'home' && (
+                       {activeTab === 'home' && (
               <HomeDashboard
                 onOpenBuyCards={openBuyCards}
                 onOpenRecharge={openRecharge}
                 onOpenWithdraw={openWithdraw}
                 onOpenLiveDraw={() => setActiveTab('live-draw')}
                 onOpenMyCards={() => setActiveTab('my-cards')}
+                onOpenExpress={() => setActiveTab('express')}
               />
             )}
 
