@@ -1580,18 +1580,18 @@ const fetchJugadores = useCallback(async () => {
         if (!user) return { success: false, message: 'Usuario no identificado' };
 
         // 2. Calcular costo del pack
-        const packPrices = commercialConfig.cardPrices || { pack2: 150, pack4: 300, pack6: 450 };
+        const cfgAny = commercialConfig as any;
         const totalCost =
-          packCount === 2 ? packPrices.pack2 :
-          packCount === 4 ? packPrices.pack4 :
-          packPrices.pack6;
+          packCount === 2 ? (cfgAny.expressPack2Price || 150) :
+          packCount === 4 ? (cfgAny.expressPack4Price || 300) :
+          (cfgAny.expressPack6Price || 450);
 
         if ((user.availableBalance || 0) < totalCost) {
           return { success: false, message: `Saldo insuficiente. Necesitas ${formatMoney(totalCost)}.` };
         }
 
         const expressRoundId = `express-${Date.now()}-${currentUserId}`;
-        const cardPrice = (commercialConfig.singleCardPriceVes || 75);
+        const cardPrice = ((commercialConfig as any).expressCardPrice || 75);
 
         // 3. Debitar saldo localmente
         const balBefore = user.availableBalance;
