@@ -28,6 +28,7 @@ interface HomeDashboardProps {
   onOpenWithdraw: () => void;
   onOpenLiveDraw: () => void;
   onOpenMyCards: () => void;
+  onOpenExpress: () => void;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
@@ -36,6 +37,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onOpenWithdraw,
   onOpenLiveDraw,
   onOpenMyCards,
+  onOpenExpress,
 }) => {
   const {
     activeRound,
@@ -126,6 +128,59 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </div>
         </div>
       </div>
+            {/* Banner Sorteo Exprés - Apuesta instantánea */}
+      <button
+        onClick={onOpenExpress}
+        className="w-full group relative overflow-hidden rounded-3xl p-[2px] transition-all hover:scale-[1.01] active:scale-[0.99] animate-in fade-in slide-in-from-top-2 duration-500"
+      >
+        {/* Borde animado brillante */}
+        <div className="absolute inset-0 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-3xl" />
+
+        <div className="relative bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-4 sm:p-5 flex items-center gap-4">
+          {/* Ícono animado */}
+          <div className="relative shrink-0">
+            <div className="absolute inset-0 bg-amber-400/40 blur-xl rounded-full animate-pulse" />
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center shadow-2xl shadow-amber-500/40 group-hover:rotate-6 transition-transform">
+              <Zap className="w-7 h-7 sm:w-8 sm:h-8 fill-current stroke-[2.5]" />
+            </div>
+          </div>
+
+          {/* Texto */}
+          <div className="flex-1 text-left min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-base sm:text-xl font-black text-white truncate">
+                Sorteo Exprés
+              </h3>
+              <span className="hidden sm:inline-flex items-center gap-1 bg-orange-500/20 text-orange-300 border border-orange-500/40 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-ping" />
+                Instantáneo
+              </span>
+            </div>
+            <p className="text-[11px] sm:text-xs text-slate-300 font-medium truncate">
+              Compra y juega en segundos. 22 fichas se sortean al azar.
+            </p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="text-[10px] sm:text-[11px] font-bold text-amber-300">
+                Desde 150 Bs.
+              </span>
+              <span className="text-[10px] text-slate-500">•</span>
+              <span className="text-[10px] sm:text-[11px] text-slate-400">
+                Premio hasta 1.300 Bs.
+              </span>
+            </div>
+          </div>
+
+          {/* Flecha de acción */}
+          <div className="shrink-0 flex items-center gap-2">
+            <span className="hidden sm:inline text-xs font-black text-amber-300 group-hover:text-amber-200">
+              Jugar ya
+            </span>
+            <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shadow-lg group-hover:translate-x-1 transition-transform">
+              <ArrowRight className="w-5 h-5 stroke-[2.5]" />
+            </div>
+          </div>
+        </div>
+      </button>
 
       {/* SECTION: Sequential Sorteos (Active / Scheduled Draws - Max 6) */}
       <section>
