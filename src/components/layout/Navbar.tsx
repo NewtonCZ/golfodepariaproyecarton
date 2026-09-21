@@ -26,7 +26,7 @@ import { soundService } from '../../services/soundAndSpeech';
 
 interface NavbarProps {
   currentTab: 'home' | 'my-cards' | 'live-draw' | 'results' | 'wallet' | 'admin';
-  onSelectTab: (tab: 'home' | 'my-cards' | 'live-draw' | 'results' | 'wallet' | 'admin') => void;
+  onSelectTab: (tab: 'home' | 'my-cards' | 'live-draw' | 'results' | 'wallet' | 'admin' | 'express') => void;
   onOpenRecharge: () => void;
   onOpenWithdraw: () => void;
   onOpenBuyCards: () => void;
@@ -272,6 +272,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Wallet className="w-3.5 h-3.5" />
               <span>Movimientos</span>
+            </button>
+
+            <button
+              id="nav-tab-express"
+              onClick={() => onSelectTab('express')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 min-h-[36px] rounded-xl font-bold text-xs transition-all ${
+                currentTab === 'express'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md font-black'
+                  : 'text-amber-200 hover:text-white hover:bg-indigo-800/60'
+              }`}
+              title="Sorteo Exprés — Apuesta instantánea"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Exprés</span>
             </button>
 
             <button
