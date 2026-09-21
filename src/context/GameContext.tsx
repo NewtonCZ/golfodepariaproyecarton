@@ -68,6 +68,7 @@ interface GameContextType {
   currencyDisplay: 'VES' | 'USD'; setCurrencyDisplay: (curr: 'VES' | 'USD') => void;
   formatMoney: (amountVes: number, options?: { showBoth?: boolean }) => string;
   purchaseCards: (packCount: 2 | 4 | 6, roundId: string) => { success: boolean; message: string; cards?: MatrixCard[] };
+  playExpress: (packCount: 2 | 4 | 6) => Promise<{ success: boolean; message: string; result?: any }>;
   submitRecharge: (data: any) => Promise<{ success: boolean; message: string }>;
   addRecharge?: (data: any) => Promise<{ success: boolean; message: string }>;
   registrarRecargaPagoMovil?: (data: any) => Promise<{ success: boolean; message: string }>;
@@ -1568,6 +1569,226 @@ const fetchJugadores = useCallback(async () => {
     [rounds, currentUser, users, cards, commercialConfig, formatMoney, addAuditLog, currentUserId, isAuthenticated, loggedUsername, activeRoundIds]
   );
 
+  // ==========================================
+  // MODO EXPRÉS — Sorteo instantáneo
+  // ==========================================
+  const playExpress = useCallback(
+    async (packCount: 2 | 4 | 6): Promise<{ success: boolean; message: string; result?: any }> => {
+      try {
+        // 1. Identificar usuario
+        const user = currentUser || users.find((u) => u.id === currentUserId);
+        if (!user) return { success: false, message: 'Usuario no identificado' };
+
+        // 2. Calcular costo del pack
+        const packPrices = commercialConfig.cardPrices || { pack2: 150, pack4: 300, pack6: 450 };
+        const totalCost =
+          packCount === 2 ? packPrices.pack2 :
+          packCount === 4 ? packPrices.pack4 :
+          packPrices.pack6;
+
+        if ((user.availableBalance || 0) < totalCost) {
+          return { success: false, message: `Saldo insuficiente. Necesitas ${formatMoney(totalCost)}.` };
+        }
+
+        const expressRoundId = `express-${Date.now()}-${currentUserId}`;
+        const cardPrice = (commercialConfig.singleCardPriceVes || 75);
+
+        // 3. Debitar saldo localmente
+        const balBefore = user.availableBalance;
+        const balAfter = balBefore - totalCost;
+
+        // 4. Generar cartones
+        const newCards: MatrixCard[] = [];
+        for (let i = 0; i < packCount; i++) {
+          const matrix = generateRandomMatrix();
+          const code = generateCardCode();
+          const cardId = `crd-exp-${Date.now()}-${i}-${Math.floor(Math.random() * 1000)}`;
+          newCards.push({
+            id: cardId,
+            code,
+            roundId: expressRoundId,
+            roundNumber: 0,
+            userId: user.id,
+            userName: user.name,
+            matrix,
+            purchaseTime: new Date().toISOString(),
+            priceVes: cardPrice,
+            status: 'active',
+            matchedCount: 0,
+            winningPatterns: [],
+            totalPrizeVes: 0,
+          });
+        }
+
+        // 5. Sortear 22 fichas de las 70 (Fisher-Yates)
+        const fichasCount = (commercialConfig as any).expressFichasCount || 22;
+        const pool = [...FICHAS_POOL];
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        const drawnFichas = pool.slice(0, fichasCount).map((f: any) => f.id);
+
+        // 6. Evaluar cartones y aplicar mínimo/máximo
+        const minPrize = (commercialConfig as any).expressMinPrizeVes || 150;
+        const maxPrize = (commercialConfig as any).expressMaxPrizeVes || 1300;
+        let totalPrize = 0;
+        let winnersCount = 0;
+
+        for (const card of newCards) {
+          const evaluation = evaluateCardMatrix(
+            card.matrix,
+            drawnFichas,
+            card.priceVes,
+            commercialConfig,
+            true
+          );
+          let prize = (evaluation.totalPrizeVes || 0);
+          if (prize > 0) {
+            prize = Math.max(minPrize, Math.min(maxPrize, prize));
+            winnersCount++;
+          }
+          card.totalPrizeVes = prize;
+          card.winningPatterns = evaluation.winningPatterns || [];
+          card.matchedCount = evaluation.matchedCount || 0;
+          card.status = prize > 0 ? 'winner' : 'loss';
+          (card as any).isWinner = prize > 0;
+          totalPrize += prize;
+        }
+
+        // 7. Actualizar usuarios (débito + premio)
+        const finalBalance = balAfter + totalPrize;
+        setUsers((prev) =>
+          prev.map((u) =>
+            u.id === user.id
+              ? {
+                  ...u,
+                  availableBalance: finalBalance,
+                  totalSpentVes: (u.totalSpentVes || 0) + totalCost,
+                  totalWonVes: (u.totalWonVes || 0) + totalPrize,
+                }
+              : u
+          )
+        );
+
+        // 8. Guardar cartones
+        setCards((prev) => [...newCards, ...prev]);
+
+        // 9. Guardar round exprés (finalizado, para historial)
+        const finishedRound: GameRound = {
+          id: expressRoundId,
+          title: 'Sorteo Exprés',
+          roundNumber: 0,
+          status: 'finished',
+          modo: 'express',
+          totalCardsSold: packCount,
+          drawnFichas,
+          bolas_cantadas: drawnFichas,
+          cardPriceVes: cardPrice,
+          card_price: cardPrice,
+          totalPrizesPaidVes: totalPrize,
+          winnerCardsCount: winnersCount,
+          resultLocked: true,
+          starts_at: new Date().toISOString(),
+        };
+        setRounds((prev) => [finishedRound, ...prev]);
+
+        // 10. Ledger (compra + premio)
+        const purchaseLedger: WalletLedgerEntry = {
+          id: `led-exp-buy-${Date.now()}`,
+          userId: user.id,
+          userName: user.name,
+          type: 'card_purchase',
+          amountVes: -totalCost,
+          balanceBefore: balBefore,
+          balanceAfter: balAfter,
+          description: `Compra exprés: ${packCount} cartones`,
+          referenceId: expressRoundId,
+          createdAt: new Date().toISOString(),
+        };
+        const ledgerEntries: WalletLedgerEntry[] = [purchaseLedger];
+        if (totalPrize > 0) {
+          ledgerEntries.push({
+            id: `led-exp-win-${Date.now()}`,
+            userId: user.id,
+            userName: user.name,
+            type: 'prize_payout',
+            amountVes: totalPrize,
+            balanceBefore: balAfter,
+            balanceAfter: finalBalance,
+            description: `Premio exprés (${winnersCount} cartón/es)`,
+            referenceId: expressRoundId,
+            createdAt: new Date().toISOString(),
+          });
+        }
+        setLedger((prev) => [...ledgerEntries, ...prev]);
+
+        // 11. Persistir en Supabase (fire-and-forget)
+        try {
+          const dbCardsPayload = newCards.map((c) => ({
+            id: c.id,
+            code: c.code,
+            round_id: c.roundId,
+            round_number: c.roundNumber,
+            user_id: user.id,
+            user_name: c.userName,
+            matrix: c.matrix,
+            purchase_time: c.purchaseTime,
+            price_ves: c.priceVes,
+            status: c.status,
+            matched_count: c.matchedCount,
+            winning_patterns: c.winningPatterns,
+            total_prize_ves: c.totalPrizeVes,
+          }));
+          supabase.from('cards').insert(dbCardsPayload).then(({ error }) => {
+            if (error) console.warn('[playExpress] cards insert error:', error);
+          });
+
+          const ledgerDbPayload = ledgerEntries.map((l) => ({
+            id: l.id,
+            user_id: l.userId,
+            user_name: l.userName,
+            type: l.type,
+            amount_ves: l.amountVes,
+            balance_before: l.balanceBefore,
+            balance_after: l.balanceAfter,
+            description: l.description,
+            reference_id: l.referenceId,
+            created_at: l.createdAt,
+          }));
+          supabase.from('ledger').insert(ledgerDbPayload).then(({ error }) => {
+            if (error) console.warn('[playExpress] ledger insert error:', error);
+          });
+
+          supabase.from('profiles').update({ saldo: finalBalance }).eq('id', user.id).then(({ error }) => {
+            if (error) console.warn('[playExpress] profiles update error:', error);
+          });
+        } catch (e) {
+          console.warn('[playExpress] Supabase persistence error:', e);
+        }
+
+        // 12. Auditoría
+        addAuditLog(
+          'EXPRESS_PLAY',
+          `Sorteo exprés: ${user.name} compró ${packCount} cartones, ${winnersCount} ganadores, premio ${formatMoney(totalPrize)}`
+        );
+
+        // 13. Sonido
+        try { soundService.playCoin(); } catch {}
+
+        return {
+          success: true,
+          message: totalPrize > 0 ? `¡Ganaste ${formatMoney(totalPrize)}!` : 'No hubo premio esta vez.',
+          result: { drawnFichas, totalPrize, winnersCount, cards: newCards },
+        };
+      } catch (err: any) {
+        console.warn('[playExpress] error:', err);
+        return { success: false, message: err?.message || 'Error en sorteo exprés' };
+      }
+    },
+    [currentUser, users, currentUserId, commercialConfig, formatMoney, addAuditLog]
+  );
+
   const submitRecharge = useCallback(
     async (form: any): Promise<{ success: boolean; message: string }> => {
       try {
@@ -2977,6 +3198,7 @@ const roundPayload = {
     systemCredentials, fetchSystemCredentials, createSystemCredential, updateSystemCredential, deleteSystemCredential,
     users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards, recharges, setRecharges, withdrawals, setWithdrawals, ledger, auditLogs, addAuditLog, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
     purchaseCards, submitRecharge, addRecharge, registrarRecargaPagoMovil, approveRecharge, rejectRecharge,
+    playExpress,
     submitWithdrawal, completeWithdrawal, rejectWithdrawal,
     createRound, updateRoundConfig, setRoundStatus, submitRoundResult,
     ingresarResultados, verifyWinners, setRoundTransmissionReplay, setRoundLive,
