@@ -155,6 +155,7 @@ export interface GameRound {
   resultSubmittedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+  modo?: 'programado' | 'express';
   [key: string]: any;
 }
 
@@ -221,6 +222,12 @@ export interface CommercialConfig {
     lineDiagonal?: number;
     [key: string]: any;
   };
+   // Modo Exprés
+  expressFichasCount?: number;
+  expressMinPrizeVes?: number;
+  expressMaxPrizeVes?: number;
+  expressInitialPoolVes?: number;
+  
   [key: string]: any;
 }
 
