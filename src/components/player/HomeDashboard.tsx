@@ -157,7 +157,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </span>
             </div>
             <p className="text-[11px] sm:text-xs text-slate-300 font-medium truncate">
-              Compra y juega en segundos. 22 fichas se sortean al azar.
+              Juega Lotería y gana. Tú Supercartón.
             </p>
             <div className="flex items-center gap-2 mt-1.5">
               <span className="text-[10px] sm:text-[11px] font-bold text-amber-300">
@@ -165,7 +165,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </span>
               <span className="text-[10px] text-slate-500">•</span>
               <span className="text-[10px] sm:text-[11px] text-slate-400">
-                Premio hasta 1.300 Bs.
+                Premio hasta 350.000 Bs.
               </span>
             </div>
           </div>
