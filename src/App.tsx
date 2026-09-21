@@ -5,6 +5,7 @@ import { Navbar } from './components/layout/Navbar';
 import { HomeDashboard } from './components/player/HomeDashboard';
 import { MyCardsView } from './components/player/MyCardsView';
 import { LiveDrawViewer } from './components/player/LiveDrawViewer';
+import { ExpressView } from './components/player/ExpressView';
 import { ResultsHistoryView } from './components/player/ResultsHistoryView';
 import { WalletLedgerView } from './components/player/WalletLedgerView';
 import { BuyCardsModal } from './components/player/BuyCardsModal';
@@ -95,6 +96,8 @@ const AppContent: React.FC = () => {
             )}
 
             {activeTab === 'results' && <ResultsHistoryView />}
+            
+            {activeTab === 'express' && <ExpressView />}
 
             {activeTab === 'wallet' && (
               <WalletLedgerView
