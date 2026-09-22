@@ -85,9 +85,10 @@ export const ExpressView: React.FC = () => {
           if (idx >= totalFichas) {
             clearInterval(drawInterval);
             setCurrentFichaId(null);
-
-                       setTimeout(() => {
-              setPhase('result');
+            
+      // 4. Al terminar → resultado
+            setTimeout(() => {
+            setPhase('result');
               if (playResult.totalPrize > 0) {
                 setShowWinnerBanner(true);
                 // 🎺 Fanfarria del ganador
@@ -97,6 +98,8 @@ export const ExpressView: React.FC = () => {
                 } catch {}
               }
             }, 800);
+            return;
+          }
 
   const fichaId = playResult.drawnFichas[idx];
     setCurrentFichaId(fichaId);
