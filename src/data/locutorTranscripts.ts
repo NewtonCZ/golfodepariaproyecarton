@@ -1,10 +1,90 @@
 // src/data/locutorTranscripts.ts
-// Perfil de Audio: Locutor profesional de radio venezolano con más de 20 años anunciando loterías y bingos en vivo.
-// NOTA: Los IDs coinciden con fichasPool.ts (70 fichas reales del sistema).
+// Perfil: Locutor de sorteo. Solo canta el NOMBRE de la ficha.
+// Las frases largas se reservan para el Modo 1 (con timing dinámico).
 
 export const LOCUTOR_TRANSCRIPTS: Record<number, string> = {
   // --- ANIMALES (IDs 1-25) ---
-  1: "¡Atención! ... ¡EL LEÓN! ¡El rey de la selva!",
+  1: "¡EL LEÓN!",
+  2: "¡EL TIGRE!",
+  3: "¡EL ELEFANTE!",
+  4: "¡EL OSO!",
+  5: "¡EL ZORRO!",
+  6: "¡EL PERRO!",
+  7: "¡EL GATO!",
+  8: "¡EL CABALLO!",
+  9: "¡EL ÁGUILA!",
+  10: "¡EL DELFÍN!",
+  11: "¡LA BALLENA!",
+  12: "¡EL MONO!",
+  13: "¡EL LORO!",
+  14: "¡LA SERPIENTE!",
+  15: "¡EL BÚHO!",
+  16: "¡EL PINGÜINO!",
+  17: "¡LA CEBRA!",
+  18: "¡LA JIRAFA!",
+  19: "¡EL LOBO!",
+  20: "¡EL CANGURO!",
+  21: "¡EL KOALA!",
+  22: "¡EL PATO!",
+  23: "¡EL CONEJO!",
+  24: "¡LA TORTUGA!",
+  25: "¡LA MARIPOSA!",
+
+  // --- FRUTAS (IDs 26-50) ---
+  26: "¡LA MANZANA ROJA!",
+  27: "¡EL PLÁTANO!",
+  28: "¡LA FRESA!",
+  29: "¡LA NARANJA!",
+  30: "¡LA UVA!",
+  31: "¡LA SANDÍA!",
+  32: "¡LA PIÑA!",
+  33: "¡EL MANGO!",
+  34: "¡LA CEREZA!",
+  35: "¡EL LIMÓN!",
+  36: "¡EL AGUACATE!",
+  37: "¡EL COCO!",
+  38: "¡EL MELOCOTÓN!",
+  39: "¡LA PERA!",
+  40: "¡EL KIWI!",
+  41: "¡EL TOMATE!",
+  42: "¡LA MANZANA VERDE!",
+  43: "¡LA BERENJENA!",
+  44: "¡LA LECHUGA!",
+  45: "¡EL HIGO!",
+  46: "¡LA GUAYABA!",
+  47: "¡LA MARACUYÁ!",
+  48: "¡LA MORA!",
+  49: "¡EL MAÍZ!",
+  50: "¡EL PEPINO!",
+
+  // --- OBJETOS (IDs 51-70) ---
+  51: "¡LA CASA!",
+  52: "¡EL CARRO!",
+  53: "¡EL AVIÓN!",
+  54: "¡EL BARCO!",
+  55: "¡EL RELOJ!",
+  56: "¡LA GUITARRA!",
+  57: "¡EL TELÉFONO!",
+  58: "¡LA LLAVE!",
+  59: "¡LA CORONA!",
+  60: "¡EL DIAMANTE!",
+  61: "¡EL SOMBRERO!",
+  62: "¡LA CAMPANA!",
+  63: "¡EL BALÓN!",
+  64: "¡EL PARAGUAS!",
+  65: "¡LA ESTRELLA!",
+  66: "¡EL CORAZÓN!",
+  67: "¡LA MONEDA!",
+  68: "¡EL ANCLA!",
+  69: "¡EL REGALO!",
+  70: "¡LA ANTORCHA!",
+};
+
+// ============================================================
+// Versión larga — se usará en el Modo 1 (timing dinámico)
+// ============================================================
+export const LOCUTOR_TRANSCRIPTS_LARGO: Record<number, string> = {
+  1: "¡El rey de la selva! ... ¡EL LEÓN!",
   2: "¡Cuidado, señores! ... ¡EL TIGRE!",
   3: "¡No se lo pierdan! ... ¡EL ELEFANTE!",
   4: "¡Fuerte y grande! ... ¡EL OSO!",
@@ -29,8 +109,6 @@ export const LOCUTOR_TRANSCRIPTS: Record<number, string> = {
   23: "¡Saltando viene! ... ¡EL CONEJO!",
   24: "¡Lenta pero segura! ... ¡LA TORTUGA!",
   25: "¡Qué belleza! ... ¡LA MARIPOSA!",
-
-  // --- FRUTAS (IDs 26-50) ---
   26: "¡Roja y jugosa! ... ¡LA MANZANA ROJA!",
   27: "¡Dulce y suave! ... ¡EL PLÁTANO!",
   28: "¡Roja y dulce! ... ¡LA FRESA!",
@@ -56,8 +134,6 @@ export const LOCUTOR_TRANSCRIPTS: Record<number, string> = {
   48: "¡Oscura y dulce! ... ¡LA MORA!",
   49: "¡El de la Cachapa! ... ¡EL MAÍZ!",
   50: "¡Pa la ensalada! ... ¡EL PEPINO!",
-
-  // --- OBJETOS (IDs 51-70) ---
   51: "¡Hogar dulce hogar! ... ¡LA CASA!",
   52: "¡El rayo macqueen! ... ¡EL CARRO!",
   53: "¡Volando alto! ... ¡EL AVIÓN!",
@@ -80,6 +156,14 @@ export const LOCUTOR_TRANSCRIPTS: Record<number, string> = {
   70: "¡Alumbra la noche! ... ¡LA ANTORCHA!",
 };
 
+// ============================================================
+// API pública — por defecto, versión CORTA (exprés)
+// ============================================================
 export const getFichaLocucion = (id: number): string => {
   return LOCUTOR_TRANSCRIPTS[id] || `¡Ficha ${id}!`;
+};
+
+// Para el Modo 1 con timing dinámico
+export const getFichaLocucionLarga = (id: number): string => {
+  return LOCUTOR_TRANSCRIPTS_LARGO[id] || `¡Ficha ${id}!`;
 };
