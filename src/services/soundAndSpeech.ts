@@ -1,4 +1,5 @@
 // Sound effects & Spanish Voice synthesis service (El Cantador de Fichas)
+import { getFichaLocucion } from '../data/locutorTranscripts';
 
 class SoundAndSpeechService {
   private audioCtx: AudioContext | null = null;
