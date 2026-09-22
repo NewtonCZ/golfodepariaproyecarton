@@ -12,10 +12,7 @@ import {
   Check,
   ExternalLink,
   Trash2,
-  FileImage,
-  Sparkles,
   Shield,
-  Phone,
   HelpCircle,
   ChevronRight,
   LifeBuoy,
@@ -65,12 +62,11 @@ const FAQS = [
 ];
 
 export const CustomerSupportWidget: React.FC = () => {
-  const { currentUser, isAuthenticated } = useGame();
+  const { currentUser } = useGame();
 
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'form' | 'channels' | 'history'>('form');
 
-  // Form State
   const [name, setName] = useState(currentUser?.name || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [phone, setPhone] = useState(currentUser?.phone || '');
@@ -79,20 +75,17 @@ export const CustomerSupportWidget: React.FC = () => {
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
 
-  // Image Attachment State
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [attachedImageName, setAttachedImageName] = useState<string | null>(null);
   const [imageSizeKb, setImageSizeKb] = useState<number>(0);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Status & Submission
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedTicket, setSubmittedTicket] = useState<SupportTicket | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedTicketNumber, setCopiedTicketNumber] = useState(false);
 
-  // Saved Tickets in LocalStorage
   const [savedTickets, setSavedTickets] = useState<SupportTicket[]>(() => {
     try {
       const stored = localStorage.getItem('tusupercarton_support_tickets');
@@ -102,29 +95,24 @@ export const CustomerSupportWidget: React.FC = () => {
     }
   });
 
-  // Keep name & email in sync when user logs in
   useEffect(() => {
     if (currentUser?.name && !name) setName(currentUser.name);
     if (currentUser?.email && !email) setEmail(currentUser.email);
     if (currentUser?.phone && !phone) setPhone(currentUser.phone);
   }, [currentUser]);
 
-  // Handle File Selection
   const handleFileChange = (file: File) => {
     if (!file.type.startsWith('image/')) {
       setErrorMessage('Solo se permiten archivos de imagen (.jpg, .png, .jpeg, .webp)');
       return;
     }
-
     if (file.size > 5 * 1024 * 1024) {
       setErrorMessage('La imagen no debe superar los 5 MB de tamaño.');
       return;
     }
-
     setErrorMessage(null);
     setAttachedImageName(file.name);
     setImageSizeKb(Math.round(file.size / 1024));
-
     const reader = new FileReader();
     reader.onload = (e) => {
       if (e.target?.result) {
@@ -146,19 +134,13 @@ export const CustomerSupportWidget: React.FC = () => {
     setAttachedImage(null);
     setAttachedImageName(null);
     setImageSizeKb(0);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // ============================================================
-  // SUBMIT TICKET — Insert directo en tabla 'reclamos'
-  // ============================================================
   const handleSubmitTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
-    // Validaciones
     if (!name.trim()) {
       setErrorMessage('Por favor ingresa tu nombre completo o usuario.');
       return;
@@ -198,9 +180,7 @@ export const CustomerSupportWidget: React.FC = () => {
     let supabaseSuccess = false;
     let supabaseError: string | null = null;
 
-    // ============================================================
-    // 1. INSERT DIRECTO A SUPABASE (tabla: reclamos)
-    // ============================================================
+    // INSERT DIRECTO A SUPABASE (solo tabla 'reclamos')
     try {
       if (supabase.isConfigured) {
         const payload = {
@@ -228,7 +208,6 @@ export const CustomerSupportWidget: React.FC = () => {
           console.warn('[CustomerSupport] Supabase error:', error);
         } else if (data) {
           supabaseSuccess = true;
-          // Usar el UUID real de Supabase como ticketNumber
           if (data.id) {
             newTicket.ticketNumber = String(data.id).slice(0, 8).toUpperCase();
           }
@@ -239,9 +218,6 @@ export const CustomerSupportWidget: React.FC = () => {
       supabaseError = err?.message || 'Error de conexión';
     }
 
-    // ============================================================
-    // 2. NOTIFICACIÓN AL BACKEND (opcional, para redundancia)
-    // ============================================================
     try {
       await fetch('/api/support/tickets', {
         method: 'POST',
@@ -255,9 +231,6 @@ export const CustomerSupportWidget: React.FC = () => {
       console.warn('[CustomerSupport] Error notificando al backend:', apiErr);
     }
 
-    // ============================================================
-    // 3. GUARDAR EN LOCALSTORAGE (espejo para historial local)
-    // ============================================================
     const updatedTickets = [newTicket, ...savedTickets];
     setSavedTickets(updatedTickets);
     try {
@@ -266,15 +239,12 @@ export const CustomerSupportWidget: React.FC = () => {
 
     setIsSubmitting(false);
 
-    // Si falló Supabase, mostrar error
     if (!supabaseSuccess && supabaseError) {
       setErrorMessage(`No se pudo guardar el reclamo: ${supabaseError}. Intenta de nuevo.`);
       return;
     }
 
     setSubmittedTicket(newTicket);
-
-    // Limpiar formulario
     setSubject('');
     setDescription('');
     removeAttachedImage();
@@ -286,20 +256,14 @@ export const CustomerSupportWidget: React.FC = () => {
     setTimeout(() => setCopiedTicketNumber(false), 2000);
   };
 
-  // Official links
-  const WHATSAPP_GROUP_URL = 'https://chat.whatsapp.com/TuSuperCartonOficial';
   const WHATSAPP_DIRECT_SUPPORT = `https://api.whatsapp.com/send?phone=584120000000&text=${encodeURIComponent(
     submittedTicket
       ? `Hola soporte de Tu SúperCartón, abrí el ticket #${submittedTicket.ticketNumber} sobre "${submittedTicket.subject}".`
       : 'Hola equipo de atención al cliente de Tu SúperCartón, necesito asistencia.'
   )}`;
-  const TELEGRAM_GROUP_URL = 'https://t.me/tusupercarton';
 
   return (
     <>
-      {/* ========================================================= */}
-      {/* BOTÓN FLOTANTE INFERIOR (Floating Action Button)          */}
-      {/* ========================================================= */}
       <div
         id="customer-support-fab-container"
         className="fixed bottom-6 right-6 z-40 flex items-center gap-3"
@@ -315,22 +279,12 @@ export const CustomerSupportWidget: React.FC = () => {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border border-slate-950"></span>
           </span>
-
           <Headphones className="w-4 h-4 text-slate-950 flex-shrink-0 transition-transform group-hover:rotate-12" />
-
-          <span className="text-xs font-extrabold tracking-tight truncate whitespace-nowrap">
-            Soporte
-          </span>
-
-          <span className="bg-slate-950 text-amber-300 text-[9px] font-black px-1.5 py-0.2 rounded-full tracking-wider uppercase border border-amber-400/30 flex-shrink-0">
-            24/7
-          </span>
+          <span className="text-xs font-extrabold tracking-tight truncate whitespace-nowrap">Soporte</span>
+          <span className="bg-slate-950 text-amber-300 text-[9px] font-black px-1.5 py-0.2 rounded-full tracking-wider uppercase border border-amber-400/30 flex-shrink-0">24/7</span>
         </button>
       </div>
 
-      {/* ========================================================= */}
-      {/* MODAL DE ATENCIÓN AL CLIENTE Y TICKETS                    */}
-      {/* ========================================================= */}
       {isOpen && (
         <div
           id="customer-support-modal-backdrop"
@@ -343,7 +297,6 @@ export const CustomerSupportWidget: React.FC = () => {
             id="customer-support-modal-card"
             className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
           >
-            {/* Header del Modal */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-indigo-950 p-4 sm:p-5 border-b border-slate-850 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 flex items-center justify-center font-black shadow-md shadow-amber-500/20">
@@ -364,7 +317,6 @@ export const CustomerSupportWidget: React.FC = () => {
                   </p>
                 </div>
               </div>
-
               <button
                 id="customer-support-modal-close-btn"
                 onClick={() => setIsOpen(false)}
@@ -375,7 +327,6 @@ export const CustomerSupportWidget: React.FC = () => {
               </button>
             </div>
 
-            {/* Accesos Rápidos a Canales Oficiales */}
             <div className="bg-slate-950/80 px-4 sm:px-6 py-3 border-b border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <a
                 id="whatsapp-channel-button"
@@ -426,7 +377,6 @@ export const CustomerSupportWidget: React.FC = () => {
               </a>
             </div>
 
-            {/* Pestañas de Navegación del Modal */}
             <div className="flex border-b border-slate-800 bg-slate-900/90 px-4 sm:px-6">
               <button
                 id="tab-open-ticket"
@@ -470,343 +420,3 @@ export const CustomerSupportWidget: React.FC = () => {
                 Mis Tickets ({savedTickets.length})
               </button>
             </div>
-
-            {/* Cuerpo del Modal */}
-            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
-              {/* TAB 1: FORMULARIO */}
-              {activeTab === 'form' && (
-                <>
-                  {submittedTicket ? (
-                    <div
-                      id="ticket-success-confirmation"
-                      className="bg-emerald-950/30 border border-emerald-500/40 rounded-2xl p-5 sm:p-6 text-center space-y-4 animate-in zoom-in-95 duration-200"
-                    >
-                      <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 mx-auto flex items-center justify-center">
-                        <CheckCircle2 className="w-8 h-8" />
-                      </div>
-
-                      <div>
-                        <h3 className="text-lg font-black text-white">
-                          ¡Reclamo Registrado en Supabase!
-                        </h3>
-                        <p className="text-xs text-slate-300 mt-1">
-                          Tu solicitud ha sido radicada correctamente con el siguiente número:
-                        </p>
-                      </div>
-
-                      <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between max-w-sm mx-auto">
-                        <div className="text-left">
-                          <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider block">
-                            Número de Radicado
-                          </span>
-                          <span className="text-lg font-mono font-black text-amber-400">
-                            #{submittedTicket.ticketNumber}
-                          </span>
-                        </div>
-                        <button
-                          id="copy-ticket-btn"
-                          onClick={() => copyTicketCode(submittedTicket.ticketNumber)}
-                          className="flex items-center gap-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
-                        >
-                          {copiedTicketNumber ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              Copiado
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              Copiar
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="text-xs text-slate-400 space-y-1">
-                        <p>
-                          <strong>Categoría:</strong> {submittedTicket.category}
-                        </p>
-                        <p>
-                          <strong>Tiempo estimado de atención:</strong> Menos de 15 minutos en horario activo.
-                        </p>
-                      </div>
-
-                      <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
-                        <a
-                          id="whatsapp-followup-btn"
-                          href={WHATSAPP_DIRECT_SUPPORT}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors shadow-md"
-                        >
-                          <MessageCircle className="w-4 h-4" />
-                          Consultar por WhatsApp con este Ticket
-                        </a>
-
-                        <button
-                          id="create-another-ticket-btn"
-                          onClick={() => setSubmittedTicket(null)}
-                          className="inline-flex items-center justify-center text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2.5 rounded-xl transition-colors border border-slate-700"
-                        >
-                          Abrir otro Ticket
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleSubmitTicket} className="space-y-4">
-                      {errorMessage && (
-                        <div
-                          id="ticket-error-alert"
-                          className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2"
-                        >
-                          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                          <span>{errorMessage}</span>
-                        </div>
-                      )}
-
-                      {/* Fila 1: Nombre y Correo */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label
-                            htmlFor="ticket-user-name"
-                            className="block text-xs font-bold text-slate-300 mb-1"
-                          >
-                            Nombre Completo / Usuario *
-                          </label>
-                          <input
-                            id="ticket-user-name"
-                            type="text"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="Ej. Carlos Pérez"
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
-                            required
-                          />
-                        </div>
-
-                        <div>
-                          <label
-                            htmlFor="ticket-user-email"
-                            className="block text-xs font-bold text-slate-300 mb-1"
-                          >
-                            Correo Electrónico
-                          </label>
-                          <input
-                            id="ticket-user-email"
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="Ej. usuario@correo.com"
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Fila 2: Teléfono y Categoría */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label
-                            htmlFor="ticket-user-phone"
-                            className="block text-xs font-bold text-slate-300 mb-1"
-                          >
-                            Teléfono / WhatsApp *
-                          </label>
-                          <input
-                            id="ticket-user-phone"
-                            type="tel"
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            placeholder="Ej. 0412-1234567"
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
-                          />
-                        </div>
-
-                        <div>
-                          <label
-                            htmlFor="ticket-category"
-                            className="block text-xs font-bold text-slate-300 mb-1"
-                          >
-                            Categoría del Reclamo *
-                          </label>
-                          <select
-                            id="ticket-category"
-                            value={category}
-                            onChange={(e) => setCategory(e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 transition-colors"
-                          >
-                            {TICKET_CATEGORIES.map((cat) => (
-                              <option key={cat.id} value={cat.id} className="bg-slate-900">
-                                {cat.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Fila 3: Asunto y Prioridad */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="sm:col-span-2">
-                          <label
-                            htmlFor="ticket-subject"
-                            className="block text-xs font-bold text-slate-300 mb-1"
-                          >
-                            Asunto del Reclamo *
-                          </label>
-                          <input
-                            id="ticket-subject"
-                            type="text"
-                            value={subject}
-                            onChange={(e) => setSubject(e.target.value)}
-                            placeholder="Ej. Pago Móvil no acreditado Ref: 123456"
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
-                            required
-                          />
-                        </div>
-
-                        <div>
-                          <label
-                            htmlFor="ticket-priority"
-                            className="block text-xs font-bold text-slate-300 mb-1"
-                          >
-                            Prioridad
-                          </label>
-                          <select
-                            id="ticket-priority"
-                            value={priority}
-                            onChange={(e) => setPriority(e.target.value as any)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-amber-400 transition-colors"
-                          >
-                            <option value="Baja">Baja</option>
-                            <option value="Normal">Normal</option>
-                            <option value="Alta">Alta</option>
-                            <option value="Urgente">Urgente</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Descripción */}
-                      <div>
-                        <label
-                          htmlFor="ticket-description"
-                          className="block text-xs font-bold text-slate-300 mb-1"
-                        >
-                          Descripción Detallada del Reclamo / Mensaje *
-                        </label>
-                        <textarea
-                          id="ticket-description"
-                          rows={4}
-                          value={description}
-                          onChange={(e) => setDescription(e.target.value)}
-                          placeholder="Indica todos los detalles posibles: número de referencia bancaria, hora del movimiento, monto en Bs o $, número de cartón, etc."
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors resize-none"
-                          required
-                        />
-                      </div>
-
-                      {/* Imagen */}
-                      <div>
-                        <label className="block text-xs font-bold text-slate-300 mb-1">
-                          Adjuntar Captura de Pantalla / Comprobante (Opcional)
-                        </label>
-
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files[0]) {
-                              handleFileChange(e.target.files[0]);
-                            }
-                          }}
-                        />
-
-                        {attachedImage ? (
-                          <div
-                            id="attached-image-preview"
-                            className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3 overflow-hidden">
-                              <img
-                                src={attachedImage}
-                                alt="Comprobante adjunto"
-                                className="w-12 h-12 rounded-lg object-cover border border-slate-700 flex-shrink-0"
-                              />
-                              <div className="truncate">
-                                <div className="text-xs font-bold text-white truncate">
-                                  {attachedImageName}
-                                </div>
-                                <div className="text-[10px] text-slate-400">
-                                  {imageSizeKb} KB • Imagen lista para enviar a Supabase
-                                </div>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={removeAttachedImage}
-                              className="text-rose-400 hover:text-rose-300 p-2 rounded-lg hover:bg-rose-950/40 transition-colors"
-                              title="Remover imagen"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              setIsDragging(true);
-                            }}
-                            onDragLeave={() => setIsDragging(false)}
-                            onDrop={handleDrop}
-                            onClick={() => fileInputRef.current?.click()}
-                            className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
-                              isDragging
-                                ? 'border-amber-400 bg-amber-950/20'
-                                : 'border-slate-800 hover:border-slate-700 bg-slate-950/50'
-                            }`}
-                          >
-                            <UploadCloud className="w-7 h-7 text-slate-400 mx-auto mb-1.5" />
-                            <p className="text-xs text-slate-300 font-medium">
-                              Arrastra aquí tu captura o{' '}
-                              <span className="text-amber-400 underline font-bold">
-                                haz clic para buscar
-                              </span>
-                            </p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">
-                              Formatos permitidos: JPG, PNG, WEBP (Máx 5MB)
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Botón de Envío */}
-                      <button
-                        id="submit-ticket-button"
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 text-sm active:scale-[0.99]"
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <span className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
-                            Enviando ticket a Supabase...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4" />
-                            Enviar Reclamo a Atención al Cliente
-                          </>
-                        )}
-                      </button>
-                    </form>
-                  )}
-                </>
-              )}
-
-              {/* TAB 2: FAQ */}
-              {activeTab === 'channels' && (
-                <div className="space-y-4">
-                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
-                    <h3 className="text-xs font-black text-amber-400 uppercase tracking-wider mb-2">
-                     
