@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useGame } from '../../context/GameContext';
 import { getFichaById } from '../../data/fichasPool';
-import { FichaBadge } from '../cards/FichaBadge';
+import { FichaBadge } from '../common/FichaBadge';
 import { Sparkles, Zap, Trophy, AlertCircle, RotateCcw, Play } from 'lucide-react';
 
 interface PlayResult {
