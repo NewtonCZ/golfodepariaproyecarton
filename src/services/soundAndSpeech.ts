@@ -236,7 +236,7 @@ class SoundAndSpeechService {
     this.playPop();
   }
 
-    public speakFicha(ficha: any) {
+  public speakFicha(ficha: any) {
     if (!ficha) return;
     this.playBallDrop();
     if (typeof ficha === 'string') {
