@@ -101,19 +101,17 @@ export const ExpressView: React.FC = () => {
         return;
       }
 
-      const fichaId = playResult.drawnFichas[idx];
-      setCurrentFichaId(fichaId);
-  const fichaId = playResult.drawnFichas[idx];
-    setCurrentFichaId(fichaId);
-    setDrawnFichas((prev) => [...prev, fichaId]);
+              const fichaId = playResult.drawnFichas[idx];
+          setCurrentFichaId(fichaId);
+          setDrawnFichas((prev) => [...prev, fichaId]);
 
-// 🔊 Locución del locutor con el nombre de la figura
-      try {
-      const ficha = getFichaById(fichaId);
-      if (ficha) soundService.speakFicha(ficha);
-    } catch (err) {
-      console.warn('[ExpressView] speakFicha error:', err);
-        }
+          // 🔊 Locución del locutor con el nombre de la figura
+          try {
+            const ficha = getFichaById(fichaId);
+            if (ficha) soundService.speakFicha(ficha);
+          } catch (err) {
+            console.warn('[ExpressView] speakFicha error:', err);
+          }
 
           idx++;
   const resetView = () => {
