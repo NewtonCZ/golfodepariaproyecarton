@@ -236,16 +236,17 @@ class SoundAndSpeechService {
     this.playPop();
   }
 
-  public speakFicha(ficha: any) {
+    public speakFicha(ficha: any) {
     if (!ficha) return;
     this.playBallDrop();
     if (typeof ficha === 'string') {
       this.cantarFicha(ficha);
+    } else if (ficha && ficha.id) {
+      const phrase = getFichaLocucion(ficha.id);
+      this.cantarFicha(phrase);
     } else if (ficha && ficha.name) {
-      const phrase = ficha.pronunciation ? ficha.pronunciation.replace(/^[¡!]+|[¡!]+$/g, '') : ficha.name;
-      this.cantarFicha(`¡Número ${ficha.id}! ¡${phrase}!`);
+      this.cantarFicha(`¡${ficha.name}!`);
     }
   }
-}
 
 export const soundService = new SoundAndSpeechService();
