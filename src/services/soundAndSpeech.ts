@@ -29,7 +29,6 @@ class SoundAndSpeechService {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
     const voices = window.speechSynthesis.getVoices();
     if (!voices || voices.length === 0) return null;
-    // Prioritize natural Spanish voices (es-VE, es-MX, es-ES, es-US)
     const priorityVoice = voices.find(v => v.lang === 'es-VE') ||
       voices.find(v => v.lang === 'es-MX') ||
       voices.find(v => v.lang === 'es-US') ||
@@ -70,7 +69,58 @@ class SoundAndSpeechService {
     return this.soundEffectsEnabled;
   }
 
-  // Sing out the name of a drawn Ficha in enthusiastic Spanish
+  // ============================================================
+  // NUEVO: versión async que espera al onend del utterance
+  // ============================================================
+  public cantarFichaAsync(nameOrPhrase: string): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.voiceEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        resolve();
+        return;
+      }
+
+      try {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(nameOrPhrase);
+        utterance.lang = 'es-ES';
+        utterance.rate = 1.0;
+        utterance.pitch = 1.1;
+        utterance.volume = 1.0;
+
+        const voice = this.selectedVoice || this.getSpanishVoice();
+        if (voice) {
+          utterance.voice = voice;
+        }
+
+        // Timeout de seguridad: si el TTS se traba, forzamos resolve
+        const safetyMs = 15000;
+        const safetyTimer = setTimeout(() => {
+          console.warn('[soundService] TTS timeout, forzando avance');
+          try { window.speechSynthesis.cancel(); } catch {}
+          resolve();
+        }, safetyMs);
+
+        utterance.onend = () => {
+          clearTimeout(safetyTimer);
+          resolve();
+        };
+        utterance.onerror = () => {
+          clearTimeout(safetyTimer);
+          resolve();
+        };
+
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  // Versión original (sync) — la dejamos por compatibilidad
   public cantarFicha(nameOrPhrase: string) {
     if (!this.voiceEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) {
       return;
@@ -80,12 +130,12 @@ class SoundAndSpeechService {
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
-      window.speechSynthesis.cancel(); // Stop any pending utterance
+      window.speechSynthesis.cancel();
 
       const utterance = new SpeechSynthesisUtterance(nameOrPhrase);
       utterance.lang = 'es-ES';
       utterance.rate = 1.0;
-      utterance.pitch = 1.1; // energetic cartoon tone
+      utterance.pitch = 1.1;
       utterance.volume = 1.0;
 
       const voice = this.selectedVoice || this.getSpanishVoice();
@@ -95,17 +145,51 @@ class SoundAndSpeechService {
 
       window.speechSynthesis.speak(utterance);
     } catch {
-      // Fallback silently if browser blocks speech without user interaction
+      // Fallback silencioso
     }
   }
 
-  // Play celebratory phrase
   public cantarPremio(tipoPremio: string) {
     this.playFanfare();
     this.cantarFicha(`¡Atención! ¡${tipoPremio}! ¡Felicidades!`);
   }
 
-  // Synthesized Arcade Sound: Ficha Draw / Ball Pop
+  // ============================================================
+  // NUEVO: speakFichaAsync — espera pop + voz completa
+  // ============================================================
+  public async speakFichaAsync(ficha: any): Promise<void> {
+    if (!ficha) return;
+    this.playBallDrop();
+
+    let phrase: string | null = null;
+    if (typeof ficha === 'string') {
+      phrase = ficha;
+    } else if (ficha && ficha.id) {
+      phrase = getFichaLocucion(ficha.id);
+    } else if (ficha && ficha.name) {
+      phrase = `¡${ficha.name}!`;
+    }
+
+    if (phrase) {
+      await this.cantarFichaAsync(phrase);
+    }
+  }
+
+  // Versión original (sync) — se mantiene
+  public speakFicha(ficha: any) {
+    if (!ficha) return;
+    this.playBallDrop();
+    if (typeof ficha === 'string') {
+      this.cantarFicha(ficha);
+    } else if (ficha && ficha.id) {
+      const phrase = getFichaLocucion(ficha.id);
+      this.cantarFicha(phrase);
+    } else if (ficha && ficha.name) {
+      this.cantarFicha(`¡${ficha.name}!`);
+    }
+  }
+
+  // ... (resto de métodos playPop, playCoin, playFanfare, playClick, aliases se mantienen igual)
   public playPop() {
     if (!this.soundEffectsEnabled) return;
     try {
@@ -128,12 +212,9 @@ class SoundAndSpeechService {
 
       osc.start(now);
       osc.stop(now + 0.13);
-    } catch {
-      // Ignore audio failure
-    }
+    } catch {}
   }
 
-  // Synthesized Sound: Coin clink / Purchase / Win
   public playCoin() {
     if (!this.soundEffectsEnabled) return;
     try {
@@ -141,7 +222,7 @@ class SoundAndSpeechService {
       if (!this.audioCtx) return;
 
       const now = this.audioCtx.currentTime;
-      const freqs = [987.77, 1318.51]; // B5 to E6
+      const freqs = [987.77, 1318.51];
 
       freqs.forEach((f, i) => {
         if (!this.audioCtx) return;
@@ -159,12 +240,9 @@ class SoundAndSpeechService {
         osc.start(now + i * 0.08);
         osc.stop(now + i * 0.08 + 0.26);
       });
-    } catch {
-      // Ignore audio failure
-    }
+    } catch {}
   }
 
-  // Synthesized Sound: Big Winner Fanfare
   public playFanfare() {
     if (!this.soundEffectsEnabled) return;
     try {
@@ -172,7 +250,7 @@ class SoundAndSpeechService {
       if (!this.audioCtx) return;
 
       const now = this.audioCtx.currentTime;
-      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+      const notes = [523.25, 659.25, 783.99, 1046.5];
 
       notes.forEach((freq, idx) => {
         if (!this.audioCtx) return;
@@ -190,12 +268,9 @@ class SoundAndSpeechService {
         osc.start(now + idx * 0.12);
         osc.stop(now + idx * 0.12 + 0.42);
       });
-    } catch {
-      // Ignore audio failure
-    }
+    } catch {}
   }
 
-  // Synthesized Sound: Subtle UI click
   public playClick() {
     if (!this.soundEffectsEnabled) return;
     try {
@@ -218,35 +293,12 @@ class SoundAndSpeechService {
 
       osc.start(now);
       osc.stop(now + 0.05);
-    } catch {
-      // Ignore audio failure
-    }
+    } catch {}
   }
 
-  // Aliases for compatibility
-  public playPurchase() {
-    this.playCoin();
-  }
+  public playPurchase() { this.playCoin(); }
+  public playWinner() { this.playFanfare(); }
+  public playBallDrop() { this.playPop(); }
+}
 
-  public playWinner() {
-    this.playFanfare();
-  }
-
-  public playBallDrop() {
-    this.playPop();
-  }
-
-  public speakFicha(ficha: any) {
-    if (!ficha) return;
-    this.playBallDrop();
-    if (typeof ficha === 'string') {
-      this.cantarFicha(ficha);
-    } else if (ficha && ficha.id) {
-      const phrase = getFichaLocucion(ficha.id);
-      this.cantarFicha(phrase);
-    } else if (ficha && ficha.name) {
-      this.cantarFicha(`¡${ficha.name}!`);
-    }
-  }
- }
 export const soundService = new SoundAndSpeechService();
