@@ -82,7 +82,7 @@ export const ExpressView: React.FC = () => {
         const totalFichas = playResult.drawnFichas.length;
 
         const drawInterval = setInterval(() => {
-               if (idx >= totalFichas) {
+                   if (idx >= totalFichas) {
         clearInterval(drawInterval);
         setCurrentFichaId(null);
 
@@ -103,7 +103,6 @@ export const ExpressView: React.FC = () => {
 
       const fichaId = playResult.drawnFichas[idx];
       setCurrentFichaId(fichaId);
-
   const fichaId = playResult.drawnFichas[idx];
     setCurrentFichaId(fichaId);
     setDrawnFichas((prev) => [...prev, fichaId]);
