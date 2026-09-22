@@ -248,5 +248,5 @@ class SoundAndSpeechService {
       this.cantarFicha(`¡${ficha.name}!`);
     }
   }
-
+ }
 export const soundService = new SoundAndSpeechService();
