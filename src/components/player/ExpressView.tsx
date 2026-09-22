@@ -86,15 +86,17 @@ export const ExpressView: React.FC = () => {
             clearInterval(drawInterval);
             setCurrentFichaId(null);
 
-            // 4. Al terminar → resultado
-            setTimeout(() => {
+                       setTimeout(() => {
               setPhase('result');
               if (playResult.totalPrize > 0) {
                 setShowWinnerBanner(true);
+                // 🎺 Fanfarria del ganador
+                try {
+                  soundService.playFanfare();
+                  soundService.cantarFicha('¡Felicidades, ganaste!');
+                } catch {}
               }
             }, 800);
-            return;
-          }
 
   const fichaId = playResult.drawnFichas[idx];
     setCurrentFichaId(fichaId);
