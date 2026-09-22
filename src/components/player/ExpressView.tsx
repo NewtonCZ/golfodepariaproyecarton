@@ -14,7 +14,7 @@ interface PlayResult {
 
 type Phase = 'idle' | 'dealing' | 'drawing' | 'result';
 
-const DRAW_INTERVAL_MS = 2000;
+const DRAW_INTERVAL_MS = 3000;
 const DEAL_DELAY_MS = 300;
 
 export const ExpressView: React.FC = () => {
