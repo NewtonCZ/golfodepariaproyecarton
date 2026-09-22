@@ -12,13 +12,10 @@ interface PlayResult {
   cards: any[];
 }
 
-// ─────────────────────────────────────────────
-// TIPOS INTERNOS DE LA ANIMACIÓN
-// ─────────────────────────────────────────────
 type Phase = 'idle' | 'dealing' | 'drawing' | 'result';
 
-const DRAW_INTERVAL_MS = 2000; // 2 seg por ficha
-const DEAL_DELAY_MS = 300;     // stagger entre cartones
+const DRAW_INTERVAL_MS = 2000;
+const DEAL_DELAY_MS = 300;
 
 export const ExpressView: React.FC = () => {
   const { playExpress, formatMoney, commercialConfig, currentUser } = useGame();
@@ -27,7 +24,6 @@ export const ExpressView: React.FC = () => {
   const [result, setResult] = useState<PlayResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Estado de animación
   const [dealtCardsCount, setDealtCardsCount] = useState(0);
   const [drawnFichas, setDrawnFichas] = useState<number[]>([]);
   const [currentFichaId, setCurrentFichaId] = useState<number | null>(null);
@@ -40,12 +36,8 @@ export const ExpressView: React.FC = () => {
     pack6: cfgAny.expressPack6Price || 450,
   };
 
-  // Set de IDs de fichas cantadas para lookup rápido
   const drawnSet = useMemo(() => new Set(drawnFichas), [drawnFichas]);
 
-  // ─────────────────────────────────────────────
-  // SECUENCIA COMPLETA AL PRESIONAR UN PACK
-  // ─────────────────────────────────────────────
   const handlePlay = async (packCount: 2 | 4 | 6) => {
     setErrorMsg(null);
     setResult(null);
@@ -56,7 +48,6 @@ export const ExpressView: React.FC = () => {
     setPhase('dealing');
 
     try {
-      // 1. Llamar al backend YA (en paralelo con la animación)
       const res = await playExpress(packCount);
       if (!res.success) {
         setErrorMsg(res.message);
@@ -67,7 +58,6 @@ export const ExpressView: React.FC = () => {
       const playResult = res.result as PlayResult;
       setResult(playResult);
 
-      // 2. Esperar a que se repartan los cartones (stagger)
       const totalCards = playResult.cards?.length || packCount;
       for (let i = 1; i <= totalCards; i++) {
         setTimeout(() => setDealtCardsCount(i), i * DEAL_DELAY_MS);
@@ -75,37 +65,33 @@ export const ExpressView: React.FC = () => {
 
       const dealDuration = totalCards * DEAL_DELAY_MS + 400;
 
-      // 3. Después de repartir → empezar a cantar fichas
       setTimeout(() => {
         setPhase('drawing');
         let idx = 0;
         const totalFichas = playResult.drawnFichas.length;
 
         const drawInterval = setInterval(() => {
-                   if (idx >= totalFichas) {
-        clearInterval(drawInterval);
-        setCurrentFichaId(null);
+          if (idx >= totalFichas) {
+            clearInterval(drawInterval);
+            setCurrentFichaId(null);
 
-        // 4. Al terminar -> resultado
-        setTimeout(() => {
-          setPhase('result');
-          if (playResult.totalPrize > 0) {
-            setShowWinnerBanner(true);
-            // Fanfarria del ganador
-            try {
-              soundService.playFanfare();
-              soundService.cantarFicha('¡Felicidades, ganaste!');
-            } catch {}
+            setTimeout(() => {
+              setPhase('result');
+              if (playResult.totalPrize > 0) {
+                setShowWinnerBanner(true);
+                try {
+                  soundService.playFanfare();
+                  soundService.cantarFicha('¡Felicidades, ganaste!');
+                } catch {}
+              }
+            }, 800);
+            return;
           }
-        }, 800);
-        return;
-      }
 
-              const fichaId = playResult.drawnFichas[idx];
+          const fichaId = playResult.drawnFichas[idx];
           setCurrentFichaId(fichaId);
           setDrawnFichas((prev) => [...prev, fichaId]);
 
-          // 🔊 Locución del locutor con el nombre de la figura
           try {
             const ficha = getFichaById(fichaId);
             if (ficha) soundService.speakFicha(ficha);
@@ -114,6 +100,14 @@ export const ExpressView: React.FC = () => {
           }
 
           idx++;
+        }, DRAW_INTERVAL_MS);
+      }, dealDuration);
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Error inesperado');
+      setPhase('idle');
+    }
+  };
+
   const resetView = () => {
     setPhase('idle');
     setResult(null);
@@ -126,7 +120,6 @@ export const ExpressView: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto py-6 px-4">
-      {/* HEADER */}
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider shadow-lg shadow-amber-500/30">
           <Zap className="w-4 h-4 fill-current" />
@@ -138,7 +131,6 @@ export const ExpressView: React.FC = () => {
         </p>
       </div>
 
-      {/* SALDO */}
       <div className="bg-slate-800/60 border border-slate-700 rounded-2xl p-4 mb-6 flex items-center justify-between">
         <div>
           <p className="text-xs text-slate-400 uppercase font-bold">Tu saldo disponible</p>
@@ -149,7 +141,6 @@ export const ExpressView: React.FC = () => {
         <Sparkles className="w-8 h-8 text-amber-400/60" />
       </div>
 
-      {/* FASE IDLE: elegir pack */}
       {phase === 'idle' && !errorMsg && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <PackButton pack={2} price={packPrices.pack2} onPlay={handlePlay} />
@@ -158,7 +149,6 @@ export const ExpressView: React.FC = () => {
         </div>
       )}
 
-      {/* ERROR */}
       {errorMsg && (
         <div className="bg-red-950/40 border border-red-700/60 rounded-2xl p-4 flex items-start gap-3 mt-6">
           <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
@@ -175,10 +165,8 @@ export const ExpressView: React.FC = () => {
         </div>
       )}
 
-      {/* FASES DE JUEGO: dealing / drawing / result */}
       {phase !== 'idle' && result && (
         <div className="space-y-6">
-          {/* MESA DE CARTONES */}
           <div>
             <p className="text-xs text-slate-400 uppercase font-bold mb-3 text-center">
               Tus cartones en juego
@@ -199,10 +187,8 @@ export const ExpressView: React.FC = () => {
             </div>
           </div>
 
-          {/* BOLILLERO - FICHAS CANTADAS */}
           {phase !== 'idle' && (
             <div className="bg-slate-900/80 border-2 border-amber-500/30 rounded-2xl p-4 sm:p-6">
-              {/* Ficha actual grande */}
               <div className="flex items-center justify-center gap-6 mb-4">
                 {currentFichaId ? (
                   <CurrentFichaDisplay fichaId={currentFichaId} />
@@ -224,7 +210,6 @@ export const ExpressView: React.FC = () => {
                 )}
               </div>
 
-              {/* Historial de fichas cantadas */}
               <div>
                 <p className="text-[10px] text-slate-500 uppercase font-bold mb-2 text-center">
                   Figuras cantadas
@@ -238,12 +223,10 @@ export const ExpressView: React.FC = () => {
             </div>
           )}
 
-          {/* CARTEL DE GANADOR / PERDEDOR */}
           {phase === 'result' && (
             <div className="animate-in fade-in zoom-in-95 duration-500">
               {showWinnerBanner && result.totalPrize > 0 ? (
                 <div className="relative rounded-3xl p-8 text-center border-4 border-amber-400 bg-gradient-to-br from-amber-500/30 via-yellow-500/20 to-orange-500/30 shadow-2xl shadow-amber-500/40 overflow-hidden">
-                  {/* Confeti simulado con puntos dorados */}
                   <div className="absolute inset-0 pointer-events-none">
                     {[...Array(20)].map((_, i) => (
                       <div
@@ -296,11 +279,6 @@ export const ExpressView: React.FC = () => {
   );
 };
 
-// ─────────────────────────────────────────────
-// SUB-COMPONENTES
-// ─────────────────────────────────────────────
-
-/** Botón de pack con hover y glow */
 const PackButton: React.FC<{
   pack: 2 | 4 | 6;
   price: number;
@@ -335,7 +313,6 @@ const PackButton: React.FC<{
   </button>
 );
 
-/** Cartón en la mesa con animación de volteo 3D */
 const CardOnTable: React.FC<{
   card: any;
   isFlipped: boolean;
@@ -353,7 +330,6 @@ const CardOnTable: React.FC<{
           transform: isFlipped ? 'rotateY(0deg)' : 'rotateY(180deg)',
         }}
       >
-        {/* FRENTE (visible cuando volteado) */}
         <div
           className="bg-slate-900 border-2 border-amber-500/40 rounded-2xl p-3 shadow-lg"
           style={{ backfaceVisibility: 'hidden' }}
@@ -367,7 +343,6 @@ const CardOnTable: React.FC<{
             </span>
           </div>
 
-          {/* Matriz 4x4 */}
           <div className="grid grid-cols-4 gap-1.5">
             {matrix.map((fichaId, idx) => {
               const isMarked = drawnSet.has(fichaId);
@@ -398,7 +373,6 @@ const CardOnTable: React.FC<{
           </div>
         </div>
 
-        {/* REVERSO (visible antes de voltear) */}
         <div
           className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-900 border-2 border-indigo-700 flex items-center justify-center"
           style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
@@ -415,7 +389,6 @@ const CardOnTable: React.FC<{
   );
 };
 
-/** Ficha actual grande */
 const CurrentFichaDisplay: React.FC<{ fichaId: number }> = ({ fichaId }) => {
   const ficha = getFichaById(fichaId);
   if (!ficha) return null;
@@ -437,7 +410,6 @@ const CurrentFichaDisplay: React.FC<{ fichaId: number }> = ({ fichaId }) => {
   );
 };
 
-/** Chip pequeño de ficha cantada */
 const FichaChip: React.FC<{ fichaId: number; isLatest: boolean }> = ({ fichaId, isLatest }) => {
   const ficha = getFichaById(fichaId);
   if (!ficha) return null;
