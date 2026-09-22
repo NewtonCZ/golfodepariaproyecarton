@@ -96,18 +96,19 @@ export const ExpressView: React.FC = () => {
             return;
           }
 
-          const fichaId = playResult.drawnFichas[idx];
-          setCurrentFichaId(fichaId);
-          setDrawnFichas((prev) => [...prev, fichaId]);
-          idx++;
-        }, DRAW_INTERVAL_MS);
-      }, dealDuration);
-    } catch (e: any) {
-      setErrorMsg(e?.message || 'Error inesperado');
-      setPhase('idle');
-    }
-  };
+  const fichaId = playResult.drawnFichas[idx];
+    setCurrentFichaId(fichaId);
+    setDrawnFichas((prev) => [...prev, fichaId]);
 
+// 🔊 Locución del locutor con el nombre de la figura
+      try {
+      const ficha = getFichaById(fichaId);
+      if (ficha) soundService.speakFicha(ficha);
+    } catch (err) {
+      console.warn('[ExpressView] speakFicha error:', err);
+        }
+
+          idx++;
   const resetView = () => {
     setPhase('idle');
     setResult(null);
