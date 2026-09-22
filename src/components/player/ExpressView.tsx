@@ -82,24 +82,27 @@ export const ExpressView: React.FC = () => {
         const totalFichas = playResult.drawnFichas.length;
 
         const drawInterval = setInterval(() => {
-          if (idx >= totalFichas) {
-            clearInterval(drawInterval);
-            setCurrentFichaId(null);
-            
-      // 4. Al terminar → resultado
-            setTimeout(() => {
-            setPhase('result');
-              if (playResult.totalPrize > 0) {
-                setShowWinnerBanner(true);
-                // 🎺 Fanfarria del ganador
-                try {
-                  soundService.playFanfare();
-                  soundService.cantarFicha('¡Felicidades, ganaste!');
-                } catch {}
-              }
-            }, 800);
-            return;
+               if (idx >= totalFichas) {
+        clearInterval(drawInterval);
+        setCurrentFichaId(null);
+
+        // 4. Al terminar -> resultado
+        setTimeout(() => {
+          setPhase('result');
+          if (playResult.totalPrize > 0) {
+            setShowWinnerBanner(true);
+            // Fanfarria del ganador
+            try {
+              soundService.playFanfare();
+              soundService.cantarFicha('¡Felicidades, ganaste!');
+            } catch {}
           }
+        }, 800);
+        return;
+      }
+
+      const fichaId = playResult.drawnFichas[idx];
+      setCurrentFichaId(fichaId);
 
   const fichaId = playResult.drawnFichas[idx];
     setCurrentFichaId(fichaId);
