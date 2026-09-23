@@ -7,7 +7,8 @@ export type AdminTab =
   | 'commercial'
   | 'audit'
   | 'users'
-  | 'operators';
+  | 'operators'
+  | 'reclamos';  // ← NUEVO
 
 export type AdminRole = 'Super Admin' | 'Operador Financiero' | 'Auditor';
 
@@ -25,6 +26,7 @@ export interface RolePermissionConfig {
   canManageCommercialConfig: boolean;
   canManageUsersAndBalances: boolean;
   canManagePasswords: boolean;
+  canManageReclamos: boolean;  // ← NUEVO
   isReadOnly: boolean;
 }
 
@@ -47,6 +49,7 @@ export const ROLE_PERMISSIONS: Record<
       'audit',
       'users',
       'operators',
+      'reclamos',  // ← NUEVO
     ],
     canManageOperators: true,
     canManageWithdrawals: true,
@@ -56,6 +59,7 @@ export const ROLE_PERMISSIONS: Record<
     canManageCommercialConfig: true,
     canManageUsersAndBalances: true,
     canManagePasswords: true,
+    canManageReclamos: true,  // ← NUEVO
     isReadOnly: false,
   },
   'Operador Financiero': {
@@ -68,6 +72,7 @@ export const ROLE_PERMISSIONS: Record<
       'recharges',
       'withdrawals',
       'audit',
+      'reclamos',  // ← NUEVO
     ],
     canManageOperators: false,
     canManageWithdrawals: true,
@@ -77,6 +82,7 @@ export const ROLE_PERMISSIONS: Record<
     canManageCommercialConfig: false,
     canManageUsersAndBalances: false,
     canManagePasswords: false,
+    canManageReclamos: true,  // ← NUEVO (puede responder y cerrar, pero no borrar)
     isReadOnly: false,
   },
   Auditor: {
@@ -84,7 +90,7 @@ export const ROLE_PERMISSIONS: Record<
     displayName: 'Auditor',
     badgeColor: 'from-cyan-600 to-blue-600',
     description: 'Acceso exclusivo de solo lectura para supervisar y verificar los registros en "Libro y Auditoría".',
-    allowedTabs: ['audit'],
+    allowedTabs: ['audit', 'reclamos'],  // ← NUEVO
     canManageOperators: false,
     canManageWithdrawals: false,
     canManageRecharges: false,
@@ -93,6 +99,7 @@ export const ROLE_PERMISSIONS: Record<
     canManageCommercialConfig: false,
     canManageUsersAndBalances: false,
     canManagePasswords: false,
+    canManageReclamos: false,  // ← NUEVO (solo lectura)
     isReadOnly: true,
   },
 };
