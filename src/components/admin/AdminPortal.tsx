@@ -8,6 +8,7 @@ import { FichaBadge } from '../common/FichaBadge';
 import { OperatorManagementView } from './OperatorManagementView';
 import { SorteoForm } from './SorteoForm';
 import { AdminDashboardView } from './AdminDashboardView';
+import { ReclamosAdminView } from './ReclamosAdminView';
 import { ROLE_PERMISSIONS, AdminTab } from '../../config/permissions';
 import {
   LayoutDashboard,
