@@ -284,32 +284,18 @@ const PackButton: React.FC<{
   price: number;
   onPlay: (p: 2 | 4 | 6) => void;
   highlight?: boolean;
-}> = ({ pack, price, onPlay, highlight = false }) => (
+}> = ({ pack, price, onPlay }) => (
   <button
     onClick={() => onPlay(pack)}
-    className={`group relative bg-slate-800/60 border-2 rounded-2xl p-6 text-left transition-all hover:scale-[1.03] active:scale-[0.98] hover:shadow-2xl ${
-      highlight
-        ? 'border-amber-500/70 hover:border-amber-400 hover:shadow-amber-500/30'
-        : 'border-slate-700 hover:border-amber-500/60 hover:shadow-amber-500/20'
-    }`}
+    className="flex w-full items-center gap-3 rounded-[18px] border-2 border-amber-400/80 bg-[#121a2e] px-3 py-2.5 text-left hover:border-amber-400 transition-all"
   >
-    {highlight && (
-      <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-amber-400 text-slate-950 text-[10px] font-black px-3 py-0.5 rounded-full shadow-md uppercase tracking-wider">
-        Popular
-      </span>
-    )}
-    <div className="flex items-center gap-2 mb-3">
-      <Sparkles className="w-5 h-5 text-amber-400 group-hover:rotate-12 transition-transform" />
-      <span className="text-xs font-black uppercase text-amber-400">Pack</span>
+    <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-300 to-blue-600">
+      <span className="text-[16px] font-black italic text-white -rotate-12">super</span>
     </div>
-    <p className="text-2xl font-black text-white">{pack} Cartones</p>
-    <p className="text-3xl font-black text-amber-400 mt-2 group-hover:scale-105 transition-transform origin-left">
-      {price} Bs.
-    </p>
-    <p className="text-xs text-slate-400 mt-3 flex items-center gap-1">
-      <Play className="w-3 h-3 text-amber-400 fill-current" />
-      Jugar ahora
-    </p>
+    <div className="leading-none">
+      <p className="text-[16px] font-black text-white">TÚ SUPER {pack}</p>
+      <p className="text-[11px] text-slate-300 mt-0.5">{pack} Cartones - Desde {price} Bs.</p>
+    </div>
   </button>
 );
 
