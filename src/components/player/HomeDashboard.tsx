@@ -133,15 +133,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         onClick={onOpenExpress}
         className="w-full group relative overflow-hidden rounded-3xl p-[2px] transition-all hover:scale-[1.01] active:scale-[0.99] animate-in fade-in slide-in-from-top-2 duration-500"
       >
-        {/* Borde animado brillante */}
-        <div className="absolute inset-0 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-3xl" />
+        {/* Borde animado brillante - AZUL DIAMANTE */}
+        <div className="absolute inset-0 bg-gradient-to-r from-cyan-200 via-blue-500 to-cyan-200 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-3xl" />
 
         <div className="relative bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-4 sm:p-5 flex items-center gap-4">
-          {/* Ícono animado */}
+          {/* Ícono animado - AZUL DIAMANTE */}
           <div className="relative shrink-0">
-            <div className="absolute inset-0 bg-amber-400/40 blur-xl rounded-full animate-pulse" />
-            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center shadow-2xl shadow-amber-500/40 group-hover:rotate-6 transition-transform">
-              <Zap className="w-7 h-7 sm:w-8 sm:h-8 fill-current stroke-[2.5]" />
+            <div className="absolute inset-0 bg-cyan-400/40 blur-xl rounded-full animate-pulse" />
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-cyan-200 via-blue-500 to-blue-700 text-white flex items-center justify-center shadow-2xl shadow-cyan-500/40 group-hover:rotate-6 transition-transform overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/40 to-transparent"></div>
+              <Zap className="w-7 h-7 sm:w-8 sm:h-8 fill-current stroke-[2.5] relative" />
             </div>
           </div>
 
@@ -151,8 +152,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <h3 className="text-base sm:text-xl font-black text-white truncate">
                 Sorteo Exprés
               </h3>
-              <span className="hidden sm:inline-flex items-center gap-1 bg-orange-500/20 text-orange-300 border border-orange-500/40 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-ping" />
+              <span className="hidden sm:inline-flex items-center gap-1 bg-blue-500/20 text-cyan-200 border border-blue-500/40 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-ping" />
                 Instantáneo
               </span>
             </div>
@@ -160,7 +161,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               Juega Lotería y gana. Tú Supercartón.
             </p>
             <div className="flex items-center gap-2 mt-1.5">
-              <span className="text-[10px] sm:text-[11px] font-bold text-amber-300">
+              <span className="text-[10px] sm:text-[11px] font-bold text-cyan-200">
                 Desde 150 Bs.
               </span>
               <span className="text-[10px] text-slate-500">•</span>
@@ -170,13 +171,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </div>
           </div>
 
-          {/* Flecha de acción */}
+          {/* Flecha de acción - AZUL DIAMANTE QUE BRILLA */}
           <div className="shrink-0 flex items-center gap-2">
-            <span className="hidden sm:inline text-xs font-black text-amber-300 group-hover:text-amber-200">
+            <span className="hidden sm:inline text-xs font-black text-cyan-200 group-hover:text-cyan-100">
               Jugar ya
             </span>
-            <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shadow-lg group-hover:translate-x-1 transition-transform">
-              <ArrowRight className="w-5 h-5 stroke-[2.5]" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-200 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-cyan-500/30 group-hover:translate-x-1 transition-transform relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/30 to-transparent"></div>
+              <div className="absolute -top-0.5 -right-0.5 h-2 w-2 bg-white rounded-full animate-ping"></div>
+              <ArrowRight className="w-5 h-5 stroke-[2.5] relative" />
             </div>
           </div>
         </div>
