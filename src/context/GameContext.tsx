@@ -247,29 +247,59 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUserId, setCurrentUserId] = useState<string>(initialSession?.userId || 'usr-1');
   const [viewMode, setViewMode] = useState<'player' | 'admin'>(initialSession?.viewMode || 'player');
 
- const deleteSystemCredential = useCallback(
-  async (id: string): Promise<{ success: boolean; message: string }> => {
+  // --- RESTO DE TU LÓGICA IGUAL, CON FIX EN fetchActiveRounds ---
+  const fetchSystemCredentials = useCallback(async () => {
     try {
-      // ⚠️ NO borrar el usuario de auth.users (eso requiere Service Role Key).
-      // Solo quitamos el rol administrativo, dejándolo como Player.
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
-        .update({ role: 'Player', status: 'active' })
-        .eq('id', id);
+        .select('id, email, role, nombre, status, created_at')
+        .in('role', ['SuperAdmin', 'Super Admin', 'Admin', 'Operator', 'Operador Financiero', 'Auditor'])
+        .order('role', { ascending: true });
 
       if (error) {
-        return { success: false, message: error.message };
+        console.warn('[GameContext] Error fetching admin profiles:', error);
+        return;
       }
 
-      await fetchSystemCredentials();
-      addAuditLog('ELIMINAR_OPERADOR', `Rol administrativo removido del usuario ${id}.`);
-      return { success: true, message: 'Rol administrativo removido. El usuario ahora es Player.' };
-    } catch (err: any) {
-      return { success: false, message: err.message || 'Error al eliminar.' };
+      if (Array.isArray(data)) {
+        const mapped: SystemCredential[] = data.map((row: any) => ({
+          id: String(row.id || ''),
+          username: row.email || row.nombre || 'admin',
+          displayName: row.nombre || row.email || 'Administrador',
+          role: normalizeAdminRole(row.role),
+          status: row.status === 'inactive' ? 'inactive' : 'active',
+          createdAt: row.created_at || new Date().toISOString(),
+        }));
+        setSystemCredentials(mapped);
+      }
+    } catch (err) {
+      console.warn('[GameContext] Error fetching admin profiles:', err);
     }
-  },
-  [addAuditLog, fetchSystemCredentials]
-);
+  }, []);
+
+  const deleteSystemCredential = useCallback(
+    async (id: string): Promise<{ success: boolean; message: string }> => {
+      try {
+        // ⚠️ NO borrar el usuario de auth.users (eso requiere Service Role Key).
+        // Solo quitamos el rol administrativo, dejándolo como Player.
+        const { error } = await supabase
+          .from('profiles')
+          .update({ role: 'Player', status: 'active' })
+          .eq('id', id);
+
+        if (error) {
+          return { success: false, message: error.message };
+        }
+
+        await fetchSystemCredentials();
+        addAuditLog('ELIMINAR_OPERADOR', `Rol administrativo removido del usuario ${id}.`);
+        return { success: true, message: 'Rol administrativo removido. El usuario ahora es Player.' };
+      } catch (err: any) {
+        return { success: false, message: err.message || 'Error al eliminar.' };
+      }
+    },
+    [addAuditLog, fetchSystemCredentials]
+  );
 
   useEffect(() => { fetchSystemCredentials(); }, [fetchSystemCredentials]);
   useEffect(() => { try { localStorage.setItem(`${STORAGE_KEY}_system_credentials`, JSON.stringify(systemCredentials)); } catch {} }, [systemCredentials]);
