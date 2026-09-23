@@ -2608,6 +2608,10 @@ export const AdminPortal: React.FC = () => {
       {/* TAB 9: GESTIÓN DE PERSONAL Y OPERADORES */}
       {/* ======================================================== */}
       {activeTab === 'operators' && <OperatorManagementView />}
+            {/* ======================================================== */}
+      {/* TAB 10: GESTIÓN DE RECLAMOS */}
+      {/* ======================================================== */}
+      {activeTab === 'reclamos' && <ReclamosAdminView />}
 
       {/* ======================================================== */}
       {/* MODAL: REVISIÓN Y APROBACIÓN DE RECARGA PAGO MÓVIL */}
