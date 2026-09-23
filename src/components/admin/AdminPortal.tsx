@@ -893,6 +893,7 @@ export const AdminPortal: React.FC = () => {
           { id: 'audit' as AdminTab, label: 'Libro y Auditoría', icon: FileSpreadsheet, badge: 0 },
           { id: 'users' as AdminTab, label: 'Usuarios y Balances', icon: Users, badge: 0 },
           { id: 'operators' as AdminTab, label: 'Gestión de Personal', icon: KeyRound, badge: 0 },
+          { id: 'reclamos' as AdminTab, label: 'Reclamos', icon: MessageSquare, badge: 0 },
         ]
           .filter((tab) => currentRoleConfig.allowedTabs.includes(tab.id))
           .map((tab) => {
