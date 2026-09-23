@@ -125,7 +125,7 @@ export const ExpressView: React.FC = () => {
           <Zap className="w-4 h-4 fill-current" />
           <span>Sorteo Exprés</span>
         </div>
-        <h2 className="text-3xl font-black text-white mt-3">Apuesta Instantánea</h2>
+        <h2 className="text-3xl font-black text-white mt-3">Gestión Instantánea</h2>
         <p className="text-slate-400 text-sm mt-2 max-w-lg mx-auto">
           Compra tus cartones y juega al instante. Premios inmediatos.
         </p>
@@ -287,14 +287,20 @@ const PackButton: React.FC<{
 }> = ({ pack, price, onPlay }) => (
   <button
     onClick={() => onPlay(pack)}
-    className="flex w-full items-center gap-3 rounded-[18px] border-2 border-amber-400/80 bg-[#121a2e] px-3 py-2.5 text-left hover:border-amber-400 transition-all"
+    className="group relative w-full overflow-hidden rounded-[18px] p-[2px] text-left transition-all hover:scale-[1.01] active:scale-[0.99]"
   >
-    <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-300 to-blue-600">
-      <span className="text-[16px] font-black italic text-white -rotate-12">super</span>
-    </div>
-    <div className="leading-none">
-      <p className="text-[16px] font-black text-white">TÚ SUPER {pack}</p>
-      <p className="text-[11px] text-slate-300 mt-0.5">{pack} Cartones - Desde {price} Bs.</p>
+    {/* ESTE ES EL BRILLO QUE BRILLA ALREDEDOR - MISMO QUE EL AZUL */}
+    <div className="absolute inset-0 bg-gradient-to-r from-cyan-100 via-blue-500 to-cyan-100 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-[18px]" />
+
+    <div className="relative flex w-full items-center gap-3 rounded-[16px] bg-[#121a2e] px-3 py-2.5">
+      <div className="relative flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-300 to-blue-600 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-tr from-white/50 to-transparent"></div>
+        <span className="text-[16px] font-black italic text-white -rotate-12 relative">super</span>
+      </div>
+      <div className="leading-none">
+        <p className="text-[16px] font-black text-white">TÚ SUPER {pack}</p>
+        <p className="text-[11px] text-slate-300 mt-0.5">{pack} Cartones - Desde {price} Bs.</p>
+      </div>
     </div>
   </button>
 );
