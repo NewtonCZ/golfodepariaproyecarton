@@ -42,6 +42,7 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
+  MessageSquare,
 } from 'lucide-react';
 import { Ficha, RechargeTransaction, WithdrawalTransaction } from '../../types';
 import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
