@@ -76,31 +76,31 @@ export let realSupabaseClient: SupabaseClient | null = null;
 
 if (SUPABASE_URL && SUPABASE_ANON_KEY && typeof SUPABASE_URL === 'string' && SUPABASE_URL.startsWith('http')) {
   try {
-    realSupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
-      global: {
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        fetch: (input: RequestInfo | URL, init?: RequestInit) => {
-          const headers = new Headers(init?.headers || {});
-          if (SUPABASE_ANON_KEY) {
-            if (!headers.has('apikey')) {
-              headers.set('apikey', SUPABASE_ANON_KEY);
-            }
-            if (!headers.has('Authorization')) {
-              headers.set('Authorization', `Bearer ${SUPABASE_ANON_KEY}`);
-            }
-          }
-          return fetch(input, { ...init, headers });
-        },
-      },
-    });
+realSupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+  global: {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      // ⚠️ NO hardcodear Authorization aquí.
+      // El cliente Supabase lo inyecta automáticamente desde la sesión activa.
+    },
+    fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+      const headers = new Headers(init?.headers || {});
+      if (SUPABASE_ANON_KEY) {
+        if (!headers.has('apikey')) {
+          headers.set('apikey', SUPABASE_ANON_KEY);
+        }
+        // ⚠️ NO setear Authorization manualmente.
+        // El cliente Supabase lo inyecta automáticamente desde la sesión activa.
+      }
+      return fetch(input, { ...init, headers });
+    },
+  },
+});
   } catch (err) {
     console.warn('[supabaseClient] Failed to initialize Supabase client:', err);
   }
