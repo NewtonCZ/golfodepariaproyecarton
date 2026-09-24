@@ -3009,14 +3009,13 @@ const updateSystemCredential = useCallback(
   },
   [addAuditLog, fetchSystemCredentials]
 );
-  const deleteSystemCredential = useCallback(
+// ✅ Nuevo — banea de verdad
+const deleteSystemCredential = useCallback(
   async (id: string): Promise<{ success: boolean; message: string }> => {
     try {
-      // ⚠️ NO borrar el usuario de auth.users (eso requiere Service Role Key).
-      // Solo quitamos el rol administrativo, dejándolo como Player.
       const { error } = await supabase
         .from('profiles')
-        .update({ role: 'Player', status: 'active' })
+        .update({ role: 'Player', status: 'banned' })   // ← cambio clave
         .eq('id', id);
 
       if (error) {
@@ -3024,15 +3023,17 @@ const updateSystemCredential = useCallback(
       }
 
       await fetchSystemCredentials();
-      addAuditLog('ELIMINAR_OPERADOR', `Rol administrativo removido del usuario ${id}.`);
-      return { success: true, message: 'Rol administrativo removido. El usuario ahora es Player.' };
+      addAuditLog('ELIMINAR_OPERADOR', `Trabajador ${id} bloqueado (banned).`);
+      return {
+        success: true,
+        message: 'Trabajador eliminado y bloqueado. Ya no puede iniciar sesión.',
+      };
     } catch (err: any) {
       return { success: false, message: err.message || 'Error al eliminar.' };
     }
   },
   [addAuditLog, fetchSystemCredentials]
 );
-
   // Implementaciones faltantes para que no marque rojo:
   const login = useCallback(async (username: string, password: string): Promise<{
     success: boolean;
