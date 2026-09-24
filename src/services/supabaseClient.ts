@@ -85,7 +85,8 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY && typeof SUPABASE_URL === 'string' && SUP
       global: {
         headers: {
           apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          // ⚠️ NO hardcodear Authorization aquí.
+          // El cliente Supabase lo inyecta automáticamente desde la sesión activa.
         },
         fetch: (input: RequestInfo | URL, init?: RequestInit) => {
           const headers = new Headers(init?.headers || {});
@@ -93,39 +94,13 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY && typeof SUPABASE_URL === 'string' && SUP
             if (!headers.has('apikey')) {
               headers.set('apikey', SUPABASE_ANON_KEY);
             }
-            if (!headers.has('Authorization')) {
-              headers.set('Authorization', `Bearer ${SUPABASE_ANON_KEY}`);
-            }
+            // ⚠️ NO setear Authorization manualmente.
+            // El cliente Supabase lo inyecta automáticamente desde la sesión activa.
           }
           return fetch(input, { ...init, headers });
         },
       },
     });
-realSupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-  global: {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      // ⚠️ NO hardcodear Authorization aquí.
-      // El cliente Supabase lo inyecta automáticamente desde la sesión activa.
-    },
-    fetch: (input: RequestInfo | URL, init?: RequestInit) => {
-      const headers = new Headers(init?.headers || {});
-      if (SUPABASE_ANON_KEY) {
-        if (!headers.has('apikey')) {
-          headers.set('apikey', SUPABASE_ANON_KEY);
-        }
-        // ⚠️ NO setear Authorization manualmente.
-        // El cliente Supabase lo inyecta automáticamente desde la sesión activa.
-      }
-      return fetch(input, { ...init, headers });
-    },
-  },
-});
   } catch (err) {
     console.warn('[supabaseClient] Failed to initialize Supabase client:', err);
   }
@@ -159,7 +134,7 @@ export const supabase = {
       const cleanEmail = credentials.email.trim();
       const cleanPassword = credentials.password.trim();
 
-      // 1. Intentar inicio de sesión oficial con el cliente Supabase
+      // Intentar inicio de sesión oficial con el cliente Supabase
       if (realSupabaseClient) {
         try {
           const res = await realSupabaseClient.auth.signInWithPassword({
@@ -171,12 +146,13 @@ export const supabase = {
             return res;
           }
 
-          // Si Supabase devuelve un error específico que no es de red, devolverlo o evaluar credenciales maestras
           if (res.error) {
             console.warn('[supabaseAuth] signInWithPassword error from Supabase:', res.error.message);
+            return { data: { user: null, session: null }, error: res.error };
           }
         } catch (err: any) {
           console.warn('[supabaseAuth] Exception calling Supabase signInWithPassword:', err);
+          return { data: { user: null, session: null }, error: { message: err?.message || 'Error de conexión' } };
         }
       }
 
@@ -217,27 +193,9 @@ export const supabase = {
         }
       }
 
-      // Offline / fallback mock user creation
-      const mockUser: any = {
-        id: `usr-${Date.now()}`,
-        email: cleanEmail,
-        role: 'authenticated',
-        aud: 'authenticated',
-        app_metadata: { provider: 'email', providers: ['email'] },
-        user_metadata: credentials.options?.data || {},
-        created_at: new Date().toISOString(),
-      };
-      const mockSession: any = {
-        access_token: `sb_tok_${Date.now()}`,
-        token_type: 'bearer',
-        user: mockUser,
-        expires_in: 3600 * 24 * 7,
-        expires_at: Math.floor(Date.now() / 1000) + 3600 * 24 * 7,
-      };
-
       return {
-        data: { user: mockUser, session: mockSession },
-        error: null,
+        data: { user: null, session: null },
+        error: { message: 'Supabase no está configurado.' },
       };
     },
 
@@ -249,11 +207,6 @@ export const supabase = {
           console.warn('[supabaseAuth] Error signing out:', e);
         }
       }
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.removeItem('sb-custom-auth-token');
-        } catch (e) {}
-      }
       return { error: null };
     },
 
@@ -264,15 +217,6 @@ export const supabase = {
           if (res.data?.user) return res;
         } catch (e) {}
       }
-      if (typeof window !== 'undefined') {
-        try {
-          const saved = localStorage.getItem('sb-custom-auth-token');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (parsed?.user) return { data: { user: parsed.user }, error: null };
-          }
-        } catch (e) {}
-      }
       return { data: { user: null }, error: null };
     },
 
@@ -281,15 +225,6 @@ export const supabase = {
         try {
           const res = await realSupabaseClient.auth.getSession();
           if (res.data?.session) return res;
-        } catch (e) {}
-      }
-      if (typeof window !== 'undefined') {
-        try {
-          const saved = localStorage.getItem('sb-custom-auth-token');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (parsed?.access_token) return { data: { session: parsed }, error: null };
-          }
         } catch (e) {}
       }
       return { data: { session: null }, error: null };
@@ -393,4 +328,3 @@ export const supabase = {
 };
 
 export default supabase;
-
