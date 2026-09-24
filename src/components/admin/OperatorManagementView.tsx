@@ -47,12 +47,13 @@ export const OperatorManagementView: React.FC = () => {
   const [deletingUser, setDeletingUser] = useState<SystemCredential | null>(null);
 
   // Form States
-  const [formDisplayName, setFormDisplayName] = useState('');
-  const [formUsername, setFormUsername] = useState('');
-  const [formRole, setFormRole] = useState<'Super Admin' | 'Operador Financiero' | 'Auditor'>('Super Admin');
-  const [formPassword, setFormPassword] = useState('');
-  const [showFormPassword, setShowFormPassword] = useState(false);
-  const [formStatus, setFormStatus] = useState<'active' | 'inactive'>('active');
+const [formDisplayName, setFormDisplayName] = useState('');
+const [formUsername, setFormUsername] = useState('');
+const [formEmail, setFormEmail] = useState('');           // ← NUEVO
+const [formRole, setFormRole] = useState<'Super Admin' | 'Operador Financiero' | 'Auditor'>('Super Admin');
+const [formPassword, setFormPassword] = useState('');
+const [showFormPassword, setShowFormPassword] = useState(false);
+const [formStatus, setFormStatus] = useState<'active' | 'inactive'>('active');
 
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
