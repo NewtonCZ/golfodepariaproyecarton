@@ -3010,18 +3010,28 @@ const updateSystemCredential = useCallback(
   [addAuditLog, fetchSystemCredentials]
 );
   const deleteSystemCredential = useCallback(
-    async (id: string): Promise<{ success: boolean; message: string }> => {
-      try {
-        await supabase.from('admin_users').delete().eq('id', id);
-        setSystemCredentials((prev) => prev.filter((c) => c.id !== id));
-        addAuditLog('ELIMINAR_OPERADOR', `Operador ${id} eliminado del sistema.`);
-        return { success: true, message: 'Operador eliminado.' };
-      } catch (err: any) {
-        return { success: false, message: err.message || 'Error al eliminar.' };
+  async (id: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      // ⚠️ NO borrar el usuario de auth.users (eso requiere Service Role Key).
+      // Solo quitamos el rol administrativo, dejándolo como Player.
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: 'Player', status: 'active' })
+        .eq('id', id);
+
+      if (error) {
+        return { success: false, message: error.message };
       }
-    },
-    [addAuditLog]
-  );
+
+      await fetchSystemCredentials();
+      addAuditLog('ELIMINAR_OPERADOR', `Rol administrativo removido del usuario ${id}.`);
+      return { success: true, message: 'Rol administrativo removido. El usuario ahora es Player.' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Error al eliminar.' };
+    }
+  },
+  [addAuditLog, fetchSystemCredentials]
+);
 
   // Implementaciones faltantes para que no marque rojo:
   const login = useCallback(async (username: string, password: string): Promise<{
