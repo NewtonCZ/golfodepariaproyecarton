@@ -27,32 +27,43 @@ export async function hashPassword(password: string): Promise<string> {
   return (hash >>> 0).toString(16);
 }
 
-export function normalizeAdminRole(roleStr?: string): 'Super Admin' | 'Operador Financiero' | 'Auditor' {
-  if (!roleStr) return 'Super Admin';
+export function normalizeAdminRole(
+  roleStr?: string
+): 'Super Admin' | 'Operador Financiero' | 'Auditor' | 'Player' {
+  if (!roleStr) return 'Player';
   const clean = roleStr.toLowerCase().replace(/[\s_-]/g, '');
 
-  // Operador Financiero / Operator / Operador
+  // Super Admin
+  if (clean === 'superadmin' || clean === 'superadministrador') {
+    return 'Super Admin';
+  }
+
+  // Operador Financiero / Operator
   if (
-    clean.includes('finan') ||
-    clean === 'operadorfinanciero' ||
     clean === 'operator' ||
-    clean === 'operador'
+    clean === 'operador' ||
+    clean === 'operadorfinanciero' ||
+    clean.includes('finan')
   ) {
     return 'Operador Financiero';
   }
 
   // Auditor
-  if (clean.includes('audit') || clean === 'auditor') {
+  if (clean === 'auditor' || clean.includes('audit')) {
     return 'Auditor';
   }
 
-  // Super Admin (default)
-  return 'Super Admin';
+  // ✅ DEFAULT SEGURO: cualquier otra cosa es Player (sin privilegios)
+  return 'Player';
 }
 
-export function toDbRole(roleStr?: string): 'super_admin' | 'operador_financiero' | 'auditor' {
+// ✅ NUEVO: mapeo UI → DB con los strings que tu DB realmente usa
+export function toDbRole(
+  roleStr?: string
+): 'SuperAdmin' | 'Operator' | 'Auditor' | 'Player' {
   const normalized = normalizeAdminRole(roleStr);
-  if (normalized === 'Operador Financiero') return 'operador_financiero';
-  if (normalized === 'Auditor') return 'auditor';
-  return 'super_admin';
+  if (normalized === 'Operador Financiero') return 'Operator';
+  if (normalized === 'Auditor') return 'Auditor';
+  if (normalized === 'Super Admin') return 'SuperAdmin';
+  return 'Player';
 }
