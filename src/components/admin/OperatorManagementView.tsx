@@ -73,17 +73,18 @@ const [formStatus, setFormStatus] = useState<'active' | 'inactive'>('active');
   const financialOpCount = systemCredentials.filter((c) => c.role === 'Operador Financiero').length;
   const auditorCount = systemCredentials.filter((c) => c.role === 'Auditor').length;
 
-  const openCreateModal = () => {
-    setEditingUser(null);
-    setFormDisplayName('');
-    setFormUsername('');
-    setFormRole('Super Admin');
-    setFormPassword('');
-    setShowFormPassword(false);
-    setFormStatus('active');
-    setFeedback(null);
-    setIsCreateModalOpen(true);
-  };
+ const openCreateModal = () => {
+  setEditingUser(null);
+  setFormDisplayName('');
+  setFormUsername('');
+  setFormEmail('');                    // ← NUEVO
+  setFormRole('Super Admin');
+  setFormPassword('');
+  setShowFormPassword(false);
+  setFormStatus('active');
+  setFeedback(null);
+  setIsCreateModalOpen(true);
+};
 
   const openEditModal = (user: SystemCredential) => {
     if (user.role === 'Super Admin' && operatorRole !== 'Super Admin') {
