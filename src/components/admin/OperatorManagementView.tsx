@@ -483,15 +483,29 @@ const [formStatus, setFormStatus] = useState<'active' | 'inactive'>('active');
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                   <input
-                    type="text"
+                    type="email"
                     required
-                    value={formUsername}
-                    onChange={(e) => setFormUsername(e.target.value)}
-                    placeholder="Ej. CarlosAdmin12"
+                    value={formEmail}
+                    onChange={(e) => setFormEmail(e.target.value)}
+                    placeholder="Ej. carlos@ejemplo.com"
                     className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 text-white pl-10 pr-3.5 py-2.5 rounded-xl text-xs font-medium focus:outline-none"
                   />
                 </div>
               </div>
+              <div>
+  <label className="block text-xs font-bold text-slate-300 mb-1">Nombre de Usuario (Display) *</label>
+  <div className="relative">
+    <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+    <input
+      type="text"
+      required
+      value={formUsername}
+      onChange={(e) => setFormUsername(e.target.value)}
+      placeholder="Ej. CarlosAdmin12"
+      className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400 text-white pl-10 pr-3.5 py-2.5 rounded-xl text-xs font-medium focus:outline-none"
+    />
+  </div>
+</div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
