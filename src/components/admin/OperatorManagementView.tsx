@@ -479,7 +479,7 @@ const [formStatus, setFormStatus] = useState<'active' | 'inactive'>('active');
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Nombre de Usuario (Login) *</label>
+                <label className="block text-xs font-bold text-slate-300 mb-1">Email del Usuario *</label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                   <input
