@@ -141,13 +141,13 @@ const [formStatus, setFormStatus] = useState<'active' | 'inactive'>('active');
       }
     } else {
       // Create mode
-      const result = await createSystemCredential({
+           const result = await createSystemCredential({
         displayName: formDisplayName,
-        username: formUsername,
+        username: formEmail,                   // ← email para buscar en profiles
+        displayUsername: formUsername,         // ← username para mostrar
         role: formRole,
         password: formPassword,
       });
-
       if (result.success) {
         setFeedback({ type: 'success', message: result.message });
         setTimeout(() => {
