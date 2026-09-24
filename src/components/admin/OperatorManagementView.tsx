@@ -87,20 +87,21 @@ const [formStatus, setFormStatus] = useState<'active' | 'inactive'>('active');
 };
 
   const openEditModal = (user: SystemCredential) => {
-    if (user.role === 'Super Admin' && operatorRole !== 'Super Admin') {
-      alert('Protección de Privilegios: Solo un Super Admin puede modificar una cuenta con rol Super Admin.');
-      return;
-    }
-    setEditingUser(user);
-    setFormDisplayName(user.displayName);
-    setFormUsername(user.username);
-    setFormRole(user.role);
-    setFormPassword(''); // Empty by default unless changing
-    setShowFormPassword(false);
-    setFormStatus(user.status);
-    setFeedback(null);
-    setIsCreateModalOpen(true);
-  };
+  if (user.role === 'Super Admin' && operatorRole !== 'Super Admin') {
+    alert('Protección de Privilegios: Solo un Super Admin puede modificar una cuenta con rol Super Admin.');
+    return;
+  }
+  setEditingUser(user);
+  setFormDisplayName(user.displayName);
+  setFormUsername(user.username);
+  setFormEmail(user.username);           // ← NUEVO (en el viejo, username era el email)
+  setFormRole(user.role);
+  setFormPassword(''); // Empty by default unless changing
+  setShowFormPassword(false);
+  setFormStatus(user.status);
+  setFeedback(null);
+  setIsCreateModalOpen(true);
+};
 
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
