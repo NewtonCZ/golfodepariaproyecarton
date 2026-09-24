@@ -180,49 +180,6 @@ export const supabase = {
         }
       }
 
-      // 2. Soporte oficial para el usuario administrador configurado
-      if (
-        cleanEmail.toLowerCase() === 'limitlessmarketve@gmail.com' &&
-        cleanPassword === 'Elpintordesantaelena12'
-      ) {
-        const mockAdminUser: any = {
-          id: 'admin-limitlessmarketve-001',
-          email: 'limitlessmarketve@gmail.com',
-          role: 'authenticated',
-          aud: 'authenticated',
-          app_metadata: { provider: 'email', providers: ['email'] },
-          user_metadata: {
-            role: 'Super Admin',
-            name: 'Administrador Principal',
-            username: 'limitlessmarketve',
-          },
-          created_at: new Date().toISOString(),
-        };
-
-        const mockAdminSession: any = {
-          access_token: `sb_tok_admin_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
-          token_type: 'bearer',
-          user: mockAdminUser,
-          expires_in: 3600 * 24 * 7,
-          expires_at: Math.floor(Date.now() / 1000) + 3600 * 24 * 7,
-        };
-
-        // Guardar sesión local si procede
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('sb-custom-auth-token', JSON.stringify(mockAdminSession));
-          } catch (e) {}
-        }
-
-        return {
-          data: {
-            user: mockAdminUser,
-            session: mockAdminSession,
-          },
-          error: null,
-        };
-      }
-
       return {
         data: { user: null, session: null },
         error: { message: 'Credenciales inválidas. Verifica tu correo y contraseña.' },
