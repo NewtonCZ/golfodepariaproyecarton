@@ -2920,67 +2920,95 @@ const roundPayload = {
     } catch {}
     addAuditLog('REINICIO_SISTEMA', 'Se reiniciaron los datos a valores predeterminados.');
   }, [addAuditLog]);
+const createSystemCredential = useCallback(
+  async (data: any): Promise<{ success: boolean; message: string }> => {
+    try {
+      const email = (data.username || '').trim().toLowerCase();
+      if (!email) {
+        return { success: false, message: 'El email del usuario es obligatorio.' };
+      }
 
-  const createSystemCredential = useCallback(
-    async (data: any): Promise<{ success: boolean; message: string }> => {
-      try {
-        const newCred: SystemCredential = {
-          id: `cred-${Date.now()}`,
-          username: data.username.trim(),
-          displayName: data.displayName || data.username,
-          role: normalizeAdminRole(data.role),
-          status: 'active',
-          createdAt: new Date().toISOString(),
+      // Verificar que el usuario existe en profiles
+      const { data: existing, error: fetchError } = await supabase
+        .from('profiles')
+        .select('id, email, role')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (fetchError || !existing) {
+        return {
+          success: false,
+          message: `No existe un usuario con el email "${email}". Primero creá el usuario desde Supabase Auth (Authentication → Users → Add User), luego volvé acá para asignarle el rol.`,
         };
-
-        const { error } = await supabase.from('admin_users').insert([
-          {
-            id: newCred.id,
-            username: newCred.username,
-            role: toDbRole(newCred.role),
-            status: 'active',
-          },
-        ]);
-
-        if (error) {
-          console.warn('[GameContext] Supabase insert admin error, falling back locally:', error);
-        }
-
-        setSystemCredentials((prev) => [...prev, newCred]);
-        addAuditLog('CREAR_OPERADOR', `Operador ${newCred.displayName} (${newCred.role}) creado.`);
-        return { success: true, message: 'Credencial creada exitosamente.' };
-      } catch (err: any) {
-        return { success: false, message: err.message || 'Error al crear credencial.' };
       }
-    },
-    [addAuditLog]
-  );
 
-  const updateSystemCredential = useCallback(
-    async (id: string, data: any): Promise<{ success: boolean; message: string }> => {
-      try {
-        const payload: any = {};
-        if (data.username) payload.username = data.username.trim();
-        if (data.role) payload.role = toDbRole(data.role);
-        if (data.status) payload.status = data.status;
+      // Mapear rol UI → DB
+      const dbRole =
+        data.role === 'Super Admin'
+          ? 'SuperAdmin'
+          : data.role === 'Operador Financiero'
+          ? 'Operator'
+          : 'Auditor';
 
-        if (Object.keys(payload).length > 0) {
-          await supabase.from('admin_users').update(payload).eq('id', id);
-        }
+      // Actualizar el rol en profiles
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          role: dbRole,
+          nombre: data.displayName || existing.email,
+          status: 'active',
+        })
+        .eq('id', existing.id);
 
-        setSystemCredentials((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, ...data, role: data.role ? normalizeAdminRole(data.role) : c.role } : c))
-        );
-
-        addAuditLog('MODIFICAR_OPERADOR', `Operador ${id} actualizado.`);
-        return { success: true, message: 'Operador actualizado correctamente.' };
-      } catch (err: any) {
-        return { success: false, message: err.message || 'Error al actualizar.' };
+      if (updateError) {
+        return { success: false, message: updateError.message };
       }
-    },
-    [addAuditLog]
-  );
 
+      await fetchSystemCredentials();
+      addAuditLog('CREAR_OPERADOR', `Rol ${data.role} asignado a ${email}.`);
+      return { success: true, message: 'Rol asignado exitosamente.' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Error al crear credencial.' };
+    }
+  },
+  [addAuditLog, fetchSystemCredentials]
+);
+
+const updateSystemCredential = useCallback(
+  async (id: string, data: any): Promise<{ success: boolean; message: string }> => {
+    try {
+      const payload: any = {};
+
+      // Mapear rol UI → DB
+      if (data.role) {
+        payload.role =
+          data.role === 'Super Admin'
+            ? 'SuperAdmin'
+            : data.role === 'Operador Financiero'
+            ? 'Operator'
+            : 'Auditor';
+      }
+      if (data.displayName) payload.nombre = data.displayName;
+      if (data.status) payload.status = data.status;
+
+      if (Object.keys(payload).length === 0) {
+        return { success: false, message: 'No hay cambios para aplicar.' };
+      }
+
+      const { error } = await supabase.from('profiles').update(payload).eq('id', id);
+      if (error) {
+        return { success: false, message: error.message };
+      }
+
+      await fetchSystemCredentials();
+      addAuditLog('MODIFICAR_OPERADOR', `Operador ${id} actualizado.`);
+      return { success: true, message: 'Operador actualizado correctamente.' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Error al actualizar.' };
+    }
+  },
+  [addAuditLog, fetchSystemCredentials]
+);
   const deleteSystemCredential = useCallback(
     async (id: string): Promise<{ success: boolean; message: string }> => {
       try {
