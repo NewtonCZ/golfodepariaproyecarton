@@ -185,16 +185,48 @@ class RealtimeService {
   /**
    * Safe fallback polling when WebSocket is unavailable or disabled in production
    */
-  public startPolling(intervalMs: number = 10000): void {
-    if (this.pollingTimer || typeof window === 'undefined') return;
-    this.pollingTimer = setInterval(() => {
-      try {
-        this.emit('poll_tick', { timestamp: Date.now() });
-      } catch (e) {
-        // Safe ignore
+ public startPolling(intervalMs: number = 10000): void {
+  if (this.pollingTimer || typeof window === 'undefined') return;
+  this.pollingTimer = setInterval(async () => {
+    try {
+      this.emit('poll_tick', { timestamp: Date.now() });
+
+      // ✅ Chequeo de ban: expulsa al usuario si fue baneado/suspendido/eliminado
+      const { supabase } = await import('./supabaseClient');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('status')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (
+          profile?.status === 'banned' ||
+          profile?.status === 'suspended' ||
+          profile?.status === 'deleted'
+        ) {
+          console.warn('[Polling] Usuario baneado/suspendido detectado:', profile.status);
+          try {
+            alert(
+              profile.status === 'banned'
+                ? 'Tu cuenta ha sido bloqueada. Contactá al administrador.'
+                : profile.status === 'suspended'
+                ? 'Tu cuenta ha sido suspendida temporalmente.'
+                : 'Tu cuenta ha sido eliminada.'
+            );
+          } catch {}
+          await supabase.auth.signOut();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/';
+          }
+        }
       }
-    }, intervalMs);
-  }
+    } catch (e) {
+      // Safe ignore
+    }
+  }, intervalMs);
+}
 
   public stopPolling(): void {
     if (this.pollingTimer) {
