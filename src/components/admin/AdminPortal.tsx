@@ -2453,40 +2453,101 @@ export const AdminPortal: React.FC = () => {
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
-                    <th className="pb-2.5">Usuario</th>
-                    <th className="pb-2.5">C.I. / RIF</th>
-                    <th className="pb-2.5">Disponible</th>
-                    <th className="pb-2.5">Pendiente</th>
-                    <th className="pb-2.5">Bloqueado</th>
-                    <th className="pb-2.5">Total Ganado</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-slate-50">
-                      <td className="py-3 font-semibold text-slate-900">
-                        <div>{u.name}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{u.phone}</div>
-                      </td>
-                      <td className="py-3 font-mono font-bold text-slate-700">{u.documentId}</td>
-                      <td className="py-3 font-mono font-black text-emerald-600">
-                        {formatMoney(u.availableBalance)}
-                      </td>
-                      <td className="py-3 font-mono font-bold text-amber-600">
-                        {formatMoney(u.pendingBalance)}
-                      </td>
-                      <td className="py-3 font-mono font-bold text-indigo-600">
-                        {formatMoney(u.lockedBalance)}
-                      </td>
-                      <td className="py-3 font-mono font-bold text-slate-800">
-                        {formatMoney(u.totalWonVes)}
-                      </td>
-                     
-                    </tr>
-                  ))}
-                </tbody>
+              <thead>
+  <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+    <th className="pb-2.5">Usuario</th>
+    <th className="pb-2.5">C.I. / RIF</th>
+    <th className="pb-2.5">Disponible</th>
+    <th className="pb-2.5">Pendiente</th>
+    <th className="pb-2.5">Bloqueado</th>
+    <th className="pb-2.5">Total Ganado</th>
+    <th className="pb-2.5 text-right">Acciones</th>
+  </tr>
+</thead>
+<tbody className="divide-y divide-slate-100 font-medium">
+  {users.map((u) => {
+    // ✅ Protección: no mostrar acciones para Super Admin
+    const isSuperAdmin =
+      (u as any).role === 'SuperAdmin' ||
+      (u as any).email === 'limitlessmarketve@gmail.com' ||
+      (u as any).correo === 'limitlessmarketve@gmail.com';
+
+    const isBanned = (u as any).status === 'banned';
+    const isCurrentUser = currentUser?.id === u.id;
+
+    return (
+      <tr key={u.id} className="hover:bg-slate-50">
+        <td className="py-3 font-semibold text-slate-900">
+          <div>{u.name}</div>
+          <div className="text-[10px] text-slate-400 font-mono">{u.phone}</div>
+          {isBanned && (
+            <span className="inline-block mt-1 text-[9px] font-black bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full uppercase">
+              🚫 Baneado
+            </span>
+          )}
+        </td>
+        <td className="py-3 font-mono font-bold text-slate-700">{u.documentId}</td>
+        <td className="py-3 font-mono font-black text-emerald-600">
+          {formatMoney(u.availableBalance)}
+        </td>
+        <td className="py-3 font-mono font-bold text-amber-600">
+          {formatMoney(u.pendingBalance)}
+        </td>
+        <td className="py-3 font-mono font-bold text-indigo-600">
+          {formatMoney(u.lockedBalance)}
+        </td>
+        <td className="py-3 font-mono font-bold text-slate-800">
+          {formatMoney(u.totalWonVes)}
+        </td>
+        <td className="py-3 text-right">
+          {!isSuperAdmin && !isCurrentUser ? (
+            <div className="flex items-center justify-end gap-1.5">
+              {!isBanned ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm(`¿Banear a ${u.name}?\n\nNo podrá volver a iniciar sesión hasta que lo reactives.`)) return;
+                    try {
+                      await deleteSystemCredential(u.id);
+                      alert(`✅ ${u.name} ha sido baneado.`);
+                    } catch (err: any) {
+                      alert(`❌ Error al banear: ${err.message}`);
+                    }
+                  }}
+                  className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1 cursor-pointer"
+                  title="Banear usuario (no podrá iniciar sesión)"
+                >
+                  🚫 Banear
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm(`¿Reactivar a ${u.name}?\n\nPodrá volver a iniciar sesión.`)) return;
+                    try {
+                      await updateUserStatus(u.id, 'active');
+                      alert(`✅ ${u.name} ha sido reactivado.`);
+                    } catch (err: any) {
+                      alert(`❌ Error al reactivar: ${err.message}`);
+                    }
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-lg shadow-sm transition-all flex items-center gap-1 cursor-pointer"
+                  title="Reactivar usuario"
+                >
+                  ✓ Reactivar
+                </button>
+              )}
+            </div>
+          ) : (
+            <span className="text-[10px] text-slate-400 italic">
+              {isSuperAdmin ? 'Protegido' : isCurrentUser ? 'Tú' : '—'}
+            </span>
+          )}
+        </td>
+      </tr>
+    );
+  })}
+</tbody>
               </table>
             </div>
           </div>
