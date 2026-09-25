@@ -322,62 +322,47 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
-  // Password Recovery Step 1: Send Code via Supabase & Resend
-  const handleRequestRecovery = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setErrorMsg(null);
-    setSuccessMsg(null);
+ // Password Recovery Step 1: Send Code via Supabase Edge Function
+const handleRequestRecovery = async (e?: React.FormEvent) => {
+  if (e) e.preventDefault();
+  setErrorMsg(null);
+  setSuccessMsg(null);
 
-    const targetIdentifier = (recoverIdentifier || username).trim();
-    if (!targetIdentifier) {
-      setErrorMsg('Por favor ingresa tu correo electrónico, usuario o número de cédula.');
-      return;
+  const targetIdentifier = (recoverIdentifier || username).trim();
+  if (!targetIdentifier) {
+    setErrorMsg('Por favor ingresa tu correo electrónico, usuario o número de cédula.');
+    return;
+  }
+
+  setIsSendingCode(true);
+
+  try {
+    const resp = await fetch(API_ENDPOINTS.AUTH_SEND_RECOVERY, {
+      method: 'POST',
+      headers: getSupabaseFunctionHeaders(),
+      body: JSON.stringify({ identifier: targetIdentifier }),
+    });
+
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error('El servidor de recuperación no está disponible.');
     }
 
-    setIsSendingCode(true);
+    const data = await resp.json();
+    setIsSendingCode(false);
 
-    try {
-      let targetEmail: string | null = null;
-      let targetName = 'Jugador';
-
-      // 1. Consultar usuario/operador en Supabase
-      if (supabase.isConfigured) {
-        try {
-          // Buscar en tabla profiles
-          const { data: jugData } = await supabase
-            .from('profiles')
-            .select('*')
-            .or(`correo.ilike.${targetIdentifier.toLowerCase()},cedula.ilike.${targetIdentifier.toUpperCase()},nombre.ilike.${targetIdentifier}`)
-            .limit(1);
-
-          if (jugData && jugData.length > 0) {
-            targetEmail = jugData[0].correo || jugData[0].email;
-            targetName = jugData[0].nombre || 'Jugador';
-          }
-        } catch (err) {
-          console.warn('[LoginModal] Error consultando jugadores en Supabase:', err);
-        }
-
-        if (!targetEmail) {
-          try {
-            // Buscar en tabla admin_users
-            const { data: adminData } = await supabase
-              .from('admin_users')
-              .select('*')
-              .ilike('username', targetIdentifier.toLowerCase())
-              .limit(1);
-
-            if (adminData && adminData.length > 0) {
-              targetName = adminData[0].display_name || adminData[0].username;
-              targetEmail =
-                adminData[0].email ||
-                (targetIdentifier.includes('@') ? targetIdentifier : `${targetIdentifier.toLowerCase()}@loteria.com`);
-            }
-          } catch (err) {
-            console.warn('[LoginModal] Error consultando admin_users en Supabase:', err);
-          }
-        }
-      }
+    if (data.success) {
+      setRecoverEmail(data.email || targetIdentifier);
+      setRecoverStep(2);
+      setSuccessMsg(data.message || 'Código enviado. Revisá tu correo y la carpeta de spam.');
+    } else {
+      setErrorMsg(data.error || data.message || 'No se pudo enviar el código.');
+    }
+  } catch (err: any) {
+    setIsSendingCode(false);
+    setErrorMsg(err?.message || 'Error al enviar el código de recuperación.');
+  }
+};
 
       // 2. Intentar despacho de código real a través del backend con Resend
       let sentViaApi = false;
