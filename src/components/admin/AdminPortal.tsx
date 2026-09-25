@@ -2459,7 +2459,6 @@ export const AdminPortal: React.FC = () => {
                     <th className="pb-2.5">Pendiente</th>
                     <th className="pb-2.5">Bloqueado</th>
                     <th className="pb-2.5">Total Ganado</th>
-                    <th className="pb-2.5 text-right">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -2482,20 +2481,7 @@ export const AdminPortal: React.FC = () => {
                       <td className="py-3 font-mono font-bold text-slate-800">
                         {formatMoney(u.totalWonVes)}
                       </td>
-                      <td className="py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingBalanceUser(u);
-                            setEditBalanceAmount(u.availableBalance || 0);
-                            setEditBalanceReason('Ajuste contable manual');
-                          }}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] px-3 py-1.5 rounded-xl shadow-xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Editar Saldo</span>
-                        </button>
-                      </td>
+                     
                     </tr>
                   ))}
                 </tbody>
