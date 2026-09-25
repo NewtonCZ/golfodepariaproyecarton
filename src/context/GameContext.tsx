@@ -3045,41 +3045,94 @@ const deleteSystemCredential = useCallback(
   },
   [addAuditLog, fetchSystemCredentials]
 );
-  // Implementaciones faltantes para que no marque rojo:
-  const login = useCallback(async (username: string, password: string): Promise<{
-    success: boolean;
-    message: string;
-    role?: UserRole;
-    user?: AppUser;
-  }> => {
-    const trimmedUser = username.trim(); const trimmedPass = password.trim();
-    if (!trimmedUser || !trimmedPass) return { success: false, message: 'Ingresa usuario y contraseña.' };
-    try {
-      // Intento Supabase Auth si es email
-      if (trimmedUser.includes('@')) {
-        const { data, error } = await supabase.auth.signInWithPassword({ email: trimmedUser, password: trimmedPass });
-        if (!error && data.session) {
-          setSessionToken(data.session.access_token); setIsAuthenticated(true); setLoggedUsername(trimmedUser); setCurrentUserId(data.session.user.id);
-          const isAdmin = trimmedUser.toLowerCase() === 'limitlessmarketve@gmail.com' || data.session.user.user_metadata?.role === 'Super Admin';
-          const assignedRole: UserRole = isAdmin ? 'Super Admin' : 'Player';
-          setCurrentRoleState(assignedRole); setViewMode(isAdmin ? 'admin' : 'player');
-          return { success: true, message: 'Login exitoso', role: assignedRole, user: users.find(u => u.id === data.session.user.id) };
-        }
+ const login = useCallback(async (username: string, password: string): Promise<{
+  success: boolean;
+  message: string;
+  role?: UserRole;
+  user?: AppUser;
+}> => {
+  const trimmedUser = username.trim();
+  const trimmedPass = password.trim();
+  if (!trimmedUser || !trimmedPass) {
+    return { success: false, message: 'Ingresa usuario y contraseña.' };
+  }
+
+  try {
+    if (trimmedUser.includes('@')) {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: trimmedUser,
+        password: trimmedPass,
+      });
+
+      if (error || !data.session) {
+        return { success: false, message: 'Credenciales inválidas.' };
       }
-      // Fallback local para jugadores de prueba
-      const localUser = users.find(u => u.email?.toLowerCase() === trimmedUser.toLowerCase() || u.documentId?.toLowerCase() === trimmedUser.toLowerCase());
-      if (localUser) {
-        setSessionToken(`local-${Date.now()}`); setIsAuthenticated(true); setLoggedUsername(trimmedUser); setCurrentUserId(localUser.id); setCurrentRoleState('Player'); setViewMode('player');
-        return { success: true, message: 'Login local exitoso', role: 'Player' as UserRole, user: localUser };
+
+      // ✅ Leer rol real desde profiles
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, email, role, status, nombre')
+        .eq('id', data.session.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.warn('[login] Error reading profile:', profileError);
       }
-      const cred = systemCredentials.find(c => c.username.toLowerCase() === trimmedUser.toLowerCase() && c.status === 'active');
-      if (cred) {
-        setSessionToken(`admin-${Date.now()}`); setIsAuthenticated(true); setLoggedUsername(cred.username); setCurrentUserId(cred.id); setCurrentRoleState(cred.role); setViewMode('admin');
-        return { success: true, message: 'Login admin exitoso', role: cred.role };
+
+      // ✅ Rechazar baneados
+      if (profile?.status === 'banned') {
+        await supabase.auth.signOut();
+        return {
+          success: false,
+          message: 'Tu cuenta ha sido bloqueada. Contactá al administrador.',
+        };
       }
-      return { success: false, message: 'Credenciales inválidas.' };
-    } catch (e: any) { return { success: false, message: e.message || 'Error de login' }; }
-  }, [systemCredentials, users]);
+
+      // ✅ Mapear rol DB → rol UI
+      const dbRole = profile?.role || 'Player';
+      const uiRole: UserRole =
+        dbRole === 'SuperAdmin' ? 'Super Admin' :
+        dbRole === 'Operator' ? 'Operador Financiero' :
+        dbRole === 'Auditor' ? 'Auditor' :
+        'Player';
+
+      const isAdmin = uiRole !== 'Player';
+
+      setSessionToken(data.session.access_token);
+      setIsAuthenticated(true);
+      setLoggedUsername(trimmedUser);
+      setCurrentUserId(data.session.user.id);
+      setCurrentRoleState(uiRole);
+      setViewMode(isAdmin ? 'admin' : 'player');
+
+      return {
+        success: true,
+        message: 'Login exitoso',
+        role: uiRole,
+        user: users.find(u => u.id === data.session.user.id),
+      };
+    }
+
+    // Fallback local para jugadores de prueba
+    const localUser = users.find(u =>
+      u.email?.toLowerCase() === trimmedUser.toLowerCase() ||
+      u.documentId?.toLowerCase() === trimmedUser.toLowerCase()
+    );
+    if (localUser) {
+      setSessionToken(`local-${Date.now()}`);
+      setIsAuthenticated(true);
+      setLoggedUsername(trimmedUser);
+      setCurrentUserId(localUser.id);
+      setCurrentRoleState('Player');
+      setViewMode('player');
+      return { success: true, message: 'Login local exitoso', role: 'Player' as UserRole, user: localUser };
+    }
+
+    return { success: false, message: 'Credenciales inválidas.' };
+  } catch (e: any) {
+    return { success: false, message: e.message || 'Error de login' };
+  }
+}, [users]);
 
   const logout = useCallback(() => { supabase.auth.signOut().catch(()=>{}); setSessionToken(null); setIsAuthenticated(false); setCurrentRoleState('Player'); setLoggedUsername(''); setViewMode('player'); LotteryStorageService.clearSession(); }, []);
   const requestPasswordRecovery = useCallback(() => ({ success: false, message: 'Función no implementada en demo' }), []);
