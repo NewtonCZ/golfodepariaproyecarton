@@ -3294,6 +3294,43 @@ const deleteSystemCredential = useCallback(
       return cleaned;
     });
   }, [enforceAutoCleanupRounds]);
+      // ✅ Expulsión inmediata si el usuario es baneado/suspendido/eliminado (Realtime)
+  useEffect(() => {
+    if (!isAuthenticated || !currentUserId) return;
+
+    const channel = supabase
+      .channel(`profile-status-${currentUserId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${currentUserId}`,
+        },
+        (payload) => {
+          const newStatus = (payload.new as any)?.status;
+          if (newStatus === 'banned' || newStatus === 'suspended' || newStatus === 'deleted') {
+            console.warn('[Realtime] Sesión invalidada por cambio de status:', newStatus);
+            try {
+              alert(
+                newStatus === 'banned'
+                  ? 'Tu cuenta ha sido bloqueada. Contactá al administrador.'
+                  : newStatus === 'suspended'
+                  ? 'Tu cuenta ha sido suspendida temporalmente.'
+                  : 'Tu cuenta ha sido eliminada.'
+              );
+            } catch {}
+            logout();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthenticated, currentUserId, logout]);
 
   const value: GameContextType = {
     currentUser, currentRole, setCurrentRole, operatorRole, setOperatorRole, isAuthenticated, sessionToken, loggedUsername, permissions, activeCredential,
