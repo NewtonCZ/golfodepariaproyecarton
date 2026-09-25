@@ -456,59 +456,45 @@ const handleVerifyCodeSubmit = async (e: React.FormEvent) => {
 };
 
   // Password Recovery Step 3: Set New Password
-  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    setSuccessMsg(null);
+const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setErrorMsg(null);
+  setSuccessMsg(null);
 
-    if (!recoverNewPassword || recoverNewPassword.length < 6) {
-      setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.');
-      return;
+  if (!recoverNewPassword || recoverNewPassword.length < 6) {
+    setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.');
+    return;
+  }
+
+  if (recoverNewPassword !== recoverConfirmPassword) {
+    setErrorMsg('Las contraseñas no coinciden.');
+    return;
+  }
+
+  try {
+    const resp = await fetch(API_ENDPOINTS.AUTH_RESET_PASSWORD, {
+      method: 'POST',
+      headers: getSupabaseFunctionHeaders(),
+      body: JSON.stringify({
+        email: recoverEmail,
+        code: recoverCode,
+        newPassword: recoverNewPassword,
+      }),
+    });
+
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error('El servidor de cambio de contraseña no está disponible.');
     }
 
-    if (recoverNewPassword !== recoverConfirmPassword) {
-      setErrorMsg('Las contraseñas no coinciden.');
-      return;
-    }
+    const data = await resp.json();
 
-    try {
-      const resp = await fetch('/api/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: recoverEmail,
-          code: recoverCode,
-          newPassword: recoverNewPassword,
-        }),
-      });
-
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.success) {
-          resetPasswordWithCode(recoverEmail, recoverCode, recoverNewPassword);
-          setSuccessMsg(data.message || '¡Contraseña restablecida exitosamente!');
-          setTimeout(() => {
-            setActiveTab('login');
-            setUsername(recoverEmail);
-            setPassword(recoverNewPassword);
-            setRecoverStep(1);
-            setRecoverCode('');
-            setRecoverNewPassword('');
-            setRecoverConfirmPassword('');
-            setDemoRecoveryCode(null);
-          }, 1500);
-          return;
-        }
-      }
-    } catch (fetchErr) {}
-
-    const res = resetPasswordWithCode(recoverEmail, recoverCode, recoverNewPassword);
-    if (res.success) {
-      setSuccessMsg(res.message);
+    if (data.success) {
+      setSuccessMsg(data.message || '¡Contraseña restablecida exitosamente!');
       setTimeout(() => {
         setActiveTab('login');
         setUsername(recoverEmail);
-        setPassword(recoverNewPassword);
+        setPassword('');
         setRecoverStep(1);
         setRecoverCode('');
         setRecoverNewPassword('');
@@ -516,9 +502,12 @@ const handleVerifyCodeSubmit = async (e: React.FormEvent) => {
         setDemoRecoveryCode(null);
       }, 1500);
     } else {
-      setErrorMsg(res.message);
+      setErrorMsg(data.error || data.message || 'No se pudo cambiar la contraseña.');
     }
-  };
+  } catch (err: any) {
+    setErrorMsg(err?.message || 'Error al cambiar la contraseña.');
+  }
+};
 
   const handleLogout = () => {
     logout();
