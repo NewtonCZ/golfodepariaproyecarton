@@ -419,45 +419,41 @@ const handleRequestRecovery = async (e?: React.FormEvent) => {
   };
 
   // Password Recovery Step 2: Verify Code
-  const handleVerifyCodeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    setSuccessMsg(null);
+const handleVerifyCodeSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setErrorMsg(null);
+  setSuccessMsg(null);
 
-    const cleanCode = recoverCode.trim();
-    if (!cleanCode || cleanCode.length !== 6) {
-      setErrorMsg('Por favor ingresa el código de 6 dígitos enviado a tu correo.');
-      return;
+  const cleanCode = recoverCode.trim();
+  if (!cleanCode || cleanCode.length !== 6) {
+    setErrorMsg('Por favor ingresa el código de 6 dígitos enviado a tu correo.');
+    return;
+  }
+
+  try {
+    const resp = await fetch(API_ENDPOINTS.AUTH_VERIFY_RECOVERY, {
+      method: 'POST',
+      headers: getSupabaseFunctionHeaders(),
+      body: JSON.stringify({ email: recoverEmail, code: cleanCode }),
+    });
+
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error('El servidor de verificación no está disponible.');
     }
 
-    try {
-      const resp = await fetch(API_ENDPOINTS.AUTH_VERIFY_RECOVERY, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: recoverEmail, code: cleanCode }),
-      });
+    const data = await resp.json();
 
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.success) {
-          setSuccessMsg(data.message || 'Código verificado con éxito.');
-          setRecoverStep(3);
-          return;
-        } else {
-          setErrorMsg(data.message || 'Código incorrecto o expirado.');
-          return;
-        }
-      }
-    } catch (fetchErr) {}
-
-    const res = verifyRecoveryCode(recoverEmail, cleanCode);
-    if (res.success || (res as any).valid) {
-      setSuccessMsg(res.message);
+    if (data.valid || data.success) {
+      setSuccessMsg('Código verificado con éxito.');
       setRecoverStep(3);
     } else {
-      setErrorMsg(res.message);
+      setErrorMsg(data.error || data.message || 'Código incorrecto o expirado.');
     }
-  };
+  } catch (err: any) {
+    setErrorMsg(err?.message || 'Error al verificar el código.');
+  }
+};
 
   // Password Recovery Step 3: Set New Password
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
