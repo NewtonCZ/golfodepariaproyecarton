@@ -3294,9 +3294,16 @@ const deleteSystemCredential = useCallback(
       return cleaned;
     });
   }, [enforceAutoCleanupRounds]);
-      // ✅ Expulsión inmediata si el usuario es baneado/suspendido/eliminado (Realtime)
+       // ✅ Expulsión inmediata si el usuario es baneado/suspendido/eliminado
+  // En dev: Realtime. En prod: polling del realtimeService.
   useEffect(() => {
     if (!isAuthenticated || !currentUserId) return;
+
+    // ✅ En producción: NO conectar Realtime, el polling del realtimeService se encarga
+    if (import.meta.env.PROD) {
+      console.log('[Realtime] Desactivado en prod, polling se encarga del ban');
+      return;
+    }
 
     const channel = supabase
       .channel(`profile-status-${currentUserId}`)
