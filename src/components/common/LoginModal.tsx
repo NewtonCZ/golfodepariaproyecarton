@@ -343,9 +343,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       // 1. Consultar usuario/operador en Supabase
       if (supabase.isConfigured) {
         try {
-          // Buscar en tabla jugadores
+          // Buscar en tabla profiles
           const { data: jugData } = await supabase
-            .from('jugadores')
+            .from('profiles')
             .select('*')
             .or(`correo.ilike.${targetIdentifier.toLowerCase()},cedula.ilike.${targetIdentifier.toUpperCase()},nombre.ilike.${targetIdentifier}`)
             .limit(1);
