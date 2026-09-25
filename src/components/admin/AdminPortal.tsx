@@ -84,6 +84,8 @@ export const AdminPortal: React.FC = () => {
     logout,
     loggedUsername,
     purgeCompletedRounds,
+    deleteSystemCredential,    // ← AGREGAR
+    updateUserStatus,          // ← AGREGAR
   } = useGame();
 
   const currentRoleConfig = ROLE_PERMISSIONS[operatorRole] || ROLE_PERMISSIONS['Super Admin'];
