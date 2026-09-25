@@ -201,12 +201,24 @@ class RealtimeService {
           .eq('id', session.user.id)
           .maybeSingle();
 
-        if (
+               if (
           profile?.status === 'banned' ||
           profile?.status === 'suspended' ||
           profile?.status === 'deleted'
         ) {
-          console.warn('[Polling] Usuario baneado/suspendido detectado:', profile.status);
+          console.warn('[Polling] Usuario baneado detectado, expulsando...');
+
+          // Detener el polling (evita repetir el alert)
+          this.stopPolling();
+
+          // 1. Cerrar sesión primero (limpia tokens)
+          try {
+            await supabase.auth.signOut();
+          } catch (err) {
+            console.warn('[Polling] signOut error:', err);
+          }
+
+          // 2. Alert informativo
           try {
             alert(
               profile.status === 'banned'
@@ -216,10 +228,13 @@ class RealtimeService {
                 : 'Tu cuenta ha sido eliminada.'
             );
           } catch {}
-          await supabase.auth.signOut();
+
+          // 3. Redirigir al login (replace = sin historial)
           if (typeof window !== 'undefined') {
-            window.location.href = '/';
+            window.location.replace('/');
           }
+
+          return;
         }
       }
     } catch (e) {
