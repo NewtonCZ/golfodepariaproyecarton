@@ -32,6 +32,7 @@ import { saveJugador, JugadorBingo,
 import { supabase } from '../../services/supabaseClient';
 import { SuperSparkleBadge } from './SuperSparkleBadge';
 import { API_ENDPOINTS } from '../../services/apiConfig';
+import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
 
 interface LoginModalProps {
   isOpen: boolean;
