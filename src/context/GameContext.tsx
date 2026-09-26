@@ -3497,6 +3497,7 @@ const deleteSystemCredential = useCallback(
     users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards, recharges, setRecharges, withdrawals, setWithdrawals, ledger, auditLogs, addAuditLog, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
     purchaseCards, submitRecharge, addRecharge, registrarRecargaPagoMovil, approveRecharge, rejectRecharge,
     playExpress,
+    playExpressAnimalito,
     submitWithdrawal, completeWithdrawal, rejectWithdrawal,
     createRound, updateRoundConfig, setRoundStatus, submitRoundResult,
     ingresarResultados, verifyWinners, setRoundTransmissionReplay, setRoundLive,
