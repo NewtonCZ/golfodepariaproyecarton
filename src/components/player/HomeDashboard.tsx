@@ -3,6 +3,8 @@ import { useGame } from '../../context/GameContext';
 import { CountdownTimer } from '../common/CountdownTimer';
 import { MatrixCardView } from '../cards/MatrixCardView';
 import { FichaBadge } from '../common/FichaBadge';
+import { ExpressAnimalitoCard } from '../player/ExpressAnimalitoCard';
+import { ExpressAnimalitoModal } from '../player/ExpressAnimalitoModal';
 import { FICHAS_POOL } from '../../data/fichasPool';
 import {
   Trophy,
