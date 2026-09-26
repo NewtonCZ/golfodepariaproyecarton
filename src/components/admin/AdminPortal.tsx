@@ -652,53 +652,72 @@ export const AdminPortal: React.FC = () => {
   };
 
   const handleRequestOtp = async () => {
-    try {
-      setOtpModalFeedback(null);
-      setOtpRequestStatus('Enviando...');
-      let response = await fetch(API_ENDPOINTS.SEND_OTP, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: 'niutoncaraballo3@gmail.com' }),
-      }).catch(() => null);
+  try {
+    setOtpModalFeedback(null);
+    setOtpRequestStatus('Enviando...');
 
-      if (!response || !response.ok) {
-        response = await fetch(API_ENDPOINTS.SUPABASE_SEND_OTP, {
-          method: 'POST',
-          headers: getSupabaseFunctionHeaders(),
-          body: JSON.stringify({ email: 'niutoncaraballo3@gmail.com' }),
-        }).catch((err) => {
-          console.warn('[Supabase Fallback Send Error]:', err);
-          return null;
-        });
-      }
+    // ✅ Obtener el email del usuario logueado (Super Admin)
+    const { data: { session } } = await supabase.auth.getSession();
+    const targetEmail =
+      session?.user?.email ||
+      (currentUser as any)?.email ||
+      (currentUser as any)?.correo ||
+      loggedUsername ||
+      '';
 
-      if (response && response.ok) {
-        setOtpRequestStatus('Enviado ✓');
-        setOtpModalFeedback({
-          type: 'success',
-          text: 'Código de seguridad enviado a niutoncaraballo3@gmail.com (válido por 30 minutos)',
-        });
-        setTimeout(() => {
-          setOtpRequestStatus('📧 Reenviar Código');
-        }, 10000);
-      } else {
-        const errData = await response?.json().catch(() => ({}));
-        setOtpRequestStatus('📧 Solicitar Código');
-        setOtpModalFeedback({
-          type: 'error',
-          text: errData?.message || 'Error al enviar el código de verificación.',
-        });
-      }
-    } catch (err) {
+    if (!targetEmail || !targetEmail.includes('@')) {
       setOtpRequestStatus('📧 Solicitar Código');
       setOtpModalFeedback({
         type: 'error',
-        text: 'Error de conexión al enviar el código de seguridad.',
+        text: 'No se pudo determinar tu correo. Cerrá sesión y volvé a entrar.',
+      });
+      return;
+    }
+
+    let response = await fetch(API_ENDPOINTS.SEND_OTP, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: targetEmail }),
+    }).catch(() => null);
+
+    if (!response || !response.ok) {
+      response = await fetch(API_ENDPOINTS.SUPABASE_SEND_OTP, {
+        method: 'POST',
+        headers: getSupabaseFunctionHeaders(),
+        body: JSON.stringify({ email: targetEmail }),
+      }).catch((err) => {
+        console.warn('[Supabase Fallback Send Error]:', err);
+        return null;
       });
     }
-  };
+
+    if (response && response.ok) {
+      setOtpRequestStatus('Enviado ✓');
+      setOtpModalFeedback({
+        type: 'success',
+        text: `Código de seguridad enviado a ${targetEmail} (válido por 30 minutos)`,
+      });
+      setTimeout(() => {
+        setOtpRequestStatus('📧 Reenviar Código');
+      }, 10000);
+    } else {
+      const errData = await response?.json().catch(() => ({}));
+      setOtpRequestStatus('📧 Solicitar Código');
+      setOtpModalFeedback({
+        type: 'error',
+        text: errData?.message || 'Error al enviar el código de verificación.',
+      });
+    }
+  } catch (err) {
+    setOtpRequestStatus('📧 Solicitar Código');
+    setOtpModalFeedback({
+      type: 'error',
+      text: 'Error de conexión al enviar el código de seguridad.',
+    });
+  }
+};
 
   const handleExecuteResultSubmission = async () => {
     setResultSubmitMessage(null);
