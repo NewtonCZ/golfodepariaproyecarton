@@ -184,9 +184,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <ArrowRight className="w-5 h-5 stroke-[2.5] relative" />
             </div>
           </div>
-        </div>
+              </div>
       </button>
 
+      {/* Banner Exprés Animalito - MORADO/ÁMBAR DIAMANTE */}
+      <ExpressAnimalitoCard onClick={() => setShowExpressAnimalito(true)} />
+
+      {/* SECTION: Sequential Sorteos (Active / Scheduled Draws - Max 6) */}
       {/* SECTION: Sequential Sorteos (Active / Scheduled Draws - Max 6) */}
       <section>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
