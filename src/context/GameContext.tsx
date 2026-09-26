@@ -12,7 +12,7 @@ import { syncEngine } from '../services/syncService';
 import { timeSync } from '../services/timeSyncService';
 import { realtimeService } from '../services/realtimeService';
 import { saveJugador, getJugadores, JugadorBingo } from '../services/playerStorage';
-import { supabase } from '../services/supabaseClient';
+import { supabase, ensureSession, isSessionRlsError } from '../services/supabaseClient';
 import { hashPassword, normalizeAdminRole, toDbRole } from '../utils/crypto';
 import { mobileCacheManager } from '../services/mobileCacheManager';
 import { normalizeRechargeTransaction } from '../utils/rechargeNormalizer';
