@@ -741,21 +741,30 @@ export const AdminPortal: React.FC = () => {
       return;
     }
 
-    setIsSigningResult(true);
+       setIsSigningResult(true);
     try {
+      // ✅ Obtener el email del usuario logueado (Super Admin)
+      const { data: { session } } = await supabase.auth.getSession();
+      const targetEmail =
+        session?.user?.email ||
+        (currentUser as any)?.email ||
+        (currentUser as any)?.correo ||
+        loggedUsername ||
+        '';
+
       let response = await fetch(API_ENDPOINTS.VERIFY_OTP, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ code: trimmedOtp, email: 'niutoncaraballo3@gmail.com' }),
+        body: JSON.stringify({ code: trimmedOtp, email: targetEmail }),
       }).catch(() => null);
 
       if (!response || !response.ok) {
         response = await fetch(API_ENDPOINTS.SUPABASE_VERIFY_OTP, {
           method: 'POST',
           headers: getSupabaseFunctionHeaders(),
-          body: JSON.stringify({ code: trimmedOtp, email: 'niutoncaraballo3@gmail.com' }),
+          body: JSON.stringify({ code: trimmedOtp, email: targetEmail }),
         }).catch((err) => {
           console.warn('[Supabase Fallback Verify Error]:', err);
           return null;
