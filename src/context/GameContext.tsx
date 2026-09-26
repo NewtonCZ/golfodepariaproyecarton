@@ -69,6 +69,23 @@ interface GameContextType {
   formatMoney: (amountVes: number, options?: { showBoth?: boolean }) => string;
   purchaseCards: (packCount: 2 | 4 | 6, roundId: string) => { success: boolean; message: string; cards?: MatrixCard[] };
   playExpress: (packCount: 2 | 4 | 6) => Promise<{ success: boolean; message: string; result?: any }>;
+  playExpressAnimalito: (params: {
+    animalitoId: number;
+    animalitoName: string;
+    animalitoEmoji: string;
+    monto: number;
+    multiplicador: number;
+  }) => Promise<{
+    success: boolean;
+    message: string;
+    result?: {
+      animalitoGanadorId: number;
+      gano: boolean;
+      premio: number;
+      monto: number;
+      multiplicador: number;
+    };
+  }>;
   submitRecharge: (data: any) => Promise<{ success: boolean; message: string }>;
   addRecharge?: (data: any) => Promise<{ success: boolean; message: string }>;
   registrarRecargaPagoMovil?: (data: any) => Promise<{ success: boolean; message: string }>;
@@ -92,7 +109,7 @@ interface GameContextType {
   quickAddBalance: (amountVes: number) => void;
   adjustUserBalance: (userId: string, amountVes: number, reason: string) => { success: boolean; message: string };
   purgeCompletedRounds: () => void;
-  updateUserStatus: (userId: string, status: 'active' | 'suspended' | 'banned', reason?: string) => { success: boolean; message: string };
+  updateUserStatus: (userId: string, status: 'active' | 'suspended' | 'banned') => Promise<{ success: boolean; message: string }>;
   isRealtimeSyncConnected: boolean; lastSyncTimestamp: number;
   fetchActiveRounds: (options?: { bypassCache?: boolean; limit?: number }) => Promise<void>;
   fetchPendingRecharges: (statusFilter?: 'all' | 'pending' | 'approved' | 'rejected', page?: number) => Promise<void>; fetchWithdrawals: () => Promise<void>;
