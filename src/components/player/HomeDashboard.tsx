@@ -656,6 +656,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal Exprés Animalito */}
+      <ExpressAnimalitoModal
+        isOpen={showExpressAnimalito}
+        onClose={() => setShowExpressAnimalito(false)}
+      />
     </div>
   );
 };
