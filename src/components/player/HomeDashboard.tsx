@@ -53,6 +53,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   } = useGame();
 
   const [showFichasPoolModal, setShowFichasPoolModal] = useState(false);
+  const [showExpressAnimalito, setShowExpressAnimalito] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'animal' | 'fruta' | 'objeto'>('all');
   const [selectedRoundTabId, setSelectedRoundTabId] = useState<string | null>(null);
 
