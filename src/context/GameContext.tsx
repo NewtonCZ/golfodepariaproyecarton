@@ -1799,7 +1799,158 @@ const fetchJugadores = useCallback(async () => {
     },
     [currentUser, users, currentUserId, commercialConfig, formatMoney, addAuditLog]
   );
+      // ==========================================
+  // EXPRÉS ANIMALITO — Sorteo instantáneo de 1 animalito
+  // ==========================================
+  const playExpressAnimalito = useCallback(
+    async (params: {
+      animalitoId: number;
+      animalitoName: string;
+      animalitoEmoji: string;
+      monto: number;
+      multiplicador: number;
+    }): Promise<{
+      success: boolean;
+      message: string;
+      result?: {
+        animalitoGanadorId: number;
+        gano: boolean;
+        premio: number;
+        monto: number;
+        multiplicador: number;
+      };
+    }> => {
+      try {
+        const { animalitoId, animalitoName, animalitoEmoji, monto, multiplicador } = params;
 
+        const user = currentUser || users.find((u) => u.id === currentUserId);
+        if (!user) return { success: false, message: 'Usuario no identificado' };
+
+        if (monto < 50) return { success: false, message: 'Monto mínimo: 50 Bs' };
+        if (monto > 10000) return { success: false, message: 'Monto máximo: 10,000 Bs' };
+
+        if ((user.availableBalance || 0) < monto) {
+          return { success: false, message: `Saldo insuficiente. Necesitás ${monto} Bs.` };
+        }
+
+        const multiplicadoresValidos = [2, 3, 5, 8, 10, 12, 15];
+        if (!multiplicadoresValidos.includes(multiplicador)) {
+          return { success: false, message: 'Multiplicador inválido' };
+        }
+
+        const balBefore = user.availableBalance;
+        const balAfter = balBefore - monto;
+
+        const animalitoGanadorId = Math.floor(Math.random() * 25) + 1;
+        const gano = animalitoGanadorId === animalitoId;
+        const premio = gano ? monto * multiplicador : 0;
+        const saldoFinal = balAfter + premio;
+
+        setUsers((prev) =>
+          prev.map((u) =>
+            u.id === user.id
+              ? {
+                  ...u,
+                  availableBalance: saldoFinal,
+                  totalSpentVes: (u.totalSpentVes || 0) + monto,
+                  totalWonVes: (u.totalWonVes || 0) + premio,
+                }
+              : u
+          )
+        );
+
+        const timestamp = new Date().toISOString();
+        const ledgerEntries: WalletLedgerEntry[] = [
+          {
+            id: `led-anim-bet-${Date.now()}`,
+            userId: user.id,
+            userName: user.name,
+            type: 'card_purchase',
+            amountVes: -monto,
+            balanceBefore: balBefore,
+            balanceAfter: balAfter,
+            description: `Exprés Animalito: Apostó ${monto} Bs a ${animalitoEmoji} ${animalitoName} (${multiplicador}x)`,
+            referenceId: `express-anim-${Date.now()}`,
+            createdAt: timestamp,
+          },
+        ];
+
+        if (gano && premio > 0) {
+          ledgerEntries.push({
+            id: `led-anim-win-${Date.now()}`,
+            userId: user.id,
+            userName: user.name,
+            type: 'prize_payout',
+            amountVes: premio,
+            balanceBefore: balAfter,
+            balanceAfter: saldoFinal,
+            description: `Exprés Animalito: GANÓ ${premio} Bs (${animalitoEmoji} ${animalitoName} x${multiplicador})`,
+            referenceId: `express-anim-${Date.now()}`,
+            createdAt: timestamp,
+          });
+        }
+
+        setLedger((prev) => [...ledgerEntries, ...prev]);
+
+        try {
+          supabase
+            .from('profiles')
+            .update({ saldo: saldoFinal })
+            .eq('id', user.id)
+            .then(({ error }) => {
+              if (error) console.warn('[playExpressAnimalito] profiles update error:', error);
+            });
+
+          const ledgerDbPayload = ledgerEntries.map((l) => ({
+            id: l.id,
+            user_id: l.userId,
+            user_name: l.userName,
+            type: l.type,
+            amount_ves: l.amountVes,
+            balance_before: l.balanceBefore,
+            balance_after: l.balanceAfter,
+            description: l.description,
+            reference_id: l.referenceId,
+            created_at: l.createdAt,
+          }));
+
+          supabase
+            .from('ledger')
+            .insert(ledgerDbPayload)
+            .then(({ error }) => {
+              if (error) console.warn('[playExpressAnimalito] ledger insert error:', error);
+            });
+        } catch (e) {
+          console.warn('[playExpressAnimalito] Supabase persistence error:', e);
+        }
+
+        addAuditLog(
+          'EXPRESS_ANIMALITO_PLAY',
+          `${user.name} apostó ${monto} Bs a ${animalitoEmoji} ${animalitoName} (${multiplicador}x). Resultado: ${gano ? `GANÓ ${premio} Bs` : 'PERDIÓ'}`
+        );
+
+        try {
+          if (gano) soundService.playCoin();
+        } catch {}
+
+        return {
+          success: true,
+          message: gano ? `¡Ganaste ${premio} Bs!` : 'No fue esta vez.',
+          result: {
+            animalitoGanadorId,
+            gano,
+            premio,
+            monto,
+            multiplicador,
+          },
+        };
+      } catch (err: any) {
+        console.warn('[playExpressAnimalito] error:', err);
+        return { success: false, message: err?.message || 'Error en Exprés Animalito' };
+      }
+    },
+    [currentUser, users, currentUserId, addAuditLog]
+  );
   const submitRecharge = useCallback(
     async (form: any): Promise<{ success: boolean; message: string }> => {
       try {
