@@ -328,3 +328,49 @@ export const supabase = {
 };
 
 export default supabase;
+// ============================================================
+// SESSION GUARD — helpers para operaciones de escritura
+// ============================================================
+
+/**
+ * Garantiza que haya una sesión válida antes de una operación de escritura.
+ * - Si la sesión existe y no está por expirar → la devuelve.
+ * - Si está por expirar (< 60s) → intenta refresh.
+ * - Si no hay sesión o el refresh falla → devuelve null.
+ */
+export async function ensureSession() {
+  if (!realSupabaseClient) return null;
+
+  const { data: { session }, error } = await realSupabaseClient.auth.getSession();
+
+  if (error || !session) {
+    const { data: refreshed, error: refreshError } =
+      await realSupabaseClient.auth.refreshSession();
+    if (refreshError || !refreshed.session) return null;
+    return refreshed.session;
+  }
+
+  const expiresAt = session.expires_at ?? 0;
+  const now = Math.floor(Date.now() / 1000);
+
+  // Margen de 60s para evitar race con el server
+  if (expiresAt - now < 60) {
+    const { data: refreshed, error: refreshError } =
+      await realSupabaseClient.auth.refreshSession();
+    if (refreshError || !refreshed.session) return null;
+    return refreshed.session;
+  }
+
+  return session;
+}
+
+/**
+ * Detecta si un error de Supabase es por RLS / sesión ausente.
+ */
+export function isSessionRlsError(error: unknown): boolean {
+  const e = error as { code?: string; message?: string } | null;
+  if (!e) return false;
+  if (e.code === '42501') return true;
+  return typeof e.message === 'string' &&
+    e.message.toLowerCase().includes('row-level security');
+}
