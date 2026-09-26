@@ -90,7 +90,7 @@ export const AdminPortal: React.FC = () => {
 
   const currentRoleConfig = ROLE_PERMISSIONS[operatorRole] || ROLE_PERMISSIONS['Super Admin'];
   const canManageWithdrawals = permissions?.canManageWithdrawals ?? (operatorRole === 'Super Admin' || operatorRole === 'Operador Financiero');
-  const canManageResults = permissions?.canManageRounds ?? (operatorRole === 'Super Admin' || operatorRole === 'Operador Financiero');
+  const canManageResults = operatorRole === 'Super Admin';
 
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
     return currentRoleConfig.allowedTabs[0] || 'dashboard';
