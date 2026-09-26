@@ -1968,11 +1968,20 @@ const fetchJugadores = useCallback(async () => {
     },
     [currentUser, users, currentUserId, addAuditLog]
   );
-  const submitRecharge = useCallback(
+   const submitRecharge = useCallback(
     async (form: any): Promise<{ success: boolean; message: string }> => {
       try {
+        // ✅ Guard de sesión: si no hay sesión válida, NO intentamos el insert
+        const session = await ensureSession();
+        if (!session) {
+          return {
+            success: false,
+            message: 'Tu sesión expiró. Iniciá sesión nuevamente para continuar.',
+          };
+        }
+
         const payload = {
-          usuario_id: currentUser.id, // es text tipo usr-xxx
+          usuario_id: session.user.id, // ✅ forzado desde sesión, no desde el form
           nombre_usuario: (currentUser as any).nombre || currentUser.name,
           monto_ves: Number(form.monto !== undefined ? form.monto : form.amountVes),
           referencia: form.referencia !== undefined ? form.referencia : (form.referenceNumber || ''),
@@ -1982,22 +1991,31 @@ const fetchJugadores = useCallback(async () => {
           comprobante_url: (form.comprobanteUrl !== undefined ? form.comprobanteUrl : form.voucherImageUrl) || null,
           estatus: 'PENDIENTE',
           estado: 'PENDIENTE',
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
         };
 
         const { error } = await supabase.from('recargas_pago_movil').insert([payload]);
 
         if (error) {
           console.error('[GameContext] Supabase insert recargas_pago_movil error:', JSON.stringify(error, null, 2));
+
+          // ✅ Si falla por RLS / sesión, damos mensaje humano
+          if (isSessionRlsError(error)) {
+            return {
+              success: false,
+              message: 'Tu sesión expiró. Iniciá sesión nuevamente para continuar.',
+            };
+          }
+
           return {
             success: false,
-            message: `Error al registrar en Supabase: ${error.message || 'Verifica RLS'}`,
+            message: 'No se pudo registrar la recarga. Intentá de nuevo en unos segundos.',
           };
         }
 
         const newRecharge: RechargeTransaction = {
           id: `rch-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          userId: currentUser.id,
+          userId: session.user.id,
           userName: (currentUser as any).nombre || currentUser.name,
           userPhone: currentUser.phone,
           amountVes: payload.monto_ves,
@@ -2017,7 +2035,7 @@ const fetchJugadores = useCallback(async () => {
           syncEngine.broadcastRechargeStatus({
             transactionId: newRecharge.id,
             status: 'pending',
-            userId: currentUser.id,
+            userId: session.user.id,
             recharge: newRecharge,
           });
         } catch {}
@@ -2026,7 +2044,7 @@ const fetchJugadores = useCallback(async () => {
         return { success: true, message: 'Reporte de pago enviado exitosamente. En breve será verificado.' };
       } catch (error: any) {
         console.error('[GameContext] Catch insert recargas_pago_movil:', JSON.stringify(error, null, 2));
-        return { success: false, message: 'Error de conexión al registrar la recarga.' };
+        return { success: false, message: 'Error de conexión al registrar la recarga. Intentá de nuevo.' };
       }
     },
     [currentUser, formatMoney, addAuditLog]
