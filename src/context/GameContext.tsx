@@ -2929,12 +2929,18 @@ const roundPayload = {
       setRounds(updatedRounds);
       mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, updatedRounds, 'high');
 
-      try {
+           try {
         supabase
           .from('rounds')
           .update({
             status: 'closed',
             winning_numbers: twentyFichasIds,
+            // ✅ Escribir también en las columnas que el resto del código lee
+            bolas_cantadas: twentyFichasIds,
+            drawnFichas: twentyFichasIds,
+            drawn_fichas: twentyFichasIds,
+            result_locked: true,
+            resultLocked: true,
           })
           .eq('id', roundId)
           .then(({ error }) => {
@@ -2943,7 +2949,6 @@ const roundPayload = {
       } catch (err) {
         console.warn('[GameContext] Error updating round in Supabase:', err);
       }
-
       addAuditLog(
         'GUARDAR_RESULTADOS',
         `Figuras guardadas y validadas para Sorteo #${targetRound.roundNumber}. Estado cambiado a Cerrado para evitar cambios posteriores. Fichas: ${twentyFichasIds.length}. Ganadores: ${verificationResult.count}.`
