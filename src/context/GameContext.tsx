@@ -1837,12 +1837,20 @@ const fetchJugadores = useCallback(async () => {
         multiplicador: number;
       };
     }> => {
-      try {
+            try {
         const { animalitoId, animalitoName, animalitoEmoji, monto, multiplicador } = params;
+
+        // ✅ Guard de sesión: si no hay sesión válida, NO permitimos apostar
+        const session = await ensureSession();
+        if (!session) {
+          return {
+            success: false,
+            message: 'Tu sesión expiró. Iniciá sesión nuevamente para continuar.',
+          };
+        }
 
         const user = currentUser || users.find((u) => u.id === currentUserId);
         if (!user) return { success: false, message: 'Usuario no identificado' };
-
         if (monto < 50) return { success: false, message: 'Monto mínimo: 50 Bs' };
         if (monto > 10000) return { success: false, message: 'Monto máximo: 10,000 Bs' };
 
