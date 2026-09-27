@@ -124,15 +124,25 @@ const MatrixCardViewComponent: React.FC<MatrixCardViewProps> = ({
               <span className="absolute top-0.5 left-1 text-[8px] font-black text-slate-400">
                 #{ficha.id}
               </span>
-
-              {/* Emoji Icon */}
-              <span
-                className={`transition-transform duration-200 drop-shadow-sm ${
-                  compact ? 'text-lg sm:text-xl' : 'text-2xl sm:text-3xl'
-                } ${isMatched ? 'scale-110' : ''}`}
+              
+              {/* Ficha Image */}
+              <div
+                className={`flex items-center justify-center w-full flex-1 min-h-0 transition-transform duration-200 ${
+                  isMatched ? 'scale-110' : ''
+                }`}
               >
-                {ficha.emoji}
-              </span>
+                <img
+                  src={`/fichas/${ficha.id}.jpg`}
+                  alt={ficha.name}
+                  loading="lazy"
+                  decoding="async"
+                  draggable={false}
+                  className="w-[85%] h-[85%] object-contain"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+                  }}
+                />
+              </div>
 
               {/* Ficha Name */}
               <span
