@@ -1917,13 +1917,18 @@ const fetchJugadores = useCallback(async () => {
 
         setLedger((prev) => [...ledgerEntries, ...prev]);
 
-        try {
+                try {
           supabase
             .from('profiles')
             .update({ saldo: saldoFinal })
-            .eq('id', user.id)
+            .eq('id', session.user.id)
             .then(({ error }) => {
-              if (error) console.warn('[playExpressAnimalito] profiles update error:', error);
+              if (error) {
+                console.warn('[playExpressAnimalito] profiles update error:', error);
+                if (isSessionRlsError(error)) {
+                  console.warn('[playExpressAnimalito] Sesión expiró durante el update de saldo');
+                }
+              }
             });
 
           const ledgerDbPayload = ledgerEntries.map((l) => ({
