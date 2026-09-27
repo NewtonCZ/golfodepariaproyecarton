@@ -93,12 +93,21 @@ export const FichaBadge: React.FC<FichaBadgeProps> = ({
           #{ficha.id}
         </span>
       )}
-
-      {/* Main Emoji Graphic */}
-      <span className={`leading-none drop-shadow-sm my-auto ${currentSize.emoji}`}>
-        {ficha.emoji}
-      </span>
-
+          {/* Main Ficha Image */}
+      <div className="w-full flex-1 flex items-center justify-center min-h-0 my-auto">
+        <img
+          src={`/fichas/${ficha.id}.jpg`}
+          alt={ficha.name}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          className="w-[90%] h-[90%] object-contain"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+          }}
+        />
+      </div>
+      
       {/* Name in Spanish */}
       {showName && (
         <span
