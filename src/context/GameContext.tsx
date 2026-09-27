@@ -935,13 +935,14 @@ const fetchJugadores = useCallback(async () => {
 
     let intervalTimer: any = null;
 
-    const runPolling = () => {
+       const runPolling = () => {
       if (document.visibilityState !== 'visible') return;
       fetchCommercialConfig();
       fetchWithdrawals();
       fetchUserCards();
       fetchPendingRecharges();
       fetchLedger();
+      fetchJugadores();
       fetchActiveRounds({ bypassCache: true });
     };
 
