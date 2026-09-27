@@ -1149,21 +1149,31 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
                 key={currentDrawn.id}
                 className="my-auto flex flex-col items-center animate-in zoom-in-50 duration-300"
               >
-                {/* 3D Giant Sphere / Chip */}
-                <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-3xl bg-gradient-to-br from-amber-400 via-yellow-300 to-orange-500 p-1.5 shadow-2xl shadow-amber-400/50 mb-3 transform hover:scale-105 transition-transform flex items-center justify-center">
-                  <div className="w-full h-full bg-white rounded-[22px] flex flex-col items-center justify-center relative p-3 border-2 border-amber-300">
-                    <span className="absolute top-2 left-3 font-mono font-black text-xs text-slate-500">
-                      #{currentDrawn.id}
-                    </span>
-                    <span className="text-6xl sm:text-7xl drop-shadow-md my-auto animate-bounce">
-                      {currentDrawn.emoji}
-                    </span>
-                    <span className="text-xs font-black uppercase text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">
-                      {currentDrawn.category}
-                    </span>
+                                  {/* 3D Giant Sphere / Chip */}
+                  <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-3xl bg-gradient-to-br from-amber-400 via-yellow-300 to-orange-500 p-1.5 shadow-2xl shadow-amber-400/50 mb-3 transform hover:scale-105 transition-transform flex items-center justify-center">
+                    <div className="w-full h-full bg-white rounded-[22px] flex flex-col items-center justify-center relative p-3 border-2 border-amber-300">
+                      <span className="absolute top-2 left-3 font-mono font-black text-xs text-slate-500">
+                        #{currentDrawn.id}
+                        </span>
+                         <div className="w-full flex-1 flex items-center justify-center my-auto p-1">
+                          <img
+                          src={`/fichas/${currentDrawn.id}.jpg`}
+                          alt={currentDrawn.name}
+                          loading="eager"
+                          decoding="async"
+                          draggable={false}
+                          className="w-[90%] h-[90%] object-contain animate-bounce"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs font-black uppercase text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">
+                        {currentDrawn.category}
+                     </span>
+                    </div>
                   </div>
-                </div>
-
+                
                 <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
                   {currentDrawn.pronunciation}
                 </div>
