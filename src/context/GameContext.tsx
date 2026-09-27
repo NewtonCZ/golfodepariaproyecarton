@@ -1602,7 +1602,16 @@ const fetchJugadores = useCallback(async () => {
   // ==========================================
   const playExpress = useCallback(
     async (packCount: 2 | 4 | 6): Promise<{ success: boolean; message: string; result?: any }> => {
-      try {
+           try {
+        // ✅ Guard de sesión: si no hay sesión válida, NO permitimos apostar
+        const session = await ensureSession();
+        if (!session) {
+          return {
+            success: false,
+            message: 'Tu sesión expiró. Iniciá sesión nuevamente para continuar.',
+          };
+        }
+
         // 1. Identificar usuario
         const user = currentUser || users.find((u) => u.id === currentUserId);
         if (!user) return { success: false, message: 'Usuario no identificado' };
