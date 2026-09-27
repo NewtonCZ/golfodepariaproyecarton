@@ -2729,11 +2729,11 @@ const roundPayload = {
       if (!targetRound) return { count: 0, totalPaid: 0 };
 
       const fichas =
-        (customDrawnFichas && customDrawnFichas.length > 0 ? customDrawnFichas : null) ||
-        targetRound.bolas_cantadas ||
-        targetRound.drawnFichas ||
-        [];
-
+  (customDrawnFichas && customDrawnFichas.length > 0 ? customDrawnFichas : null) ||
+  (targetRound as any).winning_numbers ||
+  targetRound.bolas_cantadas ||
+  targetRound.drawnFichas ||
+  [];
       if (!fichas || fichas.length === 0) return { count: 0, totalPaid: 0 };
 
       const effectiveCardPrice =
