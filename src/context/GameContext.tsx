@@ -1930,9 +1930,13 @@ const fetchJugadores = useCallback(async () => {
 
                 try {
           supabase
-            .from('profiles')
-            .update({ saldo: saldoFinal })
-            .eq('id', session.user.id)
+  .from('profiles')
+  .update({
+    saldo: saldoFinal,
+    available_balance: saldoFinal,
+    balance: saldoFinal,
+  })
+  .eq('id', session.user.id)
             .then(({ error }) => {
               if (error) {
                 console.warn('[playExpressAnimalito] profiles update error:', error);
