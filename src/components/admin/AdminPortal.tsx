@@ -2001,7 +2001,19 @@ export const AdminPortal: React.FC = () => {
                   }`}
                 >
                   <span className="text-[9px] font-mono opacity-70">#{ficha.id}</span>
-                  <span className="text-2xl my-1">{ficha.emoji}</span>
+                  <div className="w-10 h-10 my-1 flex items-center justify-center">
+                    <img
+                      src={`/fichas/${ficha.id}.jpg`}
+                      alt={ficha.name}
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+                      }}
+                    />
+                  </div>
                   <span className="text-[10px] font-bold truncate max-w-full">{ficha.name}</span>
                 </div>
               );
