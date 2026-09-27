@@ -1788,7 +1788,7 @@ const fetchJugadores = useCallback(async () => {
             if (error) console.warn('[playExpress] ledger insert error:', error);
           });
 
-          supabase.from('profiles').update({ saldo: finalBalance }).eq('id', user.id).then(({ error }) => {
+          supabase.from('profiles').update({ saldo: finalBalance }).eq('id', session.user.id).then(({ error }) => {
             if (error) console.warn('[playExpress] profiles update error:', error);
           });
         } catch (e) {
