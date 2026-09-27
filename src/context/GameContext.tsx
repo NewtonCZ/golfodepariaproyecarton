@@ -578,6 +578,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             prizePercentage: Number(r.prizePercentage ?? r.prize_percentage ?? 70),
             jackpotVes: Number(r.jackpotVes ?? r.jackpot_ves ?? 15000),
             totalCardsSold: Number(r.totalCardsSold ?? r.total_cards_sold ?? 0),
+            winning_numbers: Array.isArray((r as any).winning_numbers) ? (r as any).winning_numbers : [],
             bolas_cantadas: Array.isArray(r.winning_numbers) && r.winning_numbers.length > 0 ? r.winning_numbers : (Array.isArray(r.bolas_cantadas) ? r.bolas_cantadas : (Array.isArray(r.drawnFichas) ? r.drawnFichas : [])),
             drawnFichas: Array.isArray(r.winning_numbers) && r.winning_numbers.length > 0 ? r.winning_numbers : (Array.isArray(r.bolas_cantadas) && r.bolas_cantadas.length > 0 ? r.bolas_cantadas : (Array.isArray(r.drawnFichas) ? r.drawnFichas : [])),
             starts_at: r.starts_at || r.startsAt || r.openBetAt || r.open_bet_at,
