@@ -391,7 +391,7 @@ const CurrentFichaDisplay: React.FC<{ fichaId: number }> = ({ fichaId }) => {
       key={fichaId}
       className="flex flex-col items-center animate-in zoom-in-50 duration-500"
     >
-      <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-amber-400 via-orange-400 to-amber-500 flex items-center justify-center shadow-2xl shadow-amber-500/60 border-4 border-amber-300 relative overflow-hidden p-3">
+        <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-400 to-amber-500 flex items-center justify-center shadow-2xl shadow-amber-500/60 border-4 border-amber-300 relative overflow-hidden p-3">
         <FichaImg
           id={fichaId}
           alt={ficha.name}
