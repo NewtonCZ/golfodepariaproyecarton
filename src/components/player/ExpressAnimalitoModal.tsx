@@ -10,6 +10,7 @@ import {
   type Multiplicador,
 } from '../../data/animalitosPool';
 import { X, Sparkles, Trophy, AlertCircle, RotateCcw } from 'lucide-react';
+import { FichaImg } from '../common/FichaImg';
 
 interface ExpressAnimalitoModalProps {
   isOpen: boolean;
