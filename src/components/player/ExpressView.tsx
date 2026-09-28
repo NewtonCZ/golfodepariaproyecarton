@@ -391,8 +391,14 @@ const CurrentFichaDisplay: React.FC<{ fichaId: number }> = ({ fichaId }) => {
       key={fichaId}
       className="flex flex-col items-center animate-in zoom-in-50 duration-500"
     >
-      <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-amber-400 via-orange-400 to-amber-500 flex items-center justify-center shadow-2xl shadow-amber-500/60 border-4 border-amber-300 relative">
-        <span className="text-6xl sm:text-7xl drop-shadow-lg">{ficha.emoji}</span>
+      <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-amber-400 via-orange-400 to-amber-500 flex items-center justify-center shadow-2xl shadow-amber-500/60 border-4 border-amber-300 relative overflow-hidden p-3">
+        <FichaImg
+          id={fichaId}
+          alt={ficha.name}
+          size="hero"
+          eager
+          className="!max-w-[110px] !max-h-[110px] sm:!max-w-[140px] sm:!max-h-[140px] drop-shadow-lg"
+        />
       </div>
       <div className="mt-3 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/30 to-orange-500/30 border border-amber-400/50">
         <p className="text-white font-black text-base sm:text-lg capitalize tracking-wide">
