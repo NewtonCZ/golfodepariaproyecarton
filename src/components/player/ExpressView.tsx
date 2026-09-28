@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useGame } from '../../context/GameContext';
 import { getFichaById } from '../../data/fichasPool';
 import { FichaBadge } from '../common/FichaBadge';
+import { FichaImg } from '../common/FichaImg';
 import { soundService } from '../../services/soundAndSpeech';
 import { Sparkles, Zap, Trophy, AlertCircle, RotateCcw, Play } from 'lucide-react';
 
