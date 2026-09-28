@@ -317,11 +317,15 @@ export const ExpressAnimalitoModal: React.FC<ExpressAnimalitoModalProps> = ({
                 🎲 Sorteando...
               </p>
               <div className="relative">
-                <div className="absolute inset-0 bg-amber-400/40 blur-3xl rounded-full animate-pulse" />
-                <div className="relative w-40 h-40 rounded-full bg-gradient-to-br from-purple-500 via-amber-500 to-purple-600 flex items-center justify-center shadow-2xl border-4 border-amber-300">
-                  <span className="text-7xl drop-shadow-lg">
-                    {getAnimalitoById(fichaGirando)?.emoji || '🐘'}
-                  </span>
+                <div className="absolute inset-0 bg-amber-400/40 blur-2xl rounded-2xl animate-pulse" />
+                <div className="relative w-40 h-40 rounded-2xl bg-gradient-to-br from-purple-500 via-amber-500 to-purple-600 flex items-center justify-center shadow-2xl border-4 border-amber-300 overflow-hidden p-3">
+                  <FichaImg
+                    id={fichaGirando}
+                    alt={getAnimalitoById(fichaGirando)?.name || 'Animalito'}
+                    size="hero"
+                    eager
+                    className="!max-w-[130px] !max-h-[130px] drop-shadow-lg"
+                  />
                 </div>
               </div>
               <p className="text-sm text-slate-400">
