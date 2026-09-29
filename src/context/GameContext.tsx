@@ -2606,7 +2606,7 @@ const fetchJugadores = useCallback(async () => {
         cardPriceVes: price,
         card_price: price,
         prize_percentage: prizePct,
-        jackpotVes: manualJackpotVes || 15000,
+        jackpotVes: manualJackpotVes ?? 0,
         winningCardsCount: 0,
         totalPrizesPaidVes: 0,
         resultLocked: false,
