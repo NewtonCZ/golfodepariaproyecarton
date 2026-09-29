@@ -132,7 +132,7 @@ const MatrixCardViewComponent: React.FC<MatrixCardViewProps> = ({
                 }`}
               >
                 <img
-                  src={`/fichas/${ficha.id}.jpg`}
+                  src={`/fichas/${ficha.id}.png`}
                   alt={ficha.name}
                   loading="lazy"
                   decoding="async"
