@@ -2001,24 +2001,22 @@ export const AdminPortal: React.FC = () => {
                   }`}
                 >
                   <span className="text-[9px] font-mono opacity-70">#{ficha.id}</span>
-                  <div className="w-10 h-10 my-1 flex items-center justify-center">
-                    <img
-                      src={`/fichas/${ficha.id}.png`}
-                      alt={ficha.name}
-                      loading="lazy"
-                      decoding="async"
-                      draggable={false}
-                      className="w-full h-full object-contain"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
-                      }}
-                    />
+                   <div className="w-10 h-10 my-1 flex items-center justify-center">
+                    <picture className="w-full h-full flex items-center justify-center">
+                      <source srcSet={`/fichas/${ficha.id}.avif`} type="image/avif" />
+                      <img
+                        src={`/fichas/${ficha.id}.png`}
+                        alt={ficha.name}
+                        loading="lazy"
+                        decoding="async"
+                        draggable={false}
+                        className="w-full h-full object-contain"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+                        }}
+                      />
+                    </picture>
                   </div>
-                  <span className="text-[10px] font-bold truncate max-w-full">{ficha.name}</span>
-                </div>
-              );
-            })}
-          </div>
 
           {/* Submit Trigger Button */}
           <div className="flex justify-end pt-3">
