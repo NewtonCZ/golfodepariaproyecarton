@@ -6,8 +6,7 @@ import React from 'react';
  * Las imágenes están en public/fichas/ como {id}.jpg (PNG internamente, con transparencia).
  * Si mañana migrás a Supabase Storage, cambiás SOLO esta línea.
  */
-export const getFichaImageUrl = (id: number) => `/fichas/${id}.jpg`;
-
+export const getFichaImageUrl = (id: number) => `/fichas/${id}.png`;
 /**
  * Fallback: si la imagen no carga, la oculta silenciosamente.
  * No muestra emoji (decisión del proyecto: sin emojis).
