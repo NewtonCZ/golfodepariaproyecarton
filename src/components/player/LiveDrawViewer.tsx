@@ -1156,18 +1156,21 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
                         #{currentDrawn.id}
                         </span>
                          <div className="w-full flex-1 flex items-center justify-center my-auto p-1">
-                          <img
-                          src={`/fichas/${currentDrawn.id}.png`}
-                          alt={currentDrawn.name}
-                          loading="eager"
-                          decoding="async"
-                          draggable={false}
-                          className="w-[90%] h-[90%] object-contain animate-bounce"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
-                          }}
-                        />
-                      </div>
+                          <picture className="w-[90%] h-[90%] flex items-center justify-center">
+                            <source srcSet={`/fichas/${currentDrawn.id}.avif`} type="image/avif" />
+                            <img
+                              src={`/fichas/${currentDrawn.id}.png`}
+                              alt={currentDrawn.name}
+                              loading="eager"
+                              decoding="async"
+                              draggable={false}
+                              className="w-full h-full object-contain animate-bounce"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+                              }}
+                            />
+                          </picture>
+                        </div>
                       <span className="text-xs font-black uppercase text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">
                         {currentDrawn.category}
                      </span>
