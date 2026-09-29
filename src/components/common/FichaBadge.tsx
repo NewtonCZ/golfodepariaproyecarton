@@ -96,7 +96,7 @@ export const FichaBadge: React.FC<FichaBadgeProps> = ({
           {/* Main Ficha Image */}
       <div className="w-full flex-1 flex items-center justify-center min-h-0 my-auto">
         <img
-          src={`/fichas/${ficha.id}.jpg`}
+          src={`/fichas/${ficha.id}.png`}
           alt={ficha.name}
           loading="lazy"
           decoding="async"
