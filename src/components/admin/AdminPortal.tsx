@@ -2003,7 +2003,7 @@ export const AdminPortal: React.FC = () => {
                   <span className="text-[9px] font-mono opacity-70">#{ficha.id}</span>
                   <div className="w-10 h-10 my-1 flex items-center justify-center">
                     <img
-                      src={`/fichas/${ficha.id}.jpg`}
+                      src={`/fichas/${ficha.id}.png`}
                       alt={ficha.name}
                       loading="lazy"
                       decoding="async"
