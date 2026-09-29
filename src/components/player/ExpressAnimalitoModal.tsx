@@ -348,10 +348,16 @@ export const ExpressAnimalitoModal: React.FC<ExpressAnimalitoModalProps> = ({
                     : 'border-slate-700 bg-slate-800/60'
                 }`}
               >
-                <div className="mb-3">
-                  <span className="text-7xl">
-                    {getAnimalitoById(resultado.animalitoId)?.emoji}
-                  </span>
+                <div className="mb-3 flex items-center justify-center">
+                  <div className="w-32 h-32 sm:w-40 sm:h-40 flex items-center justify-center">
+                    <FichaImg
+                      id={resultado.animalitoId}
+                      alt={getAnimalitoById(resultado.animalitoId)?.name || 'Animalito'}
+                      size="hero"
+                      eager
+                      className="!max-w-[120px] !max-h-[120px] sm:!max-w-[150px] sm:!max-h-[150px] drop-shadow-lg"
+                    />
+                  </div>
                 </div>
                 <p className="text-xl font-black text-white mb-1">
                   {getAnimalitoById(resultado.animalitoId)?.name}
