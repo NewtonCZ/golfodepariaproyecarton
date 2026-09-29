@@ -1,6 +1,10 @@
 // src/components/common/FichaImg.tsx
 import React from 'react';
-import { getFichaImageUrl, handleFichaImageError } from '../../data/fichaImages';
+import {
+  getFichaImageUrl,
+  getFichaImageAvifUrl,
+  handleFichaImageError,
+} from '../../data/fichaImages';
 
 type FichaImgSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'hero';
 
@@ -29,14 +33,17 @@ export const FichaImg: React.FC<FichaImgProps> = ({
   eager = false,
 }) => {
   return (
-    <img
-      src={getFichaImageUrl(id)}
-      alt={alt ?? `Ficha ${id}`}
-      loading={eager ? 'eager' : 'lazy'}
-      decoding="async"
-      draggable={false}
-      className={`object-contain ${SIZE_MAP[size]} ${className}`}
-      onError={handleFichaImageError}
-    />
+    <picture className={`inline-flex items-center justify-center ${SIZE_MAP[size]} ${className}`}>
+      <source srcSet={getFichaImageAvifUrl(id)} type="image/avif" />
+      <img
+        src={getFichaImageUrl(id)}
+        alt={alt ?? `Ficha ${id}`}
+        loading={eager ? 'eager' : 'lazy'}
+        decoding="async"
+        draggable={false}
+        className="w-full h-full object-contain"
+        onError={handleFichaImageError}
+      />
+    </picture>
   );
 };
