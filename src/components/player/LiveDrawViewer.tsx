@@ -1157,7 +1157,7 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
                         </span>
                          <div className="w-full flex-1 flex items-center justify-center my-auto p-1">
                           <img
-                          src={`/fichas/${currentDrawn.id}.jpg`}
+                          src={`/fichas/${currentDrawn.id}.png`}
                           alt={currentDrawn.name}
                           loading="eager"
                           decoding="async"
