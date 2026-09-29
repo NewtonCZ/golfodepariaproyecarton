@@ -2630,7 +2630,7 @@ const roundPayload = {
   card_price_ves: price,
   card_price: price,
   prize_percentage: prizePct,
-  jackpot_ves: manualJackpotVes || 15000,
+  jackpot_ves: manualJackpotVes ?? 0,
   total_cards_sold: 0,
   drawn_fichas: [],
   winning_cards_count: 0,
