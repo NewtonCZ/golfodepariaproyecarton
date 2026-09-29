@@ -2017,6 +2017,13 @@ export const AdminPortal: React.FC = () => {
                       />
                     </picture>
                   </div>
+                  <span className="text-[10px] font-bold truncate max-w-full">{ficha.name}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Submit Trigger Button */}
 
           {/* Submit Trigger Button */}
           <div className="flex justify-end pt-3">
