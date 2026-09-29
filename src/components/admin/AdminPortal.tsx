@@ -1641,15 +1641,28 @@ export const AdminPortal: React.FC = () => {
                         : round.prize_percentage !== undefined
                         ? round.prize_percentage
                         : 70;
+          
+                                    const effectivePrizePct =
+                      editingRoundConfigs[round.id]?.prize_percentage !== undefined
+                        ? editingRoundConfigs[round.id].prize_percentage
+                        : round.prize_percentage !== undefined
+                        ? round.prize_percentage
+                        : 70;
 
                     const totalSold = round.totalCardsSold || 0;
                     const totalRecaudado = totalSold * effectivePrice;
-                    const calculatedPrize = Math.max(
-                      round.jackpotVes || 0,
-                      totalRecaudado * (effectivePrizePct / 100)
-                    );
-                    const gananciaCasa = totalRecaudado - (round.status === 'finished' ? (round.totalPrizesPaidVes || 0) : calculatedPrize);
 
+                    // Premio fijado por el admin. Si no hay, se calcula con fórmula 70/30 sobre las ventas.
+                    const calculatedPrize = (round.jackpotVes && round.jackpotVes > 0)
+                      ? round.jackpotVes
+                      : totalRecaudado * (effectivePrizePct / 100);
+
+                    // Premio realmente aplicado: si el sorteo finalizó, usar lo pagado; si no, el calculado.
+                    const premioAplicado = round.status === 'finished'
+                      ? (round.totalPrizesPaidVes || calculatedPrize)
+                      : calculatedPrize;
+
+                    const gananciaCasa = totalRecaudado - premioAplicado;
                     return (
                       <tr key={round.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3 font-bold text-slate-900">
