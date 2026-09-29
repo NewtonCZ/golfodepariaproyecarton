@@ -93,19 +93,22 @@ export const FichaBadge: React.FC<FichaBadgeProps> = ({
           #{ficha.id}
         </span>
       )}
-          {/* Main Ficha Image */}
+      {/* Main Ficha Image — AVIF con fallback PNG */}
       <div className="w-full flex-1 flex items-center justify-center min-h-0 my-auto">
-        <img
-          src={`/fichas/${ficha.id}.png`}
-          alt={ficha.name}
-          loading="lazy"
-          decoding="async"
-          draggable={false}
-          className="w-[90%] h-[90%] object-contain"
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
-          }}
-        />
+        <picture className="w-[90%] h-[90%] flex items-center justify-center">
+          <source srcSet={`/fichas/${ficha.id}.avif`} type="image/avif" />
+          <img
+            src={`/fichas/${ficha.id}.png`}
+            alt={ficha.name}
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            className="w-full h-full object-contain"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+            }}
+          />
+        </picture>
       </div>
       
       {/* Name in Spanish */}
