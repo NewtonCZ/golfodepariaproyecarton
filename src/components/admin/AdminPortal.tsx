@@ -1642,13 +1642,6 @@ export const AdminPortal: React.FC = () => {
                         ? round.prize_percentage
                         : 70;
           
-                                    const effectivePrizePct =
-                      editingRoundConfigs[round.id]?.prize_percentage !== undefined
-                        ? editingRoundConfigs[round.id].prize_percentage
-                        : round.prize_percentage !== undefined
-                        ? round.prize_percentage
-                        : 70;
-
                     const totalSold = round.totalCardsSold || 0;
                     const totalRecaudado = totalSold * effectivePrice;
 
