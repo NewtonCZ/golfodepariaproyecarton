@@ -125,23 +125,26 @@ const MatrixCardViewComponent: React.FC<MatrixCardViewProps> = ({
                 #{ficha.id}
               </span>
               
-              {/* Ficha Image */}
+              {/* Ficha Image — AVIF con fallback PNG */}
               <div
                 className={`flex items-center justify-center w-full flex-1 min-h-0 transition-transform duration-200 ${
                   isMatched ? 'scale-110' : ''
                 }`}
               >
-                <img
-                  src={`/fichas/${ficha.id}.png`}
-                  alt={ficha.name}
-                  loading="lazy"
-                  decoding="async"
-                  draggable={false}
-                  className="w-[85%] h-[85%] object-contain"
-                  onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
-                  }}
-                />
+                <picture className="w-[85%] h-[85%] flex items-center justify-center">
+                  <source srcSet={`/fichas/${ficha.id}.avif`} type="image/avif" />
+                  <img
+                    src={`/fichas/${ficha.id}.png`}
+                    alt={ficha.name}
+                    loading="lazy"
+                    decoding="async"
+                    draggable={false}
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
+                    }}
+                  />
+                </picture>
               </div>
 
               {/* Ficha Name */}
