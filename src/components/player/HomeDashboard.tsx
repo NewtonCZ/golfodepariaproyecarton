@@ -240,7 +240,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               const accumulatedPrize = (round.jackpotVes && round.jackpotVes > 0)
               ? round.jackpotVes
               : (round.totalCardsSold || 0) * cardPrice * (prizePct / 100);
-              );
+              
               const userCardsInThisRound = userCards.filter((c) => c.roundId === round.id);
 
               const rawRoundDate = round?.starts_at || round?.openBetAt || round?.drawAt || round?.created_at;
