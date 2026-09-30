@@ -269,8 +269,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         : 'bg-indigo-100 text-indigo-900'
                     }`}
                   >
-                               {round.status}
-                </span>
+                    {round.status}
+                  </span>
                 </div>
                 {(() => {
                   const premioFinal = round.jackpotVes || 0;
@@ -306,7 +306,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   )}
                 </div>
               </div>
-            })}
+            </div>
+          ))}
         </div>
       </div>
     </div>
