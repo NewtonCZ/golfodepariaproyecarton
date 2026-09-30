@@ -269,7 +269,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         : 'bg-indigo-100 text-indigo-900'
                     }`}
                   >
-                {round.status}
+                               {round.status}
                 </span>
                 </div>
                 {(() => {
@@ -291,8 +291,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     </>
                   );
                 })()}
-
-              <div className="mt-3 pt-2 border-t border-slate-200 flex gap-2">
 
               <div className="mt-3 pt-2 border-t border-slate-200 flex gap-2">
                 {round.status === 'open' && (
