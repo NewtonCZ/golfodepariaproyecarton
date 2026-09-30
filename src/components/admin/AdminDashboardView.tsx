@@ -292,23 +292,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   );
                 })()}
 
-              <div className="mt-3 pt-2 border-t border-slate-200 flex gap-2">
-                {round.status === 'open' && (
-                  <button
-                    onClick={() => {
-                      setSelectedRoundForResult(round.id);
-                      setActiveTab('results');
-                    }}
-                    className="w-full py-1.5 bg-amber-500 hover:bg-amber-400 text-indigo-950 font-black text-xs rounded-xl shadow-sm"
-                  >
-                    Cerrar e Ingresar Resultados
-                  </button>
-                )}
+                <div className="mt-3 pt-2 border-t border-slate-200 flex gap-2">
+                  {round.status === 'open' && (
+                    <button
+                      onClick={() => {
+                        setSelectedRoundForResult(round.id);
+                        setActiveTab('results');
+                      }}
+                      className="w-full py-1.5 bg-amber-500 hover:bg-amber-400 text-indigo-950 font-black text-xs rounded-xl shadow-sm"
+                    >
+                      Cerrar e Ingresar Resultados
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
