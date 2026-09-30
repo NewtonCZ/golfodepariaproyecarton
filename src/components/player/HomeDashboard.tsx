@@ -5,6 +5,7 @@ import { MatrixCardView } from '../cards/MatrixCardView';
 import { FichaBadge } from '../common/FichaBadge';
 import { ExpressAnimalitoCard } from '../player/ExpressAnimalitoCard';
 import { ExpressAnimalitoModal } from '../player/ExpressAnimalitoModal';
+import { PremiosTotalesPanel } from '../../components/PremiosTotalesPanel';
 import { FICHAS_POOL } from '../../data/fichasPool';
 import {
   Trophy,
