@@ -112,30 +112,56 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
   return (
     <div className="space-y-8 animate-in fade-in pb-12">
-      {/* Top Banner: Quick Balance & Live Status */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5 w-full md:w-auto">
-          <div className="w-12 h-12 rounded-2xl bg-amber-400/15 text-amber-400 border border-amber-400/30 flex items-center justify-center shrink-0 shadow-inner">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-black text-white">
-                Sorteos Oficiales
-              </h1>
-              <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-black text-[10px] uppercase px-2 py-0.5 rounded-full">
-                En Vivo
-              </span>
+           {/* Banner Integrado: Sorteos Oficiales + Total a Repartir */}
+      <div className="w-full group relative overflow-hidden rounded-3xl p-[2px] transition-all hover:scale-[1.005]">
+        {/* Borde diamante animado */}
+        <div className="absolute inset-0 bg-gradient-to-r from-amber-100 via-yellow-300 to-amber-100 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-3xl" />
+
+        <div className="relative bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-950 rounded-3xl p-5 sm:p-6">
+          {/* Glow decorativo de fondo */}
+          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            {/* Lado izquierdo: Título Sorteos Oficiales */}
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-amber-400/15 text-amber-400 border border-amber-400/30 flex items-center justify-center shrink-0 shadow-inner">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl sm:text-2xl font-black text-white">
+                    Sorteos Oficiales
+                  </h1>
+                  <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-black text-[10px] uppercase px-2 py-0.5 rounded-full flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    En Vivo
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 font-medium">
+                  Sorteos programados con premios garantizados a repartir.
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-slate-400 font-medium">
-              Sorteos programados con premios garantizados a repartir.
-            </p>
+
+            {/* Lado derecho: Total a Repartir */}
+            <div className="flex items-center gap-3 md:justify-end">
+              <div className="text-left md:text-right">
+                <div className="text-[10px] font-black uppercase tracking-widest text-amber-200">
+                  Total a Repartir
+                </div>
+                <div className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-amber-300 drop-shadow-[0_2px_12px_rgba(251,191,36,0.4)]">
+                  Bs. {formatMoney(totalARepartir)}
+                </div>
+              </div>
+              <div className="bg-amber-400/15 text-amber-300 border border-amber-400/30 px-3.5 py-2 rounded-2xl text-xs font-black flex items-center gap-1.5 shrink-0">
+                <span>🏆</span>
+                <span>{cantidadSorteos}</span>
+                <span className="hidden sm:inline">{cantidadSorteos === 1 ? 'Sorteo' : 'Sorteos'}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      
-      {/* Panel Total a Repartir - Motor de Marketing */}
-      <PremiosTotalesPanel rounds={rounds} variant="usuario" />
 
       {/* Banner Sorteo Exprés - AZUL DIAMANTE - CORREGIDO SIN PANTALLA BLANCA */}
       <button
