@@ -58,16 +58,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [selectedRoundTabId, setSelectedRoundTabId] = useState<string | null>(null);
 
   // 15-second Polling interval: fetch('/api/rounds?status=open,scheduled,live,drawing,replay&limit=6') and re-renders dynamically
-  React.useEffect(() => {
-    fetchActiveRounds({ bypassCache: true, limit: 6 });
+ React.useEffect(() => {
+  fetchActiveRounds({ bypassCache: true, limit: 10 });
 
-    const pollingInterval = setInterval(() => {
-      fetchActiveRounds({ bypassCache: true, limit: 6 });
-    }, 15000);
+  const pollingInterval = setInterval(() => {
+    fetchActiveRounds({ bypassCache: true, limit: 10 });
+  }, 15000);
 
-    return () => clearInterval(pollingInterval);
-  }, [fetchActiveRounds]);
-
+  return () => clearInterval(pollingInterval);
+}, [fetchActiveRounds]);
   // Compute the sequential rounds ('open' or 'scheduled') sorted by starts_at ASC (max 6 to 7)
   const displayRounds = React.useMemo(() => {
     if (upcomingRounds && upcomingRounds.length > 0) {
