@@ -59,6 +59,7 @@ interface GameContextType {
   users: AppUser[]; viewMode: 'player' | 'admin'; setViewMode: (mode: 'player' | 'admin') => void;
   activeRound: GameRound | null; activeRounds: GameRound[]; upcomingRounds: GameRound[];
   rounds: GameRound[]; cards: MatrixCard[]; userCards: MatrixCard[];
+  premioTotalARepartir: number; 
   recharges: RechargeTransaction[];
   setRecharges: React.Dispatch<React.SetStateAction<RechargeTransaction[]>>;
   withdrawals: WithdrawalTransaction[];
