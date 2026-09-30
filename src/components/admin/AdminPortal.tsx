@@ -956,8 +956,8 @@ export const AdminPortal: React.FC = () => {
       {/* TAB 1: DASHBOARD & FINANCIAL KPIS */}
       {/* ======================================================== */}
       {activeTab === 'dashboard' && (
-        <div className="space-y-6">
-          <PremiosTotalesPanel rounds={rounds} variant="admin" />
+       <div className="space-y-6">
+        <PremiosTotalesPanel rounds={visibleActiveRounds} variant="admin" />
 
           <AdminDashboardView
             formatMoney={formatMoney}
