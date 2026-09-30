@@ -80,12 +80,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
             <span>Sincronizado</span>
           </span>
-
           {activeRound && (
             <span className="hidden sm:inline-flex items-center gap-1 text-amber-300 font-medium min-h-[28px]">
               <span>Sorteo #{activeRound.roundNumber}</span>
               <span className="text-indigo-400">•</span>
-              <span>Premio a Repartir: {formatMoney(activeRound.jackpotVes)}</span>
+              <span>
+                Premio a Repartir: {formatMoney(
+                  rounds
+                    .filter(r => {
+                      const st = String(r.status || '').toLowerCase();
+                      return st === 'open' || st === 'scheduled' || st === 'closed';
+                    })
+                    .reduce((sum, r) => sum + (r.jackpotVes || 0), 0)
+                )}
+              </span>
             </span>
           )}
         </div>
