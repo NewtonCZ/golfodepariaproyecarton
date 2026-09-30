@@ -956,26 +956,29 @@ export const AdminPortal: React.FC = () => {
       {/* TAB 1: DASHBOARD & FINANCIAL KPIS */}
       {/* ======================================================== */}
       {activeTab === 'dashboard' && (
-        <AdminDashboardView
-          formatMoney={formatMoney}
-          totalApprovedRechargesVes={totalApprovedRechargesVes}
-          totalCardsSalesVes={totalCardsSalesVes}
-          totalPrizesPaidVes={totalPrizesPaidVes}
-          netPlatformProfitVes={netPlatformProfitVes}
-          pendingRechargesCount={liveMetrics.recargasPendientesCount || pendingRechargesCount}
-          pendingWithdrawalsCount={liveMetrics.retirosPorPagarCount || pendingWithdrawalsCount}
-          totalPlayersCount={liveMetrics.totalJugadores || users.length}
-          pendingRechargesSumVes={liveMetrics.recargasPendientesSum}
-          dailyCardsSalesVes={liveMetrics.ventasDelDiaSum}
-          pendingWithdrawalsSumVes={liveMetrics.retirosPorPagarSum}
-          recharges={recharges}
-          cards={cards}
-          visibleActiveRounds={visibleActiveRounds}
-          setActiveTab={setActiveTab}
-          setSelectedRoundForResult={setSelectedRoundForResult}
-        />
-      )}
+        <div className="space-y-6">
+          <PremiosTotalesPanel rounds={rounds} variant="admin" />
 
+          <AdminDashboardView
+            formatMoney={formatMoney}
+            totalApprovedRechargesVes={totalApprovedRechargesVes}
+            totalCardsSalesVes={totalCardsSalesVes}
+            totalPrizesPaidVes={totalPrizesPaidVes}
+            netPlatformProfitVes={netPlatformProfitVes}
+            pendingRechargesCount={liveMetrics.recargasPendientesCount || pendingRechargesCount}
+            pendingWithdrawalsCount={liveMetrics.retirosPorPagarCount || pendingWithdrawalsCount}
+            totalPlayersCount={liveMetrics.totalJugadores || users.length}
+            pendingRechargesSumVes={liveMetrics.recargasPendientesSum}
+            dailyCardsSalesVes={liveMetrics.ventasDelDiaSum}
+            pendingWithdrawalsSumVes={liveMetrics.retirosPorPagarSum}
+            recharges={recharges}
+            cards={cards}
+            visibleActiveRounds={visibleActiveRounds}
+            setActiveTab={setActiveTab}
+            setSelectedRoundForResult={setSelectedRoundForResult}
+          />
+        </div>
+      )}
       {/* ======================================================== */}
       {/* TAB 2: AUDITORÍA DE PAGO MÓVIL (RECHARGES) */}
       {/* ======================================================== */}
