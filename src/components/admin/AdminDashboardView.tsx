@@ -291,7 +291,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     </>
                   );
                 })()}
-                <div className="mt-3 pt-2 border-t border-slate-200 flex gap-2">
+                
+                 <div className="mt-3 pt-2 border-t border-slate-200 flex gap-2">
                   {round.status === 'open' && (
                     <button
                       onClick={() => {
@@ -305,8 +306,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   )}
                 </div>
               </div>
-            );                
-          })}
+            })}
         </div>
       </div>
     </div>
