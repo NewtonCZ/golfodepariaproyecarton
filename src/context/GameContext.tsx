@@ -2683,8 +2683,8 @@ const roundPayload = {
         prev.map((r) => (r.id === roundId ? { ...r, ...data } : r))
       );
       try {
-        const mappedData: Record<string, any> = {};
-        for (const [key, val] of Object.entries(data)) {
+      const mappedData: Record<string, any> = {};
+      for (const [key, val] of Object.entries(data)) {
           if (key === 'openBetAt') mappedData.open_bet_at = val;
           else if (key === 'closeBetAt') mappedData.close_bet_at = val;
           else if (key === 'drawAt') mappedData.draw_at = val;
@@ -2692,12 +2692,21 @@ const roundPayload = {
           else if (key === 'endsAt') mappedData.ends_at = val;
           else if (key === 'cardPriceVes') {
             mappedData.card_price_ves = val;
+            mappedData.cardPriceVes = val;
             mappedData.card_price = val;
-          } else if (key === 'prizePercentage') mappedData.prize_percentage = val;
-          else if (key === 'jackpotVes') mappedData.jackpot_ves = val;
-          else if (key === 'roundNumber') mappedData.round_number = val;
-          else if (key === 'totalCardsSold') mappedData.total_cards_sold = val;
-          else if (key === 'drawnFichas') mappedData.drawn_fichas = val;
+          } else if (key === 'prizePercentage') {
+            mappedData.prize_percentage = val;
+            mappedData.prizePercentage = val;
+          } else if (key === 'jackpotVes') {
+            mappedData.jackpot_ves = val;
+            mappedData.jackpotVes = val;
+          } else if (key === 'roundNumber') {
+            mappedData.round_number = val;
+            mappedData.roundNumber = val;
+          } else if (key === 'totalCardsSold') {
+            mappedData.total_cards_sold = val;
+            mappedData.totalCardsSold = val;
+          } else if (key === 'drawnFichas') mappedData.drawn_fichas = val;
           else if (key === 'winningCardsCount') mappedData.winning_cards_count = val;
           else if (key === 'totalPrizesPaidVes') mappedData.total_prizes_paid_ves = val;
           else if (key === 'resultLocked') mappedData.result_locked = val;
@@ -2712,7 +2721,6 @@ const roundPayload = {
     },
     [addAuditLog]
   );
-
   const setRoundStatus = useCallback(
     (roundId: string, status: GameRound['status']) => {
       // Surgical round status cache invalidation
