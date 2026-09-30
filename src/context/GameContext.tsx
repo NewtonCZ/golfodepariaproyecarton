@@ -3571,11 +3571,13 @@ const deleteSystemCredential = useCallback(
     };
   }, [isAuthenticated, currentUserId, logout]);
 
-  const value: GameContextType = {
+   const value: GameContextType = {
     currentUser, currentRole, setCurrentRole, operatorRole, setOperatorRole, isAuthenticated, sessionToken, loggedUsername, permissions, activeCredential,
     login, logout, requestPasswordRecovery, verifyRecoveryCode, resetPasswordWithCode, registerUser, updateUserKyc, verifyCurrentAccount,
     systemCredentials, fetchSystemCredentials, createSystemCredential, updateSystemCredential, deleteSystemCredential,
-    users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards, recharges, setRecharges, withdrawals, setWithdrawals, ledger, auditLogs, addAuditLog, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
+    users, viewMode, setViewMode, activeRound, activeRounds, upcomingRounds, rounds, cards, userCards,
+    premioTotalARepartir,
+    recharges, setRecharges, withdrawals, setWithdrawals, ledger, auditLogs, addAuditLog, commercialConfig, currencyDisplay, setCurrencyDisplay, formatMoney,
     purchaseCards, submitRecharge, addRecharge, registrarRecargaPagoMovil, approveRecharge, rejectRecharge,
     playExpress,
     playExpressAnimalito,
