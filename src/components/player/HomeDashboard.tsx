@@ -430,7 +430,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </h3>
             <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1 mb-4">
               Compra tu paquete antes del cierre para participar por el premio a repartir de{' '}
-              {formatMoney(activeDisplayRound?.jackpotVes || 15000)}.
+              {formatMoney(activeDisplayRound?.jackpotVes || 0)}.
             </p>
             <button
               onClick={() => onOpenBuyCards(activeDisplayRound?.id)}
