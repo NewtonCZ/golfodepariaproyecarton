@@ -237,9 +237,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               const isOpen = statusLower === 'open';
               const cardPrice = round.card_price || round.cardPriceVes || 25;
               const prizePct = round.prize_percentage !== undefined ? round.prize_percentage : 70;
-              const accumulatedPrize = Math.max(
-                round.jackpotVes || 0,
-                (round.totalCardsSold || 0) * cardPrice * (prizePct / 100)
+              const accumulatedPrize = (round.jackpotVes && round.jackpotVes > 0)
+              ? round.jackpotVes
+              : (round.totalCardsSold || 0) * cardPrice * (prizePct / 100);
               );
               const userCardsInThisRound = userCards.filter((c) => c.roundId === round.id);
 
