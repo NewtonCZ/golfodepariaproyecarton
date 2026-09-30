@@ -40,7 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenWithdraw,
   onOpenLogin,
 }) => {
-  const {
+   const {
     currentUser,
     currentRole,
     viewMode,
@@ -50,6 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     activeCredential,
     formatMoney,
     activeRound,
+    rounds,                    // ← AGREGAR
     isLiveDrawing,
     isAuthenticated,
     loggedUsername,
