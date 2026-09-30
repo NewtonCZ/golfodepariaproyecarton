@@ -49,7 +49,6 @@ import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiCon
 import { normalizeRechargeTransaction } from '../../utils/rechargeNormalizer';
 import { soundService } from '../../services/soundAndSpeech';
 import { syncEngine } from '../../services/syncService';
-import { PremiosTotalesPanel } from '../components/PremiosTotalesPanel';
 
 export const AdminPortal: React.FC = () => {
   const {
