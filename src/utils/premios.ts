@@ -4,8 +4,33 @@ export function getPremioARepartir(round: any): number {
   return Number(round?.jackpot_ves ?? round?.jackpotVes ?? 0);
 }
 
+// ============================================================
+// HELPERS VIEJOS (los usa el admin actualmente)
+// ============================================================
+
+const ESTADOS_PENDIENTES = ['open', 'scheduled', 'live', 'drawing', 'replay', 'closed', 'cerrado'];
+
+export function getTotalPremiosARepartir(rounds: any[]): number {
+  if (!Array.isArray(rounds)) return 0;
+  return rounds
+    .filter(r => ESTADOS_PENDIENTES.includes((r.status || '').toLowerCase()))
+    .reduce((total, r) => total + getPremioARepartir(r), 0);
+}
+
+export function contarRoundsPendientes(rounds: any[]): number {
+  if (!Array.isArray(rounds)) return 0;
+  return rounds.filter(r =>
+    ESTADOS_PENDIENTES.includes((r.status || '').toLowerCase())
+  ).length;
+}
+
+// ============================================================
+// HELPERS NUEVOS (para el panel del usuario - "del día")
+// ============================================================
+
 /**
- * Devuelve el timestamp del inicio del día en hora Venezuela (America/Caracas, UTC-4).
+ * Devuelve el timestamp del inicio del día en hora Venezuela (UTC-4).
+ * Venezuela NO tiene horario de verano, siempre es UTC-4.
  */
 export function getInicioDelDiaVenezuela(): number {
   const now = new Date();
@@ -16,13 +41,12 @@ export function getInicioDelDiaVenezuela(): number {
     day: '2-digit',
   });
   const fecha = formatter.format(now); // "2026-09-30"
-  // Venezuela es UTC-4 todo el año (no tiene DST)
-  const inicio = new Date(`${fecha}T00:00:00-04:00`);
-  return inicio.getTime();
+  return new Date(`${fecha}T00:00:00-04:00`).getTime();
 }
 
 /**
- * Devuelve true si el round está programado para HOY (hora Venezuela).
+ * True si el round está programado para HOY (hora Venezuela).
+ * Usa starts_at como fecha de referencia.
  */
 export function esRoundDeHoy(round: any): boolean {
   const raw =
@@ -39,10 +63,6 @@ export function esRoundDeHoy(round: any): boolean {
   return t >= inicio && t < fin;
 }
 
-/**
- * Suma el premio de todos los rounds programados para HOY (hora Venezuela).
- * Se reinicia automáticamente a medianoche.
- */
 export function getTotalPremiosDelDia(rounds: any[]): number {
   if (!Array.isArray(rounds)) return 0;
   return rounds
@@ -50,13 +70,14 @@ export function getTotalPremiosDelDia(rounds: any[]): number {
     .reduce((total, r) => total + getPremioARepartir(r), 0);
 }
 
-/**
- * Cuenta cuántos rounds están programados para HOY (hora Venezuela).
- */
 export function contarRoundsDelDia(rounds: any[]): number {
   if (!Array.isArray(rounds)) return 0;
   return rounds.filter(esRoundDeHoy).length;
 }
+
+// ============================================================
+// FORMATEO
+// ============================================================
 
 export function formatBs(monto: number): string {
   return new Intl.NumberFormat('es-VE', {
