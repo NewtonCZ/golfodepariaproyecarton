@@ -1404,7 +1404,14 @@ const fetchJugadores = useCallback(async () => {
     if (anyOpen) return anyOpen;
     return rounds.find(r => String(r.status).toLowerCase() !== 'finished') || rounds[0] || null;
   }, [upcomingRounds, rounds]);
-
+      const premioTotalARepartir = useMemo(() => {
+    return rounds
+      .filter(r => {
+        const st = String(r.status || '').toLowerCase();
+        return st === 'open' || st === 'scheduled' || st === 'closed';
+      })
+      .reduce((sum, r) => sum + (r.jackpotVes || 0), 0);
+  }, [rounds]);
   // --- OPERACIONES COMPLETAS DEL CONTEXTO ---
 
   const [drawIntervalRef, setDrawIntervalRef] = useState<any>(null);
