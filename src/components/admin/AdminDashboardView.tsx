@@ -269,13 +269,30 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         : 'bg-indigo-100 text-indigo-900'
                     }`}
                   >
-                    {round.status}
-                  </span>
+                {round.status}
+                </span>
                 </div>
-                <p className="text-xs text-slate-500">
-                  Cartones vendidas: <strong>{round.totalCardsSold}</strong> • Premio mayor: <strong>{formatMoney(round.jackpotVes)}</strong>
-                </p>
-              </div>
+                {(() => {
+                  const premioFinal = round.jackpotVes || 0;
+                  const totalRecaudado = (round.totalCardsSold || 0) * (round.cardPriceVes || 25);
+                  const gananciaCasa = totalRecaudado - premioFinal;
+
+                  return (
+                    <>
+                      <p className="text-xs text-slate-500">
+                        Cartones vendidos: <strong>{round.totalCardsSold || 0}</strong>
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        💰 Premio: <strong className="text-amber-600">{formatMoney(premioFinal)}</strong>
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        🏠 Casa: <strong className="text-emerald-600">{formatMoney(gananciaCasa)}</strong>
+                      </p>
+                    </>
+                  );
+                })()}
+
+              <div className="mt-3 pt-2 border-t border-slate-200 flex gap-2">
 
               <div className="mt-3 pt-2 border-t border-slate-200 flex gap-2">
                 {round.status === 'open' && (
