@@ -131,6 +131,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </div>
         </div>
       </div>
+      
+      {/* Panel Total a Repartir - Motor de Marketing */}
+      <PremiosTotalesPanel rounds={rounds} variant="usuario" />
+
       {/* Banner Sorteo Exprés - AZUL DIAMANTE - CORREGIDO SIN PANTALLA BLANCA */}
       <button
         onClick={onOpenExpress}
