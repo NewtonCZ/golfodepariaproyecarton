@@ -52,8 +52,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     commercialConfig,
     fetchActiveRounds,
   } = useGame();
-  const totalARepartir = React.useMemo(() => getTotalPremiosARepartir(rounds), [rounds]);
-  const cantidadSorteos = React.useMemo(() => contarRoundsPendientes(rounds), [rounds]);
+  const totalARepartir = React.useMemo(() => getTotalPremiosDelDia(rounds), [rounds]);
+  const cantidadSorteos = React.useMemo(() => contarRoundsDelDia(rounds), [rounds]);
 
   const [showFichasPoolModal, setShowFichasPoolModal] = useState(false);
   const [showExpressAnimalito, setShowExpressAnimalito] = useState(false);
