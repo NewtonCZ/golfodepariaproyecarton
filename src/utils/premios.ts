@@ -4,7 +4,7 @@ export function getPremioARepartir(round: any): number {
   return Number(round?.jackpot_ves ?? round?.jackpotVes ?? 0);
 }
 
-const ESTADOS_PENDIENTES = ['open', 'scheduled'];
+const ESTADOS_PENDIENTES = ['open', 'scheduled', 'live', 'drawing', 'replay', 'closed', 'cerrado'];
 
 export function getTotalPremiosARepartir(rounds: any[]): number {
   if (!Array.isArray(rounds)) return 0;
