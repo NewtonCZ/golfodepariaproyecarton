@@ -147,7 +147,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <div className="flex items-center gap-3 md:justify-end">
               <div className="text-left md:text-right">
                 <div className="text-[10px] font-black uppercase tracking-widest text-amber-200">
-                  Total a Repartir
+                  Total a Repartir Hoy
                 </div>
                 <div className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-amber-300 drop-shadow-[0_2px_12px_rgba(251,191,36,0.4)]">
                   Bs. {formatMoney(totalARepartir)}
