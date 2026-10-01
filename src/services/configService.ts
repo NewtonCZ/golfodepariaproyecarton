@@ -57,34 +57,19 @@ export async function saveCommercialConfigToDb(config: CommercialConfig): Promis
   realtimeService.emit('config/comercial', { config });
   realtimeService.emit('commercial_config_updated', { config });
 
-    // 4. Save to Supabase (tabla config_comercial)
+       // 4. Save to Supabase (tabla config_comercial)
   try {
+    const bank: any = (config as any).adminBank ?? {};
+
     const dbPayload = {
-      banco_nombre:
-        (config as any).banco_nombre ??
-        (config as any).bancoNombre ??
-        (config as any).bankName ??
-        (config as any).adminBank ??
-        null,
-      telefono_pago_movil:
-        (config as any).telefono_pago_movil ??
-        (config as any).telefonoPagoMovil ??
-        (config as any).phone ??
-        null,
-      rif_titular:
-        (config as any).rif_titular ??
-        (config as any).rifTitular ??
-        (config as any).rif ??
-        null,
-      razon_social:
-        (config as any).razon_social ??
-        (config as any).razonSocial ??
-        (config as any).titular ??
-        null,
+      banco_nombre:        bank.bankName   ?? (config as any).bankName   ?? null,
+      telefono_pago_movil: bank.phone      ?? (config as any).phone      ?? null,
+      rif_titular:         bank.rif        ?? (config as any).rif        ?? null,
+      razon_social:        bank.holderName ?? (config as any).holderName ?? null,
       precio_carton_base:
+        (config as any).singleCardPriceVes ??
+        (config as any).precio_carton_base_ves ??
         (config as any).precio_carton_base ??
-        (config as any).precioCartonBase ??
-        (config as any).priceBase ??
         null,
       updated_at: new Date().toISOString(),
     };
