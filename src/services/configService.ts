@@ -57,25 +57,66 @@ export async function saveCommercialConfigToDb(config: CommercialConfig): Promis
   realtimeService.emit('config/comercial', { config });
   realtimeService.emit('commercial_config_updated', { config });
 
-  // 4. Save to backend database API
+    // 4. Save to Supabase (tabla config_comercial)
   try {
-    const res = await fetch('/api/config/comercial', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    });
+    const dbPayload = {
+      banco_nombre:
+        (config as any).banco_nombre ??
+        (config as any).bancoNombre ??
+        (config as any).bankName ??
+        (config as any).adminBank ??
+        null,
+      telefono_pago_movil:
+        (config as any).telefono_pago_movil ??
+        (config as any).telefonoPagoMovil ??
+        (config as any).phone ??
+        null,
+      rif_titular:
+        (config as any).rif_titular ??
+        (config as any).rifTitular ??
+        (config as any).rif ??
+        null,
+      razon_social:
+        (config as any).razon_social ??
+        (config as any).razonSocial ??
+        (config as any).titular ??
+        null,
+      precio_carton_base:
+        (config as any).precio_carton_base ??
+        (config as any).precioCartonBase ??
+        (config as any).priceBase ??
+        null,
+      updated_at: new Date().toISOString(),
+    };
 
-    if (res.ok) {
-      const json = await res.json();
-      return { success: true, data: json.data || config };
+    const { data: existing, error: selectErr } = await supabase
+      .from('config_comercial')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+
+    if (selectErr) throw selectErr;
+
+    if (existing?.id) {
+      const { error } = await supabase
+        .from('config_comercial')
+        .update(dbPayload)
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('config_comercial')
+        .insert(dbPayload);
+      if (error) throw error;
     }
+
+    return { success: true, data: config };
   } catch (err) {
-    console.warn('[configService] Remote DB save warning (local broadcast active):', err);
+    console.warn('[configService] Supabase save warning (local broadcast active):', err);
   }
 
   return { success: true, data: config };
 }
-
 /**
  * Real-time Document Listener for 'config/comercial' or any collection/doc path.
  * Eliminates burned/hardcoded data and reflects changes immediately.
