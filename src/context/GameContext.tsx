@@ -1795,6 +1795,7 @@ const fetchJugadores = useCallback(async () => {
             matched_count: c.matchedCount,
             winning_patterns: c.winningPatterns,
             total_prize_ves: c.totalPrizeVes,
+            pagado: true,
           }));
           supabase.from('cards').insert(dbCardsPayload).then(({ error }) => {
             if (error) console.warn('[playExpress] cards insert error:', error);
