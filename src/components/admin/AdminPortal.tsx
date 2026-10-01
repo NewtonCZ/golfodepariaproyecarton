@@ -1559,7 +1559,6 @@ export const AdminPortal: React.FC = () => {
                 {/* Selector de límite (hasta 7 sorteos visibles) */}
                 <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold border border-slate-200">
                   <span className="text-[10px] text-slate-400 uppercase font-black px-1.5 hidden sm:inline">Límite:</span>
-                  <button
                    {[7, 15, 30].map((lim) => (
                     <button
                       key={lim}
