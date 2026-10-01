@@ -324,7 +324,7 @@ export const AdminPortal: React.FC = () => {
   //
   // GARANTÍA ESTRICTA: Todos los datos históricos y registros de auditoría permanecen intactos en Supabase.
   // =========================================================================
-  const [roundsWindowLimit, setRoundsWindowLimit] = useState<6 | 7>(7);
+  const [roundsWindowLimit, setRoundsWindowLimit] = useState<number>(30);
 
   // Helper para verificar si un sorteo ya tiene figuras guardadas y validadas
   const isRoundResultsLocked = useCallback((r?: GameRound | null) => {
