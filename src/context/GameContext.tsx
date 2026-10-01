@@ -561,14 +561,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Fallback silently to Supabase query
       }
 
-      // 2. Si no se obtuvieron desde el endpoint, consultar directamente Supabase
+     // 2. Si no se obtuvieron desde el endpoint, consultar directamente Supabase
       if (fetchedRounds.length === 0) {
        const { data: rawRounds, error } = await supabase
          .from('rounds')
          .select('*')
-         .in('status', ['open', 'scheduled', 'OPEN', 'SCHEDULED', 'live', 'drawing', 'replay'])
-         .order('created_at', { ascending: false })    // ← MÁS NUEVOS primero
-         .limit(30);
+         .in('status', [
+           'open', 'OPEN',
+           'scheduled', 'SCHEDULED',
+           'live', 'LIVE',
+           'drawing', 'DRAWING',
+           'replay', 'REPLAY',
+           'closed', 'CLOSED',
+         ])
+         .order('created_at', { ascending: false })
+         .limit(limit);   // ← usa el parámetro limit (100), no 30
 
         if (!error && rawRounds && rawRounds.length > 0) {
           fetchedRounds = rawRounds.map((r: any) => ({
