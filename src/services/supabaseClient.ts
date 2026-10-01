@@ -58,15 +58,15 @@ export const SUPABASE_ANON_KEY: string = (() => {
     winObj.__ENV__?.SUPABASE_ANON_KEY,
   ];
 
-  for (const item of candidates) {
+   for (const item of candidates) {
     const clean = sanitize(item);
     if (clean && clean.length > 8) {
       return clean;
     }
   }
-  return '';
+  // ⚠️ Fallback hardcodeado — mismo valor que VITE_SUPABASE_ANON_KEY
+  return 'sb_publishable_zlP1BSimUPfCI3CzU1Gd2A_55o4IhSx';
 })();
-
 export const getSupabaseConfig = () => ({
   url: SUPABASE_URL,
   anonKey: SUPABASE_ANON_KEY,
