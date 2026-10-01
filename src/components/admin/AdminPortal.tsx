@@ -1560,29 +1560,21 @@ export const AdminPortal: React.FC = () => {
                 <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold border border-slate-200">
                   <span className="text-[10px] text-slate-400 uppercase font-black px-1.5 hidden sm:inline">Límite:</span>
                   <button
-                    type="button"
-                    onClick={() => setRoundsWindowLimit(6)}
-                    className={`px-2.5 py-1 rounded-lg transition-all text-xs font-bold cursor-pointer ${
-                      roundsWindowLimit === 6
-                        ? 'bg-white text-indigo-950 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                    title="Mantener un máximo de 6 sorteos activos o programados en la vista"
-                  >
-                    6 Máx
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRoundsWindowLimit(7)}
-                    className={`px-2.5 py-1 rounded-lg transition-all text-xs font-bold cursor-pointer ${
-                      roundsWindowLimit === 7
-                        ? 'bg-white text-indigo-950 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                    title="Mantener un máximo de 7 sorteos activos o programados en la vista"
-                  >
-                    7 Máx
-                  </button>
+                   {[7, 15, 30].map((lim) => (
+                    <button
+                      key={lim}
+                      type="button"
+                      onClick={() => setRoundsWindowLimit(lim)}
+                      className={`px-2.5 py-1 rounded-lg transition-all text-xs font-bold cursor-pointer ${
+                        roundsWindowLimit === lim
+                          ? 'bg-white text-indigo-950 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                      title={`Mantener un máximo de ${lim} sorteos activos o programados en la vista`}
+                    >
+                      {lim} Máx
+                    </button>
+                  ))}
                 </div>
 
                 {/* Botón de Purga Inmediata de Expirados */}
