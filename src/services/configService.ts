@@ -152,23 +152,41 @@ export function onSnapshot(
     emitSnapshot(initialLocal);
   }
 
-  // 2. Immediate async fetch from DB endpoint with no-cache
-  fetch('/api/config/comercial?_nocache=' + Date.now(), {
-    headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', Pragma: 'no-cache' },
-  })
-    .then((res) => (res.ok ? res.json() : null))
-    .then((result) => {
-      if (result && result.data) {
+   // 2. Immediate async fetch from Supabase
+  supabase
+    .from('config_comercial')
+    .select('*')
+    .limit(1)
+    .maybeSingle()
+    .then(({ data, error }) => {
+      if (error) {
+        if (onError && !initialLocal) onError(error);
+        return;
+      }
+      if (data) {
+        const mapped = {
+          ...data,
+          bancoNombre: data.banco_nombre,
+          telefonoPagoMovil: data.telefono_pago_movil,
+          rifTitular: data.rif_titular,
+          razonSocial: data.razon_social,
+          precioCartonBase: data.precio_carton_base,
+          bankName: data.banco_nombre,
+          adminBank: data.banco_nombre,
+          phone: data.telefono_pago_movil,
+          rif: data.rif_titular,
+          titular: data.razon_social,
+          priceBase: data.precio_carton_base,
+        };
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(result.data));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
         } catch (e) {}
-        emitSnapshot(result.data);
+        emitSnapshot(mapped);
       }
     })
     .catch((err) => {
       if (onError && !initialLocal) onError(err);
     });
-
   // 3. Subscribe to Real-Time WebSocket events
   const unsubWs1 = realtimeService.on('commercial_config_updated', (payload: any) => {
     const config = payload?.config || payload?.data || payload;
