@@ -543,7 +543,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (options?.bypassCache) {
         mobileCacheManager.invalidateRoundsCache();
       }
-      const limit = options?.limit || 6;
+      const limit = options?.limit || 50;
       let fetchedRounds: GameRound[] = [];
 
       // 1. Intentar obtener desde endpoint backend /api/rounds
