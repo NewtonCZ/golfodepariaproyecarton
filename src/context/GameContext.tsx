@@ -181,13 +181,14 @@ export const isRoundCompletedOrExpired = (r: GameRound, nowMs?: number): boolean
   //    - Con resultados: purgar después de 60 min
   //    - Sin resultados: purgar después de 2 horas (evita sorteos huérfanos)
   if (st === 'closed' || st === 'cerrado') {
-    const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at);
-    if (!isNaN(drawMs) && drawMs > 0) {
-      if (r.resultLocked && now > drawMs + 60 * 60 * 1000) return true;
-      if (!r.resultLocked && now > drawMs + 2 * 60 * 60 * 1000) return true;
-    }
-    return false;
+  const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at);
+  if (!isNaN(drawMs) && drawMs > 0) {
+    // 24h con resultado, 48h sin resultado
+    if (r.resultLocked && now > drawMs + 24 * 60 * 60 * 1000) return true;
+    if (!r.resultLocked && now > drawMs + 48 * 60 * 60 * 1000) return true;
   }
+  return false;
+}
 
   // ✅ REGLA 3: Replay concluido
   if (st === 'replay') {
