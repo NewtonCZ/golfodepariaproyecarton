@@ -2829,7 +2829,7 @@ const roundPayload = {
         setCards(finalCards);
         mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, finalCards, 'high');
 
-        // ✅ FIX: Persistir cartones actualizados en Supabase
+                // ✅ FIX: Persistir cartones actualizados en Supabase
         const cardsToSync = updatedCards.filter((c) => c.roundId === roundId);
         Promise.all(
           cardsToSync.map((c) =>
@@ -2840,6 +2840,7 @@ const roundPayload = {
                 matched_count: c.matchedCount,
                 winning_patterns: c.winningPatterns,
                 total_prize_ves: c.totalPrizeVes,
+                pagado: true,
               })
               .eq('id', c.id)
               .then(({ error }) => {
