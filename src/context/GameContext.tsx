@@ -2819,6 +2819,25 @@ const roundPayload = {
           : updatedCards;
         setCards(finalCards);
         mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, finalCards, 'high');
+
+        // ✅ FIX: Persistir cartones actualizados en Supabase
+        const cardsToSync = updatedCards.filter((c) => c.roundId === roundId);
+        Promise.all(
+          cardsToSync.map((c) =>
+            supabase
+              .from('cards')
+              .update({
+                status: c.status,
+                matched_count: c.matchedCount,
+                winning_patterns: c.winningPatterns,
+                total_prize_ves: c.totalPrizeVes,
+              })
+              .eq('id', c.id)
+              .then(({ error }) => {
+                if (error) console.warn('[verifyWinners] cards update error:', error, 'card:', c.id);
+              })
+          )
+        ).catch((e) => console.warn('[verifyWinners] Promise.all error:', e));
       }
 
       // Acreditar saldo a ganadores en memoria, en profiles y en libro contable (ledger)
