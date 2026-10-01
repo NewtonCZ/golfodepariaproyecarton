@@ -1577,9 +1577,17 @@ const fetchJugadores = useCallback(async () => {
           if (error) console.warn('[GameContext] Supabase insert ledger error:', error);
         });
 
-        supabase.from('rounds').update({ total_cards_sold: (round.totalCardsSold || 0) + packCount }).eq('id', roundId).then(({ error }) => {
-          if (error) console.warn('[GameContext] Supabase update round error:', error);
-        });
+        const newTotalSold = (round.totalCardsSold || 0) + packCount;
+        supabase
+          .from('rounds')
+          .update({
+            total_cards_sold: newTotalSold,
+            totalCardsSold: newTotalSold,
+          })
+          .eq('id', roundId)
+          .then(({ error }) => {
+            if (error) console.warn('[GameContext] Supabase update round error:', error);
+          });
 
        supabase.from('profiles').update({
   saldo: balAfter,
