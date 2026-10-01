@@ -148,20 +148,25 @@ export function onSnapshot(
         if (onError && !initialLocal) onError(error);
         return;
       }
-      if (data) {
+        if (data) {
         const mapped = {
           ...data,
-          bancoNombre: data.banco_nombre,
-          telefonoPagoMovil: data.telefono_pago_movil,
-          rifTitular: data.rif_titular,
-          razonSocial: data.razon_social,
-          precioCartonBase: data.precio_carton_base,
-          bankName: data.banco_nombre,
-          adminBank: data.banco_nombre,
-          phone: data.telefono_pago_movil,
-          rif: data.rif_titular,
-          titular: data.razon_social,
-          priceBase: data.precio_carton_base,
+          // Reconstruir el objeto anidado que la app espera
+          adminBank: {
+            bankName:   data.banco_nombre,
+            phone:      data.telefono_pago_movil,
+            rif:        data.rif_titular,
+            holderName: data.razon_social,
+            type:       'Pago Móvil',
+          },
+          // Aliases planos por si algo los usa directo
+          bankName:  data.banco_nombre,
+          phone:     data.telefono_pago_movil,
+          rif:       data.rif_titular,
+          holderName: data.razon_social,
+          // Precio base
+          singleCardPriceVes: data.precio_carton_base,
+          precio_carton_base_ves: data.precio_carton_base,
         };
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
