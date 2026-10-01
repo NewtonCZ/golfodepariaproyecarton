@@ -391,7 +391,7 @@ export const AdminPortal: React.FC = () => {
 
     // 3. Mantener únicamente visibles en pantalla los sorteos más prioritarios o programados,
     //    sin superar el límite de siete (7) elementos en total, liberando espacio para nuevos sorteos.
-    return activeList.slice(0, Math.min(roundsWindowLimit, 7));
+    return activeList.slice(0, roundsWindowLimit);
   }, [rounds, roundsWindowLimit, isRoundResultsLocked]);
 
   // Próximo orden calculado globalmente para garantizar que la creación y publicación no se altere
