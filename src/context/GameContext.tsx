@@ -209,10 +209,11 @@ export const isRoundCompletedOrExpired = (r: GameRound, nowMs?: number): boolean
   //    Si su draw_at ya pasó hace más de 30 min, purgar.
   //    Si no, mantener visible.
   if (st === 'open' || st === 'scheduled') {
-    const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at);
-    if (!isNaN(drawMs) && drawMs > 0 && now > drawMs + 30 * 60 * 1000) return true;
-    return false;
-  }
+  const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at);
+  // Mantener visibles 24 horas después de la hora programada
+  if (!isNaN(drawMs) && drawMs > 0 && now > drawMs + 24 * 60 * 60 * 1000) return true;
+  return false;
+}
 
   return false;
 };
