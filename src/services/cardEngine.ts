@@ -17,8 +17,15 @@ export function generateRandomMatrix(): number[] {
  * Creates a unique card code (e.g., LF-7492)
  */
 export function generateCardCode(): string {
-  const num = Math.floor(1000 + Math.random() * 9000);
-  return `LF-${num}`;
+  // Usa crypto.randomUUID si está disponible (navegadores modernos)
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    const uuid = crypto.randomUUID().replace(/-/g, '').toUpperCase();
+    return `LF-${uuid.slice(0, 8)}`;
+  }
+  // Fallback: timestamp en base36 + random
+  const ts = Date.now().toString(36).toUpperCase().slice(-5);
+  const rnd = Math.random().toString(36).toUpperCase().slice(2, 7);
+  return `LF-${ts}${rnd}`;
 }
 
 /**
