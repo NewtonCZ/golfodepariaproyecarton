@@ -2822,6 +2822,7 @@ const roundPayload = {
           isWinner: evaluation.isWinner,
           pagado: isWin ? true : false, // Solo ganadores
         };
+      });
 
       if (cardsChanged) {
         const finalCards = mobileCacheManager.isMobile()
