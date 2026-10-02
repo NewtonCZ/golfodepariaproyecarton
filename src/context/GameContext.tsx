@@ -2820,9 +2820,8 @@ const roundPayload = {
           totalPrizeVes: evaluation.totalPrizeVes,
           status: evaluation.status,
           isWinner: evaluation.isWinner,
-          pagado: true, // Idempotente: marcado como verificado y pagado
+          pagado: isWin ? true : false, // Solo ganadores
         };
-      });
 
       if (cardsChanged) {
         const finalCards = mobileCacheManager.isMobile()
