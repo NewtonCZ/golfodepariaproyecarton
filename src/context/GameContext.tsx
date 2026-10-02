@@ -2968,18 +2968,20 @@ const roundPayload = {
 
       // Guarda y valida figuras: cambia el estado a 'closed' para evitar cambios posteriores
       const signedBy = loggedUsername || activeCredential?.displayName || operatorRole || 'Administrador';
-      const updatedRound: GameRound = {
-        ...targetRound,
-        status: 'closed' as RoundStatus,
-        bolas_cantadas: twentyFichasIds,
-        drawnFichas: twentyFichasIds,
-        hasPreloadedResults: true,
-        winningCardsCount: verificationResult.count,
-        totalPrizesPaidVes: verificationResult.totalPaid,
-        resultLocked: true,
-        resultSubmittedBy: signedBy,
-        resultSubmittedAt: new Date().toISOString(),
-      };
+     const updatedRound: GameRound = {
+  ...targetRound,
+  // ✅ NO cambiamos status. El timer lo maneja por tiempo.
+  // Guardamos el resultado pero el sorteo sigue en su estado actual
+  // (open/closed según la hora) hasta que llegue drawAt.
+  bolas_cantadas: twentyFichasIds,
+  drawnFichas: twentyFichasIds,
+  hasPreloadedResults: true,
+  winningCardsCount: verificationResult.count,
+  totalPrizesPaidVes: verificationResult.totalPaid,
+  resultLocked: true,
+  resultSubmittedBy: signedBy,
+  resultSubmittedAt: new Date().toISOString(),
+};
 
       const updatedRounds = rounds.map((r) => (r.id === roundId ? updatedRound : r));
       setRounds(updatedRounds);
