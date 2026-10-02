@@ -2835,13 +2835,12 @@ const roundPayload = {
         Promise.all(
           cardsToSync.map((c) =>
             supabase
-              .from('cards')
               .update({
                 status: c.status,
                 matched_count: c.matchedCount,
                 winning_patterns: c.winningPatterns,
                 total_prize_ves: c.totalPrizeVes,
-                pagado: true,
+                pagado: c.pagado ?? false,
               })
               .eq('id', c.id)
               .then(({ error }) => {
