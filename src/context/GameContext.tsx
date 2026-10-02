@@ -2986,17 +2986,18 @@ const roundPayload = {
       mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, updatedRounds, 'high');
 
            try {
-        supabase
+               supabase
           .from('rounds')
           .update({
             status: 'closed',
             winning_numbers: twentyFichasIds,
-            // ✅ Escribir también en las columnas que el resto del código lee
             bolas_cantadas: twentyFichasIds,
             drawnFichas: twentyFichasIds,
             drawn_fichas: twentyFichasIds,
             result_locked: true,
             resultLocked: true,
+            result_submitted_by: signedBy,                    // ← NUEVO
+            result_submitted_at: new Date().toISOString(),    // ← NUEVO
           })
           .eq('id', roundId)
           .then(({ error }) => {
