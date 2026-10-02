@@ -2799,16 +2799,9 @@ const roundPayload = {
           true
         );
 
-        // CAMBIO 3: Idempotencia estricta con campo pagado
-        if (card.pagado) {
-          return {
-            ...card,
-            matchedCount: evaluation.matchedCount,
-            winningPatterns: evaluation.winningPatterns,
-            totalPrizeVes: evaluation.totalPrizeVes,
-            status: evaluation.status,
-            isWinner: evaluation.isWinner,
-          };
+      // Idempotencia por status: si no está 'active', ya fue procesado
+        if (card.status !== 'active') {
+          return card;
         }
 
         cardsChanged = true;
