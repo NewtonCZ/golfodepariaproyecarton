@@ -1339,18 +1339,19 @@ const fetchJugadores = useCallback(async () => {
         const closeMs = timeSync.parseIsoToEpochMs(round.ends_at || round.closeBetAt);
         const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
 
-        if (st === 'closed' || st === 'cerrado') {
-  // ✅ NO pasamos a 'finished' solo porque esté firmado.
-  // El sorteo debe llegar a drawAt para que comience el show en vivo.
-  // Solo pasamos a finished si lleva MUCHO tiempo sin actividad (1 hora post-draw).
-  const isExpiredClosed = !isNaN(drawMs) && now > drawMs + 60 * 60 * 1000;
-  if (isExpiredClosed) {
-    hasChanges = true;
-    mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-    return { ...round, status: 'finished' as RoundStatus };
-  }
-  return round; // ← dejamos que el bloque de abajo evalúe si pasa a 'live'
-}
+                 if (st === 'closed' || st === 'cerrado') {
+          // ✅ NO pasamos a 'finished' solo porque esté firmado.
+          // El sorteo debe llegar a drawAt para que comience el show en vivo.
+          // Solo pasamos a finished si pasó MUCHO tiempo (1 hora post-draw sin show).
+          const isExpiredClosed = !isNaN(drawMs) && now > drawMs + 60 * 60 * 1000;
+          if (isExpiredClosed) {
+            hasChanges = true;
+            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
+            return { ...round, status: 'finished' as RoundStatus };
+          }
+          // ⚠️ NO agregar 'return round;' acá.
+          // Debe caer al bloque hasBolas de abajo para pasar a 'live' cuando llegue drawAt.
+        }
 
         const hasBolas = (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length > 0) ||
                          (Array.isArray(round.drawnFichas) && round.drawnFichas.length > 0);
