@@ -2991,7 +2991,6 @@ const roundPayload = {
                supabase
           .from('rounds')
           .update({
-            status: 'closed',
             winning_numbers: twentyFichasIds,
             bolas_cantadas: twentyFichasIds,
             drawnFichas: twentyFichasIds,
