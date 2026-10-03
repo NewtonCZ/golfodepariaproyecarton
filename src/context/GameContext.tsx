@@ -2890,7 +2890,13 @@ const roundPayload = {
             if (error) console.warn('[verifyWinners] card update error:', error, 'card:', c.id);
           });
         }
-
+            console.log('[VW-DIAG] AFTER LOOP', {
+            newlyVerifiedWinners,
+            newlyPaidVes,
+            userPrizeMapSize: userPrizeMap.size,
+            cardsToUpdateCount: cardsToUpdate.length,
+            entries: Array.from(userPrizeMap.entries()),
+         });
         // ✅ Acreditar saldos a ganadores (RPC atómica + ledger)
         if (userPrizeMap.size > 0) {
           for (const [userId, wonAmount] of userPrizeMap) {
