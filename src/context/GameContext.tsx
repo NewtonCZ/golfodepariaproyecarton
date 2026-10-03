@@ -98,9 +98,9 @@ interface GameContextType {
   createRound: (title: string, drawAt: string, cardPriceVes?: number, prizePercentage?: number, order?: number, manualJackpotVes?: number, customTimes?: { start_at?: string; close_bet_at?: string }) => void;
   updateRoundConfig: (roundId: string, data: any) => { success: boolean; message: string };
   setRoundStatus: (roundId: string, status: GameRound['status']) => void;
-  submitRoundResult: (roundId: string, drawnFichas: number[], otpCode: string) => { success: boolean; message: string; winnersCount?: number; totalPaidVes?: number };
-  ingresarResultados: (roundId: string, drawnFichas: number[], otpCode: string) => { success: boolean; message: string; winnersCount?: number; totalPaidVes?: number };
-  verifyWinners: (roundId: string, customDrawnFichas?: number[]) => { count: number; totalPaid: number };
+  submitRoundResult: (roundId: string, drawnFichas: number[], otpCode: string) => Promise<{ success: boolean; message: string; winnersCount?: number; totalPaidVes?: number }>;
+  ingresarResultados: (roundId: string, drawnFichas: number[], otpCode: string) => Promise<{ success: boolean; message: string; winnersCount?: number; totalPaidVes?: number }>;
+  verifyWinners: (roundId: string, customDrawnFichas?: number[]) => Promise<{ count: number; totalPaid: number }>;
   setRoundTransmissionReplay: (roundId: string, replayMinutes?: number) => void;
   setRoundLive: (roundId: string) => void;
   updateCommercialConfig: (newConfig: Partial<CommercialConfig>) => Promise<{ success: boolean; message: string; data?: CommercialConfig }>;
