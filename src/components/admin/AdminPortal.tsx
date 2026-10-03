@@ -774,7 +774,7 @@ export const AdminPortal: React.FC = () => {
 
       const data = await response?.json().catch(() => ({}));
       if (data && data.valid === true) {
-        const result = submitRoundResult(selectedRoundForResult, selectedResultFichas, trimmedOtp);
+      const result = await submitRoundResult(selectedRoundForResult, selectedResultFichas, trimmedOtp);
         if (result.success) {
           setResultSubmitMessage({ success: true, text: result.message });
           setShowResultConfirmModal(false);
