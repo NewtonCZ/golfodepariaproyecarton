@@ -2832,6 +2832,12 @@ const roundPayload = {
           console.log('[verifyWinners] No hay cartones en la DB para el round', roundId);
           return { count: 0, totalPaid: 0 };
         }
+        console.log('[VW-DIAG] FETCH', {
+        dbError: dbError?.message || null,
+        dbCardsCount: dbCards?.length || 0,
+        dbCardsActive: dbCards?.filter(c => c.status === 'active').length || 0,
+        fichasCount: fichas?.length || 0,
+       });
 
         let newlyVerifiedWinners = 0;
         let newlyPaidVes = 0;
