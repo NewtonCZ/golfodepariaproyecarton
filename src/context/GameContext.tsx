@@ -2985,7 +2985,7 @@ const roundPayload = {
       const twentyFichasIds = drawnFichas.slice(0, 20);
 
       // CAMBIO 3: Verificación obligatoria de todos los cartones y saldo con idempotencia
-      const verificationResult = verifyWinners(roundId, twentyFichasIds);
+      const verificationResult = await verifyWinners(roundId, twentyFichasIds);
 
       // Guarda y valida figuras: cambia el estado a 'closed' para evitar cambios posteriores
       const signedBy = loggedUsername || activeCredential?.displayName || operatorRole || 'Administrador';
