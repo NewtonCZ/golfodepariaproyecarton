@@ -3099,12 +3099,32 @@ const roundPayload = {
       setLiveDrawingRound(round);
       setLiveDrawnFichas([]);
 
-      const pool = [...FICHAS_POOL];
-      for (let i = pool.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
-      }
+    // ✅ FIX D: si el admin pre-cargó fichas (bolas_cantadas / winning_numbers /
+      // drawnFichas con >= 20), usarlas en su orden oficial para que el show
+      // coincida con lo firmado. Solo aleatorio si NO hay pre-carga.
+      const preloadedFichas: number[] | null =
+        (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length >= 20)
+          ? round.bolas_cantadas
+          : (Array.isArray((round as any).winning_numbers) && (round as any).winning_numbers.length >= 20)
+            ? (round as any).winning_numbers
+            : (Array.isArray(round.drawnFichas) && round.drawnFichas.length >= 20)
+              ? round.drawnFichas
+              : null;
 
+      let pool: Ficha[];
+      if (preloadedFichas) {
+        pool = preloadedFichas
+          .slice(0, 20)
+          .map((id: number) => getFichaById(id))
+          .filter(Boolean) as Ficha[];
+      } else {
+        pool = [...FICHAS_POOL];
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+      }
+      
       const totalToDraw = 20;
       let step = 0;
       const drawnList: Ficha[] = [];
