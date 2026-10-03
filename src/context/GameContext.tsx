@@ -2805,6 +2805,7 @@ const roundPayload = {
       try {
         const targetRound = rounds.find((r) => r.id === roundId);
         if (!targetRound) return { count: 0, totalPaid: 0 };
+        console.log('[VW-DIAG] START', { roundId, hasTargetRound: Boolean(targetRound) });
 
         const fichas =
           (customDrawnFichas && customDrawnFichas.length > 0 ? customDrawnFichas : null) ||
