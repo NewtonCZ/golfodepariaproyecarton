@@ -208,15 +208,23 @@ export const isRoundCompletedOrExpired = (r: GameRound, nowMs?: number): boolean
     return false;
   }
 
-  // ✅ REGLA 5: Open/scheduled expirados (FIX PRINCIPAL)
-  //    Si su draw_at ya pasó hace más de 30 min, purgar.
-  //    Si no, mantener visible.
   if (st === 'open' || st === 'scheduled') {
-  const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at);
-  // Mantener visibles 24 horas después de la hora programada
-  if (!isNaN(drawMs) && drawMs > 0 && now > drawMs + 24 * 60 * 60 * 1000) return true;
-  return false;
-}
+    // ✅ Usamos SOLO drawAt (o draw_at). Es la hora real del sorteo.
+    // NO usamos starts_at: ese campo significa "apertura de apuestas",
+    // no "hora del sorteo", y purgaría rounds futuros.
+    const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at);
+
+    // Caso 1: drawAt válido y vencido hace >30min → purgar
+    if (!isNaN(drawMs) && drawMs > 0 && now > drawMs + 30 * 60 * 1000) return true;
+
+    // Caso 2: sin drawAt válido → fallback a created_at + 24h
+    if (isNaN(drawMs) || drawMs === 0) {
+      const createdMs = timeSync.parseIsoToEpochMs((r as any).created_at);
+      if (!isNaN(createdMs) && createdMs > 0 && now > createdMs + 24 * 60 * 60 * 1000) return true;
+    }
+
+    return false;
+  }
 
   return false;
 };
