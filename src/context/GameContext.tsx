@@ -180,15 +180,17 @@ export const isRoundCompletedOrExpired = (r: GameRound, nowMs?: number): boolean
   // ✅ REGLA 2: Sorteo cerrado
   //    - Con resultados: purgar después de 60 min
   //    - Sin resultados: purgar después de 2 horas (evita sorteos huérfanos)
-  if (st === 'closed' || st === 'cerrado') {
-  const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at);
-  if (!isNaN(drawMs) && drawMs > 0) {
-    // 24h con resultado, 48h sin resultado
-    if (r.resultLocked && now > drawMs + 24 * 60 * 60 * 1000) return true;
-    if (!r.resultLocked && now > drawMs + 48 * 60 * 60 * 1000) return true;
+    if (st === 'closed' || st === 'cerrado') {
+    const drawMs = timeSync.parseIsoToEpochMs(r.drawAt || (r as any).draw_at || r.starts_at || (r as any).created_at);
+    if (!isNaN(drawMs) && drawMs > 0) {
+      // ✅ Ventanas acortadas
+      // Firmado: 30 min después de drawAt → purgar
+      if (r.resultLocked && now > drawMs + 30 * 60 * 1000) return true;
+      // Sin firmar: 2 horas después de drawAt → purgar
+      if (!r.resultLocked && now > drawMs + 2 * 60 * 60 * 1000) return true;
+    }
+    return false;
   }
-  return false;
-}
 
   // ✅ REGLA 3: Replay concluido
   if (st === 'replay') {
