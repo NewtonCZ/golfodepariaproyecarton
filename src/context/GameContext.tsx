@@ -1248,7 +1248,7 @@ const fetchJugadores = useCallback(async () => {
             setWithdrawals((prev) => (prev.some((w) => w.id === item.id) ? prev : [item, ...prev]));
           }
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
           // Manejo en tiempo real de eliminación (DELETE) de sorteos
           if (payload?.eventType === 'DELETE' || (!payload?.new && payload?.old?.id)) {
             const deletedId = String(payload?.old?.id || payload?.id || '');
@@ -1264,7 +1264,7 @@ const fetchJugadores = useCallback(async () => {
           }
 
           // Manejo en tiempo real de inserción y actualización (INSERT / UPDATE)
-                  if (payload?.new) {
+          if (payload?.new) {
             const item = payload.new as any;
             mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: item.id });
             setRounds((prev) => {
@@ -1289,6 +1289,7 @@ const fetchJugadores = useCallback(async () => {
               return enforceAutoCleanupRounds(updated);
             });
           }
+        })
     } catch (e) {
       console.warn('[GameContext] Supabase realtime subscription fallback:', e);
     }
