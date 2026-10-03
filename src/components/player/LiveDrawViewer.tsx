@@ -131,10 +131,12 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
     }
 
     // 1. Ronda en vivo donde el usuario tiene cartones
+       // 1. Ronda en vivo donde el usuario tiene cartones
     const liveRoundWithCards = rounds.find(
       (r) =>
         userHasCardsIn(r.id) &&
-        (String(r.status).toLowerCase() === 'drawing' ||
+        (String(r.status).toLowerCase() === 'live' ||
+          String(r.status).toLowerCase() === 'drawing' ||
           String(r.status).toLowerCase() === 'en_vivo' ||
           (isLiveDrawing && r.id === activeRound?.id))
     );
