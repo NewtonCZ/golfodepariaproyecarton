@@ -245,7 +245,24 @@ export const supabase = {
       };
     },
   },
-
+     /**
+   * Supabase RPC — llamada a función Postgres (RPC).
+   * Sin esto, `supabase.rpc('nombre_funcion', { ... })` revienta con
+   * "TypeError: ... .rpc is not a function".
+   */
+  rpc(fn: string, params?: Record<string, any>): Promise<{ data: any; error: any }> {
+    if (realSupabaseClient) {
+      return realSupabaseClient.rpc(fn, params);
+    }
+    // Fallback offline: reportar error explícito, NUNCA simular éxito.
+    return Promise.resolve({
+      data: null,
+      error: {
+        code: 'OFFLINE',
+        message: `[supabaseClient] Cliente Supabase NO inicializado. RPC "${fn}" NO se ejecutó.`,
+      },
+    });
+  },
   from(tableName: string): any {
     if (realSupabaseClient) {
       return realSupabaseClient.from(tableName);
