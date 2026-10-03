@@ -1718,12 +1718,30 @@ const fetchJugadores = useCallback(async () => {
         }
 
         // 5. Sortear 22 fichas de las 70 (Fisher-Yates)
-        const fichasCount = (commercialConfig as any).expressFichasCount || 22;
-        const pool = [...FICHAS_POOL];
+      const fichasCount = (commercialConfig as any).expressFichasCount || 22;
+      // ✅ Si el admin pre-cargó fichas, usarlas. Si no, generar aleatorias.
+      const preloadedFichas = Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length >= 20
+        ? round.bolas_cantadas
+        : (Array.isArray((round as any).winning_numbers) && (round as any).winning_numbers.length >= 20
+          ? (round as any).winning_numbers
+          : (Array.isArray(round.drawnFichas) && round.drawnFichas.length >= 20
+            ? round.drawnFichas
+            : null));
+
+      let pool: Ficha[];
+      if (preloadedFichas) {
+        // Mapear IDs a objetos Ficha preservando el orden oficial
+        pool = preloadedFichas.slice(0, 20).map((id: number) => getFichaById(id));
+      } else {
+        // Fallback: extracción aleatoria
+        pool = [...FICHAS_POOL];
         for (let i = pool.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [pool[i], pool[j]] = [pool[j], pool[i]];
         }
+      }
+
+      const totalToDraw = 20;
         const drawnFichas = pool.slice(0, fichasCount).map((f: any) => f.id);
 
         // 6. Evaluar cartones y aplicar mínimo/máximo
