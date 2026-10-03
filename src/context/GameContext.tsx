@@ -1264,13 +1264,10 @@ const fetchJugadores = useCallback(async () => {
           }
 
           // Manejo en tiempo real de inserción y actualización (INSERT / UPDATE)
-          if (payload?.new) {
+                  if (payload?.new) {
             const item = payload.new as any;
             mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: item.id });
             setRounds((prev) => {
-              const exists = prev.some((r) => r.id === item.id);
-              const winningNumbersResolved = Array.isArray(item.winning_numbers) && item.winning_numbers.length > 0
-                          setRounds((prev) => {
               const exists = prev.some((r) => r.id === item.id);
 
               const winningNumbersResolved = Array.isArray(item.winning_numbers) && item.winning_numbers.length > 0
@@ -1291,13 +1288,7 @@ const fetchJugadores = useCallback(async () => {
               const updated = exists ? prev.map((r) => (r.id === item.id ? { ...r, ...normalizedItem } : r)) : [normalizedItem, ...prev];
               return enforceAutoCleanupRounds(updated);
             });
-              const updated = exists ? prev.map((r) => (r.id === item.id ? { ...r, ...normalizedItem } : r)) : [normalizedItem, ...prev];
-              // Aplicar regla de limpieza automática en tiempo real
-              return enforceAutoCleanupRounds(updated);
-            });
           }
-        })
-        .subscribe();
     } catch (e) {
       console.warn('[GameContext] Supabase realtime subscription fallback:', e);
     }
