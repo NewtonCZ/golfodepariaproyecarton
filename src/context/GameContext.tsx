@@ -2951,13 +2951,13 @@ const roundPayload = {
     [rounds, commercialConfig]
   );
 
-  const ingresarResultados = useCallback(
-    (roundId: string, drawnFichas: number[], otpCode: string): {
+    const ingresarResultados = useCallback(
+    async (roundId: string, drawnFichas: number[], otpCode: string): Promise<{
       success: boolean;
       message: string;
       winnersCount?: number;
       totalPaidVes?: number;
-    } => {
+    }> => {
       const targetRound = rounds.find((r) => r.id === roundId);
       if (!targetRound) {
         return { success: false, message: 'Sorteo no encontrado.' };
