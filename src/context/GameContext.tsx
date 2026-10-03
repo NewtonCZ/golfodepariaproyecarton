@@ -613,14 +613,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (fetchedRounds.length === 0) return;
 
-     setRounds(prev => {
+         setRounds(prev => {
   const fetchedMap = new Map(fetchedRounds.map(r => [r.id, r]));
 
+  // ✅ FIX ZOMBIE: Purgar rounds locales tipo 'round-*' que ya NO están
+  // en el servidor (fueron eliminados desde Supabase, panel admin, etc.)
+  // Solo aplica a rounds programados. Los 'express-*' son locales y se mantienen.
+  const filteredPrev = prev.filter((r) => {
+    const isProgrammedRound = String(r.id || '').startsWith('round-');
+    if (!isProgrammedRound) return true; // mantener express y otros locales
+    if (fetchedMap.has(r.id)) return true; // sigue vivo en el servidor
+    return false; // 🗑️ purgar zombie
+  });
+
   // ✅ FIX: Solo actualizar rounds que realmente cambiaron (evita parpadeo cada 30 seg)
-  const updated = prev.map(r => {
+  const updated = filteredPrev.map(r => {
     const serverR = fetchedMap.get(r.id);
     if (!serverR) return r;
-
+    
     const hasServerBolas = Array.isArray(serverR.bolas_cantadas) && serverR.bolas_cantadas.length > 0;
 
     // Comparar campos que pueden cambiar para detectar si hay diferencia real
