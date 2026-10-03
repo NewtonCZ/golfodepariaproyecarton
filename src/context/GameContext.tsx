@@ -2799,167 +2799,156 @@ const roundPayload = {
     [rounds, addAuditLog]
   );
 
-  const verifyWinners = useCallback(
-    (roundId: string, customDrawnFichas?: number[]): { count: number; totalPaid: number } => {
-      const targetRound = rounds.find((r) => r.id === roundId);
-      if (!targetRound) return { count: 0, totalPaid: 0 };
+   const verifyWinners = useCallback(
+    async (roundId: string, customDrawnFichas?: number[]): Promise<{ count: number; totalPaid: number }> => {
+      try {
+        const targetRound = rounds.find((r) => r.id === roundId);
+        if (!targetRound) return { count: 0, totalPaid: 0 };
 
-      const fichas =
-  (customDrawnFichas && customDrawnFichas.length > 0 ? customDrawnFichas : null) ||
-  (targetRound as any).winning_numbers ||
-  targetRound.bolas_cantadas ||
-  targetRound.drawnFichas ||
-  [];
-      if (!fichas || fichas.length === 0) return { count: 0, totalPaid: 0 };
+        const fichas =
+          (customDrawnFichas && customDrawnFichas.length > 0 ? customDrawnFichas : null) ||
+          (targetRound as any).winning_numbers ||
+          targetRound.bolas_cantadas ||
+          targetRound.drawnFichas ||
+          [];
+        if (!fichas || fichas.length === 0) return { count: 0, totalPaid: 0 };
 
-      const effectiveCardPrice =
-        targetRound.cardPriceVes || targetRound.card_price || commercialConfig.singleCardPriceVes || 25;
+        const effectiveCardPrice =
+          targetRound.cardPriceVes || targetRound.card_price || commercialConfig.singleCardPriceVes || 25;
 
-      let newlyVerifiedWinners = 0;
-      let newlyPaidVes = 0;
-      const userPrizeMap = new Map<string, number>();
+        // ✅ FIX: Fetch de cartones desde la DB (no del estado local del admin)
+        const { data: dbCards, error: dbError } = await supabase
+          .from('cards')
+          .select('*')
+          .eq('round_id', roundId);
 
-      let cardsChanged = false;
-      const updatedCards = cards.map((card) => {
-        if (card.roundId !== roundId) return card;
-
-        const evaluation = evaluateCardMatrix(
-          card.matrix,
-          fichas,
-          card.priceVes || effectiveCardPrice,
-          commercialConfig,
-          true
-        );
-
-      // Idempotencia por status: si no está 'active', ya fue procesado
-        if (card.status !== 'active') {
-          return card;
+        if (dbError) {
+          console.warn('[verifyWinners] DB fetch error:', dbError);
+          return { count: 0, totalPaid: 0 };
+        }
+        if (!dbCards || dbCards.length === 0) {
+          console.log('[verifyWinners] No hay cartones en la DB para el round', roundId);
+          return { count: 0, totalPaid: 0 };
         }
 
-        cardsChanged = true;
-        const isWin = evaluation.isWinner && evaluation.totalPrizeVes > 0;
-        if (isWin) {
-          newlyVerifiedWinners++;
-          newlyPaidVes += evaluation.totalPrizeVes;
-          const currentPrize = userPrizeMap.get(card.userId) || 0;
-          userPrizeMap.set(card.userId, currentPrize + evaluation.totalPrizeVes);
-        }
+        let newlyVerifiedWinners = 0;
+        let newlyPaidVes = 0;
+        const userPrizeMap = new Map<string, number>();
+        const cardsToUpdate: Array<{ id: string; userId: string; data: any }> = [];
 
-        return {
-          ...card,
-          matchedCount: evaluation.matchedCount,
-          winningPatterns: evaluation.winningPatterns,
-          totalPrizeVes: evaluation.totalPrizeVes,
-          status: evaluation.status,
-          isWinner: evaluation.isWinner,
-          pagado: isWin ? true : false, // Solo ganadores
-        };
-      });
+        for (const dbCard of dbCards) {
+          // Idempotencia: solo evaluar cartones que siguen en 'active'
+          if (String(dbCard.status || '').toLowerCase() !== 'active') continue;
 
-      if (cardsChanged) {
-        const finalCards = mobileCacheManager.isMobile()
-          ? mobileCacheManager.pruneCardsForRAM(updatedCards, currentUserId, activeRoundIds)
-          : updatedCards;
-        setCards(finalCards);
-        mobileCacheManager.scheduleSave(`${STORAGE_KEY}_cards`, finalCards, 'high');
+          const cardMatrix = Array.isArray(dbCard.matrix) ? dbCard.matrix : [];
+          if (cardMatrix.length === 0) continue;
 
-                // ✅ FIX: Persistir cartones actualizados en Supabase
-        const cardsToSync = updatedCards.filter((c) => c.roundId === roundId);
-        Promise.all(
-          cardsToSync.map((c) =>
-            supabase
-              .update({
-                status: c.status,
-                matched_count: c.matchedCount,
-                winning_patterns: c.winningPatterns,
-                total_prize_ves: c.totalPrizeVes,
-                pagado: c.pagado ?? false,
-              })
-              .eq('id', c.id)
-              .then(({ error }) => {
-                if (error) console.warn('[verifyWinners] cards update error:', error, 'card:', c.id);
-              })
-          )
-        ).catch((e) => console.warn('[verifyWinners] Promise.all error:', e));
-      }
+          const cardPrice = Number(dbCard.price_ves || effectiveCardPrice);
 
-      // Acreditar saldo a ganadores en memoria, en profiles y en libro contable (ledger)
-      if (userPrizeMap.size > 0) {
-        const newLedgerEntries: WalletLedgerEntry[] = [];
-        setUsers((prevUsers) =>
-          prevUsers.map((u) => {
-            const wonAmount = userPrizeMap.get(u.id);
-            if (wonAmount && wonAmount > 0) {
-              const balBefore = u.availableBalance;
-              const balAfter = balBefore + wonAmount;
+          const evaluation = evaluateCardMatrix(
+            cardMatrix,
+            fichas,
+            cardPrice,
+            commercialConfig,
+            true
+          );
 
-              const ledgerItem: WalletLedgerEntry = {
-                id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-                userId: u.id,
-                userName: u.name,
-                type: 'prize_payout',
-                amountVes: wonAmount,
-                balanceBefore: balBefore,
-                balanceAfter: balAfter,
-                description: `Premio ganado en Sorteo #${targetRound.roundNumber} (${targetRound.title})`,
-                referenceId: targetRound.id,
-                createdAt: new Date().toISOString(),
-              };
-              newLedgerEntries.push(ledgerItem);
+          const isWin = evaluation.isWinner && evaluation.totalPrizeVes > 0;
+          const userId = String(dbCard.user_id || '');
 
-              // Persistir en profiles.saldo
-              supabase
-                .from('profiles')
-                .select('saldo')
-                .eq('id', u.id)
-                .maybeSingle()
-                .then(({ data: jb }) => {
-                  if (jb) {
-                    const newSaldo = Number(jb.saldo || 0) + wonAmount;
-                    supabase.from('profiles').update({ saldo: newSaldo }).eq('id', u.id).then(() => {});
-                  }
-                });
+          if (isWin && userId) {
+            newlyVerifiedWinners++;
+            newlyPaidVes += evaluation.totalPrizeVes;
+            const currentPrize = userPrizeMap.get(userId) || 0;
+            userPrizeMap.set(userId, currentPrize + evaluation.totalPrizeVes);
+          }
 
-              // Persistir en tabla ledger
-              supabase.from('ledger').insert({
-                id: ledgerItem.id,
-                user_id: ledgerItem.userId,
-                user_name: ledgerItem.userName,
-                type: ledgerItem.type,
-                amount_ves: ledgerItem.amountVes,
-                balance_before: ledgerItem.balanceBefore,
-                balance_after: ledgerItem.balanceAfter,
-                description: ledgerItem.description,
-                reference_id: ledgerItem.referenceId,
-                created_at: ledgerItem.createdAt,
-              }).then(() => {});
-
-              return {
-                ...u,
-                availableBalance: balAfter,
-                totalWonVes: (u.totalWonVes || 0) + wonAmount,
-              };
-            }
-            return u;
-          })
-        );
-
-        if (newLedgerEntries.length > 0) {
-          setLedger((prev) => {
-            const combinedLedger = [...newLedgerEntries, ...prev];
-            const limits = mobileCacheManager.getQuotaLimits();
-            const pruned = mobileCacheManager.isMobile()
-              ? combinedLedger.slice(0, limits.maxLedgerInMemory)
-              : combinedLedger;
-            mobileCacheManager.scheduleSave(`${STORAGE_KEY}_ledger`, pruned, 'normal');
-            return pruned;
+          cardsToUpdate.push({
+            id: String(dbCard.id),
+            userId,
+            data: {
+              status: evaluation.status,
+              matched_count: evaluation.matchedCount,
+              winning_patterns: evaluation.winningPatterns,
+              total_prize_ves: evaluation.totalPrizeVes,
+              pagado: isWin ? true : false,
+            },
           });
         }
-      }
 
-      return { count: newlyVerifiedWinners, totalPaid: newlyPaidVes };
+        // ✅ Persistir cada cartón evaluado en la DB
+        for (const c of cardsToUpdate) {
+          await supabase.from('cards').update(c.data).eq('id', c.id).then(({ error }) => {
+            if (error) console.warn('[verifyWinners] card update error:', error, 'card:', c.id);
+          });
+        }
+
+        // ✅ Acreditar saldos a ganadores (RPC atómica + ledger)
+        if (userPrizeMap.size > 0) {
+          for (const [userId, wonAmount] of userPrizeMap) {
+            if (wonAmount <= 0) continue;
+
+            // Leer saldo actual para registro contable
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('saldo')
+              .eq('id', userId)
+              .maybeSingle();
+
+            const balBefore = Number(profile?.saldo || 0);
+            const balAfter = balBefore + wonAmount;
+
+            // RPC atómica (evita race conditions)
+            await supabase
+              .rpc('incrementar_saldo', { p_user_id: userId, p_monto: wonAmount })
+              .then(({ error }) => {
+                if (error) console.warn('[verifyWinners] incrementar_saldo error:', error);
+              });
+
+            // Ledger
+            await supabase.from('ledger').insert({
+              id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+              user_id: userId,
+              user_name: 'Ganador',
+              type: 'prize_payout',
+              amount_ves: wonAmount,
+              balance_before: balBefore,
+              balance_after: balAfter,
+              description: `Premio ganado en Sorteo #${targetRound.roundNumber} (${targetRound.title})`,
+              reference_id: targetRound.id,
+              created_at: new Date().toISOString(),
+            }).then(({ error }) => {
+              if (error) console.warn('[verifyWinners] ledger insert error:', error);
+            });
+          }
+        }
+
+        // ✅ Actualizar estado local del admin que hizo la llamada (para UI inmediata)
+        if (cardsToUpdate.length > 0) {
+          const updatesById = new Map(cardsToUpdate.map((u) => [u.id, u.data]));
+          setCards((prev) =>
+            prev.map((c) => {
+              const upd = updatesById.get(c.id);
+              if (!upd) return c;
+              return {
+                ...c,
+                status: upd.status,
+                matchedCount: upd.matched_count,
+                winningPatterns: upd.winning_patterns,
+                totalPrizeVes: upd.total_prize_ves,
+                pagado: upd.pagado,
+              };
+            })
+          );
+        }
+
+        return { count: newlyVerifiedWinners, totalPaid: newlyPaidVes };
+      } catch (e) {
+        console.warn('[verifyWinners] exception:', e);
+        return { count: 0, totalPaid: 0 };
+      }
     },
-    [rounds, cards, commercialConfig, currentUserId, activeRoundIds]
+    [rounds, commercialConfig]
   );
 
   const ingresarResultados = useCallback(
