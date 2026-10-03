@@ -2919,7 +2919,8 @@ const roundPayload = {
               .then(({ error }) => {
                 if (error) console.warn('[verifyWinners] incrementar_saldo error:', error);
               });
-
+            console.log('[VW-DIAG] ABOUT TO INSERT LEDGER', { userId, wonAmount, roundId: targetRound.id });
+            
             // Ledger
             await supabase.from('ledger').insert({
               id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
