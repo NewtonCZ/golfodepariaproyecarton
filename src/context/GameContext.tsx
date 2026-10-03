@@ -660,7 +660,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   });
 
-  const existingIds = new Set(prev.map(r => r.id));
+    const existingIds = new Set(filteredPrev.map(r => r.id));
   const newServerRounds = fetchedRounds.filter(r => !existingIds.has(r.id));
   const combined = [...newServerRounds, ...updated];
   const deduped = Array.from(new Map(combined.map(r => [r.id, r])).values());
