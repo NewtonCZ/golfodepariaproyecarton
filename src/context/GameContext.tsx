@@ -2901,6 +2901,7 @@ const roundPayload = {
         if (userPrizeMap.size > 0) {
           for (const [userId, wonAmount] of userPrizeMap) {
             if (wonAmount <= 0) continue;
+            console.log('[VW-DIAG] PROCESSING WINNER', { userId, wonAmount, willSkip: wonAmount <= 0 });
 
             // Leer saldo actual para registro contable
             const { data: profile } = await supabase
