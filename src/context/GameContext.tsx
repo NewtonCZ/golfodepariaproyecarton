@@ -3128,10 +3128,12 @@ const roundPayload = {
                 : r
             )
           );
-          try {
-            verifyWinners(roundId, finalDrawnIds);
-            soundService.playWinner();
-          } catch {}
+          verifyWinners(roundId, finalDrawnIds)
+            .then((res) => {
+              console.log('[LiveDraw] verifyWinners result:', res);
+            })
+            .catch((e) => console.warn('[LiveDraw] verifyWinners error:', e));
+          try { soundService.playWinner(); } catch {}
           return;
         }
 
