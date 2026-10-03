@@ -1269,13 +1269,20 @@ const fetchJugadores = useCallback(async () => {
             mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: item.id });
             setRounds((prev) => {
               const exists = prev.some((r) => r.id === item.id);
-              const normalizedItem: GameRound = {
-                ...item,
-                drawnFichas: Array.isArray(item.bolas_cantadas) && item.bolas_cantadas.length > 0
-                  ? item.bolas_cantadas
-                  : (Array.isArray(item.drawnFichas) ? item.drawnFichas : (Array.isArray(item.drawn_fichas) ? item.drawn_fichas : [])),
-                bolas_cantadas: Array.isArray(item.bolas_cantadas) ? item.bolas_cantadas : item.drawnFichas,
-              };
+              const winningNumbersResolved = Array.isArray(item.winning_numbers) && item.winning_numbers.length > 0
+  ? item.winning_numbers
+  : null;
+const bolasResolved = winningNumbersResolved
+  || (Array.isArray(item.bolas_cantadas) && item.bolas_cantadas.length > 0 ? item.bolas_cantadas : null)
+  || (Array.isArray(item.drawnFichas) && item.drawnFichas.length > 0 ? item.drawnFichas : null)
+  || (Array.isArray(item.drawn_fichas) && item.drawn_fichas.length > 0 ? item.drawn_fichas : null)
+  || [];
+
+const normalizedItem: GameRound = {
+  ...item,
+  drawnFichas: bolasResolved,
+  bolas_cantadas: bolasResolved,
+};
               const updated = exists ? prev.map((r) => (r.id === item.id ? { ...r, ...normalizedItem } : r)) : [normalizedItem, ...prev];
               // Aplicar regla de limpieza automática en tiempo real
               return enforceAutoCleanupRounds(updated);
