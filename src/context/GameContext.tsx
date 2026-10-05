@@ -3104,12 +3104,12 @@ const roundPayload = {
     // ✅ FIX D: si el admin pre-cargó fichas (bolas_cantadas / winning_numbers /
       // drawnFichas con >= 20), usarlas en su orden oficial para que el show
       // coincida con lo firmado. Solo aleatorio si NO hay pre-carga.
-      const preloadedFichas: number[] | null =
-        (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length >= 20)
+        const preloadedFichas: number[] | null =
+        (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length > 0)
           ? round.bolas_cantadas
-          : (Array.isArray((round as any).winning_numbers) && (round as any).winning_numbers.length >= 20)
+          : (Array.isArray((round as any).winning_numbers) && (round as any).winning_numbers.length > 0)
             ? (round as any).winning_numbers
-            : (Array.isArray(round.drawnFichas) && round.drawnFichas.length >= 20)
+            : (Array.isArray(round.drawnFichas) && round.drawnFichas.length > 0)
               ? round.drawnFichas
               : null;
 
