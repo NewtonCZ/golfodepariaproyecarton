@@ -3024,8 +3024,8 @@ const roundPayload = {
       setRounds(updatedRounds);
       mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, updatedRounds, 'high');
 
-           try {
-               supabase
+            try {
+        supabase
           .from('rounds')
           .update({
             winning_numbers: twentyFichasIds,
@@ -3034,15 +3034,18 @@ const roundPayload = {
             drawn_fichas: twentyFichasIds,
             result_locked: true,
             resultLocked: true,
-            result_submitted_by: signedBy,                    // ← NUEVO
-            result_submitted_at: new Date().toISOString(),    // ← NUEVO
+            result_submitted_by: signedBy,
+            result_submitted_at: new Date().toISOString(),
+            // ✅ Fix #2 — persistir contadores del round a DB
+            winning_cards_count: verificationResult.count,
+            total_prizes_paid_ves: verificationResult.totalPaid,
           })
           .eq('id', roundId)
           .then(({ error }) => {
-            if (error) console.warn('[GameContext] Supabase update status & winning_numbers error:', error);
+            if (error) console.error('[GameContext] Supabase update winning_numbers error:', error);
           });
       } catch (err) {
-        console.warn('[GameContext] Error updating round in Supabase:', err);
+        console.error('[GameContext] Error updating round in Supabase:', err);
       }
       addAuditLog(
         'GUARDAR_RESULTADOS',
