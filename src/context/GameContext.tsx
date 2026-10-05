@@ -1342,7 +1342,7 @@ const userCards = cards.filter(c =>
   (currentUserId && String(c.userId) === String(currentUserId)) ||
   (currentUser.id && String(c.userId) === String(currentUser.id))
 );
-    useEffect(() => {
+useEffect(() => {
   const check = () => {
     const now = timeSync.getServerNow();
 
