@@ -2479,37 +2479,10 @@ const fetchJugadores = useCallback(async () => {
       if (error) console.warn('[GameContext] Supabase update withdrawal error:', error);
     });
 
-  // ✅ Verificar que no exista un withdrawal_completed para este retiro (evita duplicados)
-  supabase
-    .from('ledger')
-    .select('id')
-    .eq('reference_id', transactionId)
-    .eq('type', 'withdrawal_completed')
-    .limit(1)
-    .then(({ data: existing, error: checkError }) => {
-      if (checkError) {
-        console.warn('[GameContext] Error verificando duplicado withdrawal_completed:', checkError);
-        return;
-      }
-      if (!existing || existing.length === 0) {
-        // ✅ Solo insertar si no existe (monto negativo porque es egreso)
-        supabase.from('ledger').insert({
-          id: `led-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          user_id: target.userId,
-          user_name: target.userName,
-          type: 'withdrawal_completed',
-          amount_ves: -Math.abs(target.amountVes),
-          balance_before: 0,
-          balance_after: 0,
-          description: `Retiro ${transactionId} completado y liquidado`,
-          reference_id: transactionId,
-          created_at: processedAt,
-        }).then(() => {});
-      } else {
-        console.log('[GameContext] withdrawal_completed ya existe para:', transactionId);
-      }
-    });
-} catch {}
+   // ✅ FIX BUG A — withdrawal_completed NO inserta en ledger.
+  // El withdrawal_lock ya descontó el monto del saldo y del ledger.
+  // Insertar otro asiento negativo duplicaba el descuento.
+  // El completed solo actualiza el status en withdrawals (ya hecho arriba).
 
       addAuditLog('COMPLETAR_RETIRO', `Retiro ${transactionId} de ${formatMoney(target.amountVes)} completado para ${target.userName}`);
       return { success: true, message: 'Retiro marcado como completado y transferido.' };
