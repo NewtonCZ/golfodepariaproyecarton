@@ -3036,9 +3036,11 @@ const roundPayload = {
             resultLocked: true,
             result_submitted_by: signedBy,
             result_submitted_at: new Date().toISOString(),
-            // ✅ Fix #2 — persistir contadores del round a DB
+            // ✅ Fix #2 — persistir contadores del round a DB (ambas variantes por compatibilidad)
             winning_cards_count: verificationResult.count,
+            winningCardsCount: verificationResult.count,
             total_prizes_paid_ves: verificationResult.totalPaid,
+            totalPrizesPaidVes: verificationResult.totalPaid,
           })
           .eq('id', roundId)
           .then(({ error }) => {
