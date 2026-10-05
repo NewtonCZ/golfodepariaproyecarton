@@ -1315,26 +1315,42 @@ const fetchJugadores = useCallback(async () => {
   //... (todo tu syncEngine, realtimeService, lifecycle, etc lo mantengo igual que me enviaste, sin cambios)...
   // Para no hacer el mensaje gigante, te dejo el resto de funciones tal cual las enviaste, pero con los fixes de activeRounds/activeRound:
 
-  const currentUser = users.find(u => u.id === currentUserId) || {
-    ...users[0],
-    id: currentUserId || users[0]?.id || 'usr-1',
-  };
-  const userCards = cards.filter(c =>
-    c.userId === currentUser.id ||
-    c.userId === currentUserId ||
-    (currentUserId && String(c.userId) === String(currentUserId)) ||
-    (currentUser.id && String(c.userId) === String(currentUser.id))
-  );
+ const currentUser = useMemo(() => {
+  if (!currentUserId) return null;
 
- useEffect(() => {
-  const check = () => {
-    const now = timeSync.getServerNow();
+  const found = users.find(u => u.id === currentUserId);
+  if (found) return found;
 
-    setRounds(prev => {
-      let hasChanges = false;
-      const updated = prev.map(round => {
-        const st = String(round.status || '').toLowerCase();
-        if (st === 'finished' || st === 'completado') return round;
+  // Fallback seguro: objeto "vacío" con el id real (NO Carlos machin)
+  // Mientras fetchJugadores trae los datos reales de Supabase
+  return {
+    id: currentUserId,
+    name: loggedUsername?.split('@')[0] || 'Cargando...',
+    firstName: '',
+    lastName: '',
+    email: loggedUsername || '',
+    phone: '',
+    documentId: '',
+    birthDate: '',
+    country: 'Venezuela',
+    role: 'Player' as const,
+    status: 'active' as const,
+    availableBalance: 0,
+    pendingBalance: 0,
+    lockedBalance: 0,
+    totalWonVes: 0,
+    totalSpentVes: 0,
+    createdAt: new Date().toISOString(),
+    kycStatus: 'Pendiente' as const,
+  } as AppUser;
+}, [users, currentUserId, loggedUsername]);
+
+const userCards = cards.filter(c =>
+  c.userId === currentUser?.id ||
+  c.userId === currentUserId ||
+  (currentUserId && String(c.userId) === String(currentUserId)) ||
+  (currentUser?.id && String(c.userId) === String(currentUser.id))
+);
 
         // CAMBIO 2: Verificar fin de los 7 minutos de retransmisión
         if (st === 'replay') {
