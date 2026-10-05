@@ -181,10 +181,11 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
         return tA - tB;
       });
     if (upcomingWithCards.length > 0) return upcomingWithCards[0];
-
-    // 4. Ronda en vivo global (fallback si el usuario no tiene cartones en ninguna)
+    
+ // 4. Ronda en vivo global (fallback si el usuario no tiene cartones en ninguna)
     const liveRound = rounds.find(
       (r) =>
+        String(r.status).toLowerCase() === 'live' ||
         String(r.status).toLowerCase() === 'drawing' ||
         String(r.status).toLowerCase() === 'en_vivo' ||
         (isLiveDrawing && r.id === activeRound?.id)
