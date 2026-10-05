@@ -2970,12 +2970,18 @@ const roundPayload = {
         }
       }
 
-      if (!drawnFichas || drawnFichas.length === 0) {
+        if (!drawnFichas || drawnFichas.length === 0) {
         return { success: false, message: 'Debes seleccionar las fichas para el resultado del sorteo.' };
       }
 
-      const twentyFichasIds = drawnFichas.slice(0, 20);
+      if (drawnFichas.length < 20) {
+        return {
+          success: false,
+          message: `Debes seleccionar exactamente 20 fichas. Actualmente hay ${drawnFichas.length}. Faltan ${20 - drawnFichas.length}.`,
+        };
+      }
 
+      const twentyFichasIds = drawnFichas.slice(0, 20);
       // CAMBIO 3: Verificación obligatoria de todos los cartones y saldo con idempotencia
       const verificationResult = await verifyWinners(roundId, twentyFichasIds);
 
