@@ -2482,16 +2482,6 @@ const fetchJugadores = useCallback(async () => {
         console.warn('[GameContext] Error completando withdrawal en Supabase:', err);
       }
 
-      // ✅ FIX BUG A — withdrawal_completed NO inserta en ledger.
-      // El withdrawal_lock ya descontó el monto del saldo y del ledger.
-      // Insertar otro asiento negativo duplicaba el descuento.
-
-      addAuditLog('COMPLETAR_RETIRO', `Retiro ${transactionId} de ${formatMoney(target.amountVes)} completado para ${target.userName}`);
-      return { success: true, message: 'Retiro marcado como completado y transferido.' };
-    },
-    [withdrawals, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
-  );
-
    // ✅ FIX BUG A — withdrawal_completed NO inserta en ledger.
   // El withdrawal_lock ya descontó el monto del saldo y del ledger.
   // Insertar otro asiento negativo duplicaba el descuento.
