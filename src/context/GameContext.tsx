@@ -1364,61 +1364,24 @@ useEffect(() => {
           return round;
         }
 
-        // Sorteo en vivo / extracción
-        if (st === 'drawing' || st === 'live') {
-          const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
-          const transmissionEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
-          const isExpiredLive = (transmissionEndMs > 0 && now >= transmissionEndMs) ||
-                                (!isNaN(drawMs) && now > drawMs + 15 * 60 * 1000);
-          if (isExpiredLive) {
-            hasChanges = true;
-            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-            return { ...round, status: 'finished' as RoundStatus };
-          }
-          return round;
-        }
+          const userCards = cards.filter(...);
 
-        const openMs = timeSync.parseIsoToEpochMs(round.starts_at || round.openBetAt);
-        const closeMs = timeSync.parseIsoToEpochMs(round.ends_at || round.closeBetAt);
-        const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
+useEffect(() => {
+  const check = () => {
+    const now = timeSync.getServerNow();
+    setRounds(prev => {
+      let hasChanges = false;
+      const updated = prev.map(round => {
+        const st = String(round.status || '').toLowerCase();
+        if (st === 'finished' || st === 'completado') return round;
 
-        if (st === 'closed' || st === 'cerrado') {
-          const isExpiredClosed = !isNaN(drawMs) && now > drawMs + 60 * 60 * 1000;
-          if (isExpiredClosed) {
-            hasChanges = true;
-            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-            return { ...round, status: 'finished' as RoundStatus };
-          }
-        }
-
-        const hasBolas = (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length > 0) ||
-                         (Array.isArray(round.drawnFichas) && round.drawnFichas.length > 0);
-        if (!isNaN(drawMs) && now >= drawMs && hasBolas) {
-          hasChanges = true;
-          mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-          return { ...round, status: 'live' as RoundStatus };
-        }
-
-        if (st === 'scheduled' && !isNaN(openMs) && !isNaN(closeMs) && now >= openMs && now < closeMs) {
-          hasChanges = true;
-          mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-          return {...round, status: 'open' as RoundStatus };
-        }
-
-        const GRACE_PERIOD_MS = 5 * 60 * 1000;
-        if ((st === 'open' || st === 'scheduled') && !isNaN(closeMs) && closeMs > 0 && now >= closeMs + GRACE_PERIOD_MS) {
-          hasChanges = true;
-          mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-          return {...round, status: 'closed' as RoundStatus };
-        }
+        if (st === 'replay') { ... }
+        if (st === 'drawing' || st === 'live') { ... }
+        // ... resto de los if
         return round;
       });
 
-      // ✅ FIX PARPADEO: Si no hay cambios reales, devolver la MISMA referencia
-      if (!hasChanges) {
-        return prev;
-      }
-
+      if (!hasChanges) return prev;
       const cleaned = enforceAutoCleanupRounds(updated);
       mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
       return cleaned;
@@ -1429,6 +1392,8 @@ useEffect(() => {
   const i = setInterval(check, 3000);
   return () => clearInterval(i);
 }, [enforceAutoCleanupRounds]);
+
+const upcomingRounds = useMemo(() => { ... });
 
         // Sorteo en vivo / extracción
         if (st === 'drawing' || st === 'live') {
