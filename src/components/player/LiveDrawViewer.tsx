@@ -245,9 +245,11 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
         String(targetRound.status).toLowerCase() === 'completado')
   );
 
-    const isDrawCompleted = Boolean(
+  const isDrawCompleted = Boolean(
     isTargetFinished ||
-      (!isLiveDrawing && liveDrawnFichas.length >= 20)
+      (!isLiveDrawing &&
+        liveDrawnFichas.length >= 20 &&
+        !(targetRound as any)?.hasPreloadedResults)
   );
 
   const finishTimeMs = useMemo(() => {
