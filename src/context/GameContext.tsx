@@ -2507,18 +2507,7 @@ const fetchJugadores = useCallback(async () => {
     },
     [withdrawals, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
   );
-
-   // ✅ FIX BUG A — withdrawal_completed NO inserta en ledger.
-  // El withdrawal_lock ya descontó el monto del saldo y del ledger.
-  // Insertar otro asiento negativo duplicaba el descuento.
-  // El completed solo actualiza el status en withdrawals (ya hecho arriba).
-
-      addAuditLog('COMPLETAR_RETIRO', `Retiro ${transactionId} de ${formatMoney(target.amountVes)} completado para ${target.userName}`);
-      return { success: true, message: 'Retiro marcado como completado y transferido.' };
-    },
-    [withdrawals, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
-  );
-
+  
   const rejectWithdrawal = useCallback(
     (transactionId: string, reason: string): { success: boolean; message: string } => {
       const target = withdrawals.find((w) => w.id === transactionId);
