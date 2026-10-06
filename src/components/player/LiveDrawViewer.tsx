@@ -270,10 +270,14 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   const remainingSecondsIn7Min = isWithin7Min ? Math.max(0, Math.floor(420 - diffSeconds)) : 0;
 
   // Cartones del usuario para la ronda objetivo
-  const currentRoundCards = useMemo(() => {
-    if (!targetRound) return [];
-    return userCards.filter((c) => c.roundId === targetRound.id);
-  }, [userCards, targetRound]);
+const currentRoundCards = useMemo(() => {
+  if (!targetRound) return [];
+  return userCards.filter(
+    (c) =>
+      c.roundId === targetRound.id &&
+      c.userId === (currentUser?.id || '')
+  );
+}, [userCards, targetRound, currentUser?.id]);
 
   // =========================================================================
   // VALIDACIÓN DE CONTROL DE ACCESO ESTRICTO (3 REQUISITOS OBLIGATORIOS)
