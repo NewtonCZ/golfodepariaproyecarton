@@ -1353,16 +1353,17 @@ const fetchJugadores = useCallback(async () => {
         if (st === 'finished' || st === 'completado') return round;
 
         // CAMBIO 2: Verificar fin de los 7 minutos de retransmisión
-        if (st === 'replay') {
-          const replayEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
-          const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
-          if ((replayEndMs > 0 && now >= replayEndMs) || (!isNaN(drawMs) && now > drawMs + 15 * 60 * 1000)) {
-            hasChanges = true;
-            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-            return { ...round, status: 'finished' as RoundStatus };
-          }
-          return round;
-        }
+ if (st === 'replay') {
+  const replayEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
+  const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
+  // ✅ Réplica de 7 minutos exactos (no 15)
+  if ((replayEndMs > 0 && now >= replayEndMs) || (!isNaN(drawMs) && now > drawMs + 7 * 60 * 1000)) {
+    hasChanges = true;
+    mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
+    return { ...round, status: 'finished' as RoundStatus };
+  }
+  return round;
+}
 
         // Sorteo en vivo / extracción
         if (st === 'drawing' || st === 'live') {
