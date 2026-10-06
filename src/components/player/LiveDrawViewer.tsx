@@ -6,6 +6,7 @@ import { getFichaById } from '../../data/fichasPool';
 import { soundService } from '../../services/soundAndSpeech';
 import { LotteryStorageService } from '../../services/storageService';
 import { timeSync } from '../../services/timeSyncService';
+import { mobileCacheManager } from '../../services/mobileCacheManager';
 import confetti from 'canvas-confetti';
 import {
   Radio,
