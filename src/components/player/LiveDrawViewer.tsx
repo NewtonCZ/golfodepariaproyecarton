@@ -239,6 +239,16 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
       }
     }
   }, [targetRound?.id, isLiveDrawing, targetRound?.status, lockedRoundId]);
+  
+    // ✅ Invalidar caché de cartones al cambiar de round (evita cartones pegados)
+  useEffect(() => {
+    if (targetRound?.id && currentUser?.id) {
+      mobileCacheManager.surgicalInvalidate('CARDS_PURCHASED', {
+        roundId: targetRound.id,
+        userId: currentUser.id,
+      });
+    }
+  }, [targetRound?.id, currentUser?.id]);
 
   // Round status flags & Completion detection
   const isTargetFinished = Boolean(
