@@ -1316,9 +1316,25 @@ const fetchJugadores = useCallback(async () => {
   // Para no hacer el mensaje gigante, te dejo el resto de funciones tal cual las enviaste, pero con los fixes de activeRounds/activeRound:
 
   const currentUser = users.find(u => u.id === currentUserId) || {
-    ...users[0],
-    id: currentUserId || users[0]?.id || 'usr-1',
-  };
+    id: currentUserId || 'unknown',
+    name: loggedUsername?.split('@')[0] || 'Cargando...',
+    firstName: '',
+    lastName: '',
+    email: loggedUsername || '',
+    phone: '',
+    documentId: '',
+    birthDate: '',
+    country: 'Venezuela',
+    role: 'Player' as const,
+    status: 'active' as const,
+    availableBalance: 0,
+    pendingBalance: 0,
+    lockedBalance: 0,
+    totalWonVes: 0,
+    totalSpentVes: 0,
+    createdAt: new Date().toISOString(),
+    kycStatus: 'Pendiente' as const,
+  } as AppUser;
   const userCards = cards.filter(c =>
     c.userId === currentUser.id ||
     c.userId === currentUserId ||
