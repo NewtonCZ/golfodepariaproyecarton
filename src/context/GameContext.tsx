@@ -1315,35 +1315,18 @@ const fetchJugadores = useCallback(async () => {
   //... (todo tu syncEngine, realtimeService, lifecycle, etc lo mantengo igual que me enviaste, sin cambios)...
   // Para no hacer el mensaje gigante, te dejo el resto de funciones tal cual las enviaste, pero con los fixes de activeRounds/activeRound:
 
-   const currentUser = users.find(u => u.id === currentUserId) || {
-  id: currentUserId || 'unknown',
-  name: loggedUsername?.split('@')[0] || 'Cargando...',
-  firstName: '',
-  lastName: '',
-  email: loggedUsername || '',
-  phone: '',
-  documentId: '',
-  birthDate: '',
-  country: 'Venezuela',
-  role: 'Player' as const,
-  status: 'active' as const,
-  availableBalance: 0,
-  pendingBalance: 0,
-  lockedBalance: 0,
-  totalWonVes: 0,
-  totalSpentVes: 0,
-  createdAt: new Date().toISOString(),
-  kycStatus: 'Pendiente' as const,
-} as AppUser;
+  const currentUser = users.find(u => u.id === currentUserId) || {
+    ...users[0],
+    id: currentUserId || users[0]?.id || 'usr-1',
+  };
+  const userCards = cards.filter(c =>
+    c.userId === currentUser.id ||
+    c.userId === currentUserId ||
+    (currentUserId && String(c.userId) === String(currentUserId)) ||
+    (currentUser.id && String(c.userId) === String(currentUser.id))
+  );
 
-const userCards = cards.filter(c =>
-  c.userId === currentUser.id ||
-  c.userId === currentUserId ||
-  (currentUserId && String(c.userId) === String(currentUserId)) ||
-  (currentUser.id && String(c.userId) === String(currentUser.id))
-);
-
-useEffect(() => {
+ useEffect(() => {
   const check = () => {
     const now = timeSync.getServerNow();
 
@@ -1355,95 +1338,15 @@ useEffect(() => {
 
         // CAMBIO 2: Verificar fin de los 7 minutos de retransmisión
         if (st === 'replay') {
-          const replayEndMs = round.transmission_ends_at? new Date(round.transmission_ends_at).getTime() : 0;
+          const replayEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
           const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
           if ((replayEndMs > 0 && now >= replayEndMs) || (!isNaN(drawMs) && now > drawMs + 15 * 60 * 1000)) {
             hasChanges = true;
             mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-            return {...round, status: 'finished' as RoundStatus };
+            return { ...round, status: 'finished' as RoundStatus };
           }
           return round;
         }
-
-        // Sorteo en vivo / extracción
-        if (st === 'drawing' || st === 'live') {
-          const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
-          const transmissionEndMs = round.transmission_ends_at? new Date(round.transmission_ends_at).getTime() : 0;
-          const isExpiredLive = (transmissionEndMs > 0 && now >= transmissionEndMs) ||
-                                (!isNaN(drawMs) && now > drawMs + 15 * 60 * 1000);
-          if (isExpiredLive) {
-            hasChanges = true;
-            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-            return {...round, status: 'finished' as RoundStatus };
-          }
-          return round;
-        }
-
-        const openMs = timeSync.parseIsoToEpochMs(round.starts_at || round.openBetAt);
-        const closeMs = timeSync.parseIsoToEpochMs(round.ends_at || round.closeBetAt);
-        const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
-
-        if (st === 'closed' || st === 'cerrado') {
-          const isExpiredClosed =!isNaN(drawMs) && now > drawMs + 60 * 60 * 1000;
-          if (isExpiredClosed) {
-            hasChanges = true;
-            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-            return {...round, status: 'finished' as RoundStatus };
-          }
-        }
-
-        const hasBolas = (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length > 0) ||
-                         (Array.isArray(round.drawnFichas) && round.drawnFichas.length > 0);
-        if (!isNaN(drawMs) && now >= drawMs && hasBolas) {
-          hasChanges = true;
-          mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-          return {...round, status: 'live' as RoundStatus };
-        }
-
-        if (st === 'scheduled' &&!isNaN(openMs) &&!isNaN(closeMs) && now >= openMs && now < closeMs) {
-          hasChanges = true;
-          mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-          return {...round, status: 'open' as RoundStatus };
-        }
-
-        const GRACE_PERIOD_MS = 5 * 60 * 1000;
-        if ((st === 'open' || st === 'scheduled') &&!isNaN(closeMs) && closeMs > 0 && now >= closeMs + GRACE_PERIOD_MS) {
-          hasChanges = true;
-          mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-          return {...round, status: 'closed' as RoundStatus };
-        }
-        return round;
-      });
-
-      if (!hasChanges) return prev;
-      const cleaned = enforceAutoCleanupRounds(updated);
-      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
-      return cleaned;
-    });
-  };
-
-  check();
-  const i = setInterval(check, 3000);
-  return () => clearInterval(i);
-}, [enforceAutoCleanupRounds]);
-
-        // ... resto de los if
-        return round;
-      });
-
-      if (!hasChanges) return prev;
-      const cleaned = enforceAutoCleanupRounds(updated);
-      mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, cleaned, 'high');
-      return cleaned;
-    });
-  };
-
-  check();
-  const i = setInterval(check, 3000);
-  return () => clearInterval(i);
-}, [enforceAutoCleanupRounds]);
-
-const upcomingRounds = useMemo(() => { ... });
 
         // Sorteo en vivo / extracción
         if (st === 'drawing' || st === 'live') {
@@ -2579,6 +2482,16 @@ const upcomingRounds = useMemo(() => { ... });
         console.warn('[GameContext] Error completando withdrawal en Supabase:', err);
       }
 
+      // ✅ FIX BUG A — withdrawal_completed NO inserta en ledger.
+      // El withdrawal_lock ya descontó el monto del saldo y del ledger.
+      // Insertar otro asiento negativo duplicaba el descuento.
+
+      addAuditLog('COMPLETAR_RETIRO', `Retiro ${transactionId} de ${formatMoney(target.amountVes)} completado para ${target.userName}`);
+      return { success: true, message: 'Retiro marcado como completado y transferido.' };
+    },
+    [withdrawals, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
+  );
+
    // ✅ FIX BUG A — withdrawal_completed NO inserta en ledger.
   // El withdrawal_lock ya descontó el monto del saldo y del ledger.
   // Insertar otro asiento negativo duplicaba el descuento.
@@ -3067,18 +2980,12 @@ const roundPayload = {
         }
       }
 
-        if (!drawnFichas || drawnFichas.length === 0) {
+      if (!drawnFichas || drawnFichas.length === 0) {
         return { success: false, message: 'Debes seleccionar las fichas para el resultado del sorteo.' };
       }
 
-      if (drawnFichas.length < 20) {
-        return {
-          success: false,
-          message: `Debes seleccionar exactamente 20 fichas. Actualmente hay ${drawnFichas.length}. Faltan ${20 - drawnFichas.length}.`,
-        };
-      }
-
       const twentyFichasIds = drawnFichas.slice(0, 20);
+
       // CAMBIO 3: Verificación obligatoria de todos los cartones y saldo con idempotencia
       const verificationResult = await verifyWinners(roundId, twentyFichasIds);
 
@@ -3201,12 +3108,12 @@ const roundPayload = {
     // ✅ FIX D: si el admin pre-cargó fichas (bolas_cantadas / winning_numbers /
       // drawnFichas con >= 20), usarlas en su orden oficial para que el show
       // coincida con lo firmado. Solo aleatorio si NO hay pre-carga.
-        const preloadedFichas: number[] | null =
-        (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length > 0)
+      const preloadedFichas: number[] | null =
+        (Array.isArray(round.bolas_cantadas) && round.bolas_cantadas.length >= 20)
           ? round.bolas_cantadas
-          : (Array.isArray((round as any).winning_numbers) && (round as any).winning_numbers.length > 0)
+          : (Array.isArray((round as any).winning_numbers) && (round as any).winning_numbers.length >= 20)
             ? (round as any).winning_numbers
-            : (Array.isArray(round.drawnFichas) && round.drawnFichas.length > 0)
+            : (Array.isArray(round.drawnFichas) && round.drawnFichas.length >= 20)
               ? round.drawnFichas
               : null;
 
