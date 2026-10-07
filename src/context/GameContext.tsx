@@ -1342,31 +1342,28 @@ const fetchJugadores = useCallback(async () => {
     (currentUser.id && String(c.userId) === String(currentUser.id))
   );
 
-     useEffect(() => {
+ useEffect(() => {
   const check = () => {
     const now = timeSync.getServerNow();
 
     setRounds(prev => {
       let hasChanges = false;
-      // ✅ FIX A: acumular transiciones de status para persistir a Supabase
-      const statusUpdates: Array<{ id: string; from: string; to: RoundStatus }> = [];
       const updated = prev.map(round => {
         const st = String(round.status || '').toLowerCase();
         if (st === 'finished' || st === 'completado') return round;
 
         // CAMBIO 2: Verificar fin de los 7 minutos de retransmisión
-        if (st === 'replay') {
-          const replayEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
-          const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
-          // ✅ Réplica de 7 minutos exactos (no 15)
-          if ((replayEndMs > 0 && now >= replayEndMs) || (!isNaN(drawMs) && now > drawMs + 7 * 60 * 1000)) {
-            hasChanges = true;
-            mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-            statusUpdates.push({ id: round.id, from: round.status, to: 'finished' });
-            return { ...round, status: 'finished' as RoundStatus };
-          }
-          return round;
-        }
+ if (st === 'replay') {
+  const replayEndMs = round.transmission_ends_at ? new Date(round.transmission_ends_at).getTime() : 0;
+  const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
+  // ✅ Réplica de 7 minutos exactos (no 15)
+  if ((replayEndMs > 0 && now >= replayEndMs) || (!isNaN(drawMs) && now > drawMs + 7 * 60 * 1000)) {
+    hasChanges = true;
+    mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
+    return { ...round, status: 'finished' as RoundStatus };
+  }
+  return round;
+}
 
         // Sorteo en vivo / extracción
         if (st === 'drawing' || st === 'live') {
@@ -1377,7 +1374,6 @@ const fetchJugadores = useCallback(async () => {
           if (isExpiredLive) {
             hasChanges = true;
             mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-            statusUpdates.push({ id: round.id, from: round.status, to: 'finished' });
             return { ...round, status: 'finished' as RoundStatus };
           }
           return round;
@@ -1387,7 +1383,7 @@ const fetchJugadores = useCallback(async () => {
         const closeMs = timeSync.parseIsoToEpochMs(round.ends_at || round.closeBetAt);
         const drawMs = timeSync.parseIsoToEpochMs(round.drawAt || round.starts_at);
 
-        if (st === 'closed' || st === 'cerrado') {
+                 if (st === 'closed' || st === 'cerrado') {
           // ✅ NO pasamos a 'finished' solo porque esté firmado.
           // El sorteo debe llegar a drawAt para que comience el show en vivo.
           // Solo pasamos a finished si pasó MUCHO tiempo (1 hora post-draw sin show).
@@ -1395,7 +1391,6 @@ const fetchJugadores = useCallback(async () => {
           if (isExpiredClosed) {
             hasChanges = true;
             mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-            statusUpdates.push({ id: round.id, from: round.status, to: 'finished' });
             return { ...round, status: 'finished' as RoundStatus };
           }
           // ⚠️ NO agregar 'return round;' acá.
@@ -1407,14 +1402,12 @@ const fetchJugadores = useCallback(async () => {
         if (!isNaN(drawMs) && now >= drawMs && hasBolas) {
           hasChanges = true;
           mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-          statusUpdates.push({ id: round.id, from: round.status, to: 'live' });
           return { ...round, status: 'live' as RoundStatus };
         }
 
         if (st === 'scheduled' && !isNaN(openMs) && !isNaN(closeMs) && now >= openMs && now < closeMs) {
           hasChanges = true;
           mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-          statusUpdates.push({ id: round.id, from: round.status, to: 'open' });
           return {...round, status: 'open' as RoundStatus };
         }
 
@@ -1423,7 +1416,6 @@ const fetchJugadores = useCallback(async () => {
         if ((st === 'open' || st === 'scheduled') && !isNaN(closeMs) && closeMs > 0 && now >= closeMs + GRACE_PERIOD_MS) {
           hasChanges = true;
           mobileCacheManager.surgicalInvalidate('ROUND_STATUS_CHANGED', { roundId: round.id });
-          statusUpdates.push({ id: round.id, from: round.status, to: 'closed' });
           return {...round, status: 'closed' as RoundStatus };
         }
         return round;
@@ -1432,22 +1424,6 @@ const fetchJugadores = useCallback(async () => {
       // ✅ FIX PARPADEO: Si no hay cambios reales, devolver la MISMA referencia
       if (!hasChanges) {
         return prev;
-      }
-
-      // ✅ FIX A: persistir transiciones de status a Supabase (fire-and-forget con idempotencia)
-      if (statusUpdates.length > 0) {
-        statusUpdates.forEach(({ id, from, to }) => {
-          supabase
-            .from('rounds')
-            .update({ status: to })
-            .eq('id', id)
-            .eq('status', from)
-            .then(({ error }) => {
-              if (error) {
-                console.warn('[timer] status update error:', { id, from, to, error });
-              }
-            });
-        });
       }
 
       const cleaned = enforceAutoCleanupRounds(updated);
@@ -1460,7 +1436,7 @@ const fetchJugadores = useCallback(async () => {
   const i = setInterval(check, 3000);
   return () => clearInterval(i);
 }, [enforceAutoCleanupRounds]);  // ✅ FIX: sin `rounds`
-  
+  const upcomingRounds = useMemo(() => {
     return rounds.filter(r => !isRoundCompletedOrExpired(r))
      .sort((a, b) => {
        const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
