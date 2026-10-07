@@ -1460,6 +1460,7 @@ const fetchJugadores = useCallback(async () => {
   const i = setInterval(check, 3000);
   return () => clearInterval(i);
 }, [enforceAutoCleanupRounds]);  // ✅ FIX: sin `rounds`
+  
     return rounds.filter(r => !isRoundCompletedOrExpired(r))
      .sort((a, b) => {
        const timeA = timeSync.parseIsoToEpochMs(a.starts_at || a.openBetAt || a.drawAt);
