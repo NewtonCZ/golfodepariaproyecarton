@@ -76,14 +76,17 @@ export const LiveDrawViewer: React.FC<LiveDrawViewerProps> = ({
   const [lockedRoundId, setLockedRoundId] = useState<string | null>(null);
 
   const handleExitRoom = () => {
-    if (onExit) {
-      onExit();
-    } else if (onOpenMyCards) {
-      onOpenMyCards();
-    } else {
-      window.history.back();
-    }
-  };
+  // 🆕 FIX BUG 1: Detener TODO el audio antes de salir
+  soundService.stopAll();
+  
+  if (onExit) {
+    onExit();
+  } else if (onOpenMyCards) {
+    onOpenMyCards();
+  } else {
+    window.history.back();
+  }
+};
 
   const toggleVoice = () => {
     const nextVal = !voiceEnabled;
