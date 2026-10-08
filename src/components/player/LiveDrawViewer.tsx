@@ -359,21 +359,12 @@ const currentRoundCards = useMemo(() => {
   const isAccessAllowed =
     isRegisteredAndAuthenticated && isKycVerified && hasActiveCardsForRound;
   
-  // 🆕 FIX BUG 2: Sincronizar elegibilidad de audio con el servicio
+   // 🆕 FIX BUG 2: Al desmontar la sala, detener todo el audio
 useEffect(() => {
-  soundService.setUserEligibleForAudio(isAccessAllowed);
-  
-  // Si el usuario pierde acceso, detener todo
-  if (!isAccessAllowed) {
-    soundService.stopAll();
-  }
-  
   return () => {
-    // Cleanup al desmontar: detener todo
     soundService.stopAll();
   };
-}, [isAccessAllowed]);
-
+}, []);
   // =========================================================================
   // REPLICA / REPRODUCCIÓN SECUENCIAL DE BALOTAS EXTRAÍDAS (REGLA 7 MINUTOS)
   // =========================================================================
