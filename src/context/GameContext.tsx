@@ -3232,7 +3232,7 @@ const roundPayload = {
 
       setDrawIntervalRef(interval);
     },
-    [rounds]
+    [rounds, persistRoundStatus]
   );
 
   const stopLiveDrawSimulation = useCallback(() => {
