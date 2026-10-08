@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Cookie, X, Settings, Check } from 'lucide-react';
 
 const COOKIE_CONSENT_KEY = 'tusupercarton_cookie_consent_v1';
+const COOKIE_EXPIRATION_MONTHS = 12;
 
 interface CookiePreferences {
   essential: boolean;
@@ -9,6 +10,7 @@ interface CookiePreferences {
   functionality: boolean;
   thirdParty: boolean;
   acceptedAt: string;
+  expiresAt: string;
   version: string;
 }
 
@@ -21,6 +23,7 @@ export const CookieBanner: React.FC = () => {
     functionality: true,
     thirdParty: true,
     acceptedAt: '',
+    expiresAt: '',
     version: '1.0',
   });
 
@@ -29,7 +32,20 @@ export const CookieBanner: React.FC = () => {
       const saved = localStorage.getItem(COOKIE_CONSENT_KEY);
       if (!saved) {
         setShowBanner(true);
+        return;
       }
+
+      const parsed: CookiePreferences = JSON.parse(saved);
+      const expiresAt = parsed.expiresAt ? new Date(parsed.expiresAt).getTime() : 0;
+
+      // Si no tiene expiresAt (versión vieja) o ya expiró → mostrar banner
+      if (!expiresAt || Date.now() > expiresAt) {
+        localStorage.removeItem(COOKIE_CONSENT_KEY);
+        setShowBanner(true);
+        return;
+      }
+
+      // Consentimiento válido → no mostrar banner
     } catch {
       setShowBanner(true);
     }
@@ -42,6 +58,7 @@ export const CookieBanner: React.FC = () => {
       functionality: true,
       thirdParty: true,
       acceptedAt: new Date().toISOString(),
+      expiresAt: getExpirationDate(),
       version: '1.0',
     };
     savePreferences(prefs);
@@ -54,6 +71,7 @@ export const CookieBanner: React.FC = () => {
       functionality: false,
       thirdParty: false,
       acceptedAt: new Date().toISOString(),
+      expiresAt: getExpirationDate(),
       version: '1.0',
     };
     savePreferences(prefs);
@@ -63,9 +81,15 @@ export const CookieBanner: React.FC = () => {
     const prefs: CookiePreferences = {
       ...preferences,
       acceptedAt: new Date().toISOString(),
+      expiresAt: getExpirationDate(),
       version: '1.0',
     };
     savePreferences(prefs);
+  };
+
+  const getExpirationDate = (): string => {
+    const expirationMs = COOKIE_EXPIRATION_MONTHS * 30 * 24 * 60 * 60 * 1000;
+    return new Date(Date.now() + expirationMs).toISOString();
   };
 
   const savePreferences = (prefs: CookiePreferences) => {
