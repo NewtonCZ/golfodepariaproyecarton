@@ -6,10 +6,56 @@ class SoundAndSpeechService {
   private voiceEnabled: boolean = true;
   private soundEffectsEnabled: boolean = true;
   private selectedVoice: SpeechSynthesisVoice | null = null;
+  
+  // 🆕 FIX BUG 2: Flag de elegibilidad del usuario
+  private userEligibleForAudio: boolean = false;
+  
+  // 🆕 FIX BUG 3: Flag para evitar solapamiento
+  private isSpeaking: boolean = false;
+  
+  // 🆕 FIX BUG 1: Registro de osciladores activos
+  private activeOscillators: Set<OscillatorNode> = new Set();
 
   constructor() {
     if (typeof window !== 'undefined') {
       this.initVoice();
+    }
+  }
+
+  // 🆕 FIX BUG 2: Método para configurar elegibilidad
+  public setUserEligibleForAudio(eligible: boolean) {
+    this.userEligibleForAudio = eligible;
+    if (!eligible) {
+      this.stopAll();
+    }
+  }
+
+  public isUserEligibleForAudio(): boolean {
+    return this.userEligibleForAudio;
+  }
+
+  // 🆕 FIX BUG 1: Método para detener TODO
+  public stopAll() {
+    // Detener voz
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    this.isSpeaking = false;
+    
+    // Detener osciladores
+    this.activeOscillators.forEach(osc => {
+      try {
+        osc.stop();
+        osc.disconnect();
+      } catch {
+        // Ignorar si ya está detenido
+      }
+    });
+    this.activeOscillators.clear();
+    
+    // Suspender AudioContext
+    if (this.audioCtx && this.audioCtx.state === 'running') {
+      this.audioCtx.suspend().catch(() => {});
     }
   }
 
@@ -29,7 +75,6 @@ class SoundAndSpeechService {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
     const voices = window.speechSynthesis.getVoices();
     if (!voices || voices.length === 0) return null;
-    // Prioritize natural Spanish voices (es-VE, es-MX, es-ES, es-US)
     const priorityVoice = voices.find(v => v.lang === 'es-VE') ||
       voices.find(v => v.lang === 'es-MX') ||
       voices.find(v => v.lang === 'es-US') ||
@@ -46,7 +91,6 @@ class SoundAndSpeechService {
           this.selectedVoice = v;
         }
       };
-
       loadVoices();
       if (window.speechSynthesis.onvoiceschanged !== undefined) {
         window.speechSynthesis.onvoiceschanged = loadVoices;
@@ -70,22 +114,32 @@ class SoundAndSpeechService {
     return this.soundEffectsEnabled;
   }
 
-  // Sing out the name of a drawn Ficha in enthusiastic Spanish
+  // 🆕 FIX BUG 2 y 3: Verificar elegibilidad y evitar solapamiento
   public cantarFicha(nameOrPhrase: string) {
     if (!this.voiceEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) {
       return;
+    }
+    
+    // FIX BUG 2: Bloquear si el usuario no es elegible
+    if (!this.userEligibleForAudio) {
+      return;
+    }
+    
+    // FIX BUG 3: Evitar solapamiento
+    if (this.isSpeaking) {
+      window.speechSynthesis.cancel();
     }
 
     try {
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
-      window.speechSynthesis.cancel(); // Stop any pending utterance
+      window.speechSynthesis.cancel();
 
       const utterance = new SpeechSynthesisUtterance(nameOrPhrase);
       utterance.lang = 'es-ES';
       utterance.rate = 1.0;
-      utterance.pitch = 1.1; // energetic cartoon tone
+      utterance.pitch = 1.1;
       utterance.volume = 1.0;
 
       const voice = this.selectedVoice || this.getSpanishVoice();
@@ -93,21 +147,32 @@ class SoundAndSpeechService {
         utterance.voice = voice;
       }
 
+      utterance.onstart = () => { this.isSpeaking = true; };
+      utterance.onend = () => { this.isSpeaking = false; };
+      utterance.onerror = () => { this.isSpeaking = false; };
+
       window.speechSynthesis.speak(utterance);
     } catch {
-      // Fallback silently if browser blocks speech without user interaction
+      this.isSpeaking = false;
     }
   }
 
-  // Play celebratory phrase
   public cantarPremio(tipoPremio: string) {
+    if (!this.userEligibleForAudio) return;
     this.playFanfare();
     this.cantarFicha(`¡Atención! ¡${tipoPremio}! ¡Felicidades!`);
   }
 
-  // Synthesized Arcade Sound: Ficha Draw / Ball Pop
+  // 🆕 FIX BUG 1: Registrar osciladores activos
+  private registerOscillator(osc: OscillatorNode) {
+    this.activeOscillators.add(osc);
+    osc.onended = () => {
+      this.activeOscillators.delete(osc);
+    };
+  }
+
   public playPop() {
-    if (!this.soundEffectsEnabled) return;
+    if (!this.soundEffectsEnabled || !this.userEligibleForAudio) return;
     try {
       this.initAudioCtx();
       if (!this.audioCtx) return;
@@ -126,6 +191,7 @@ class SoundAndSpeechService {
       osc.connect(gain);
       gain.connect(this.audioCtx.destination);
 
+      this.registerOscillator(osc);
       osc.start(now);
       osc.stop(now + 0.13);
     } catch {
@@ -133,15 +199,14 @@ class SoundAndSpeechService {
     }
   }
 
-  // Synthesized Sound: Coin clink / Purchase / Win
   public playCoin() {
-    if (!this.soundEffectsEnabled) return;
+    if (!this.soundEffectsEnabled || !this.userEligibleForAudio) return;
     try {
       this.initAudioCtx();
       if (!this.audioCtx) return;
 
       const now = this.audioCtx.currentTime;
-      const freqs = [987.77, 1318.51]; // B5 to E6
+      const freqs = [987.77, 1318.51];
 
       freqs.forEach((f, i) => {
         if (!this.audioCtx) return;
@@ -156,6 +221,7 @@ class SoundAndSpeechService {
         osc.connect(gain);
         gain.connect(this.audioCtx.destination);
 
+        this.registerOscillator(osc);
         osc.start(now + i * 0.08);
         osc.stop(now + i * 0.08 + 0.26);
       });
@@ -164,15 +230,14 @@ class SoundAndSpeechService {
     }
   }
 
-  // Synthesized Sound: Big Winner Fanfare
   public playFanfare() {
-    if (!this.soundEffectsEnabled) return;
+    if (!this.soundEffectsEnabled || !this.userEligibleForAudio) return;
     try {
       this.initAudioCtx();
       if (!this.audioCtx) return;
 
       const now = this.audioCtx.currentTime;
-      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+      const notes = [523.25, 659.25, 783.99, 1046.5];
 
       notes.forEach((freq, idx) => {
         if (!this.audioCtx) return;
@@ -187,6 +252,7 @@ class SoundAndSpeechService {
         osc.connect(gain);
         gain.connect(this.audioCtx.destination);
 
+        this.registerOscillator(osc);
         osc.start(now + idx * 0.12);
         osc.stop(now + idx * 0.12 + 0.42);
       });
@@ -195,9 +261,8 @@ class SoundAndSpeechService {
     }
   }
 
-  // Synthesized Sound: Subtle UI click
   public playClick() {
-    if (!this.soundEffectsEnabled) return;
+    if (!this.soundEffectsEnabled || !this.userEligibleForAudio) return;
     try {
       this.initAudioCtx();
       if (!this.audioCtx) return;
@@ -216,6 +281,7 @@ class SoundAndSpeechService {
       osc.connect(gain);
       gain.connect(this.audioCtx.destination);
 
+      this.registerOscillator(osc);
       osc.start(now);
       osc.stop(now + 0.05);
     } catch {
@@ -223,7 +289,6 @@ class SoundAndSpeechService {
     }
   }
 
-  // Aliases for compatibility
   public playPurchase() {
     this.playCoin();
   }
@@ -237,7 +302,7 @@ class SoundAndSpeechService {
   }
 
   public speakFicha(ficha: any) {
-    if (!ficha) return;
+    if (!ficha || !this.userEligibleForAudio) return;
     this.playBallDrop();
     if (typeof ficha === 'string') {
       this.cantarFicha(ficha);
@@ -248,5 +313,5 @@ class SoundAndSpeechService {
       this.cantarFicha(`¡${ficha.name}!`);
     }
   }
- }
+}
 export const soundService = new SoundAndSpeechService();
