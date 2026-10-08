@@ -3171,6 +3171,8 @@ const roundPayload = {
           clearInterval(interval);
           setIsLiveDrawing(false);
           const finalDrawnIds = drawnList.map((f) => f.id);
+          const finishedAt = new Date().toISOString();
+
           setRounds((prev) =>
             prev.map((r) =>
               r.id === roundId
@@ -3179,13 +3181,24 @@ const roundPayload = {
                     status: 'finished',
                     drawnFichas: finalDrawnIds,
                     bolas_cantadas: finalDrawnIds,
-                    resultSubmittedAt: new Date().toISOString(),
+                    resultSubmittedAt: finishedAt,
                     hasPreloadedResults: true,
                     resultLocked: true,
                   }
                 : r
             )
           );
+
+          // ✅ FIX A.3 — persistir status 'finished' + fichas a Supabase
+          persistRoundStatus(roundId, 'finished' as RoundStatus, {
+            drawnFichas: finalDrawnIds,
+            bolas_cantadas: finalDrawnIds,
+            winning_numbers: finalDrawnIds,
+            drawn_fichas: finalDrawnIds,
+            result_locked: true,
+            result_submitted_at: finishedAt,
+          });
+
           verifyWinners(roundId, finalDrawnIds)
             .then((res) => {
               console.log('[LiveDraw] verifyWinners result:', res);
