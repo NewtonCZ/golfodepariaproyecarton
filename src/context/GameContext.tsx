@@ -549,6 +549,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   mobileCacheManager.scheduleSave(`${STORAGE_KEY}_rounds`, sorted, 'high');
   return sorted;
 }, []);
+  
+    // ✅ FIX A.1 — Persistir cambios de status a Supabase desde el timer
+  // Evita rounds huérfanos: cuando el timer cambia status en React,
+  // también lo persiste en la DB.
+  const persistRoundStatus = useCallback(
+    async (roundId: string, status: RoundStatus, extra?: Record<string, any>) => {
+      try {
+        const payload: Record<string, any> = { status, ...(extra || {}) };
+        const { error } = await supabase.from('rounds').update(payload).eq('id', roundId);
+        if (error) {
+          console.warn('[FixA] persistRoundStatus error:', error, { roundId, status });
+        }
+      } catch (err) {
+        console.warn('[FixA] persistRoundStatus exception:', err, { roundId, status });
+      }
+    },
+    []
+  );
+
   // FIX CRITICO DE ROUNDS WITH SURGICAL INVALIDATION & ENDPOINT SYNC
   const fetchActiveRounds = useCallback(async (options?: { bypassCache?: boolean; limit?: number }) => {
     try {
