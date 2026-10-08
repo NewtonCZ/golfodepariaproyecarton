@@ -1916,13 +1916,30 @@ supabase.rpc('incrementar_total_spent', {
             if (error) console.warn('[playExpress] ledger insert error:', error);
           });
 
-         supabase.from('profiles').update({
+supabase.from('profiles').update({
   saldo: finalBalance,
   available_balance: finalBalance,
   balance: finalBalance,
 }).eq('id', session.user.id).then(({ error }) => {
   if (error) console.warn('[playExpress] profiles update error:', error);
 });
+
+// ✅ FIX: Persistir total_spent_ves y total_won_ves en Supabase
+supabase.rpc('incrementar_total_spent', {
+  p_user_id: session.user.id,
+  p_monto: totalCost,
+}).then(({ error }) => {
+  if (error) console.warn('[playExpress] incrementar_total_spent error:', error);
+});
+
+if (totalPrize > 0) {
+  supabase.rpc('incrementar_total_won', {
+    p_user_id: session.user.id,
+    p_monto: totalPrize,
+  }).then(({ error }) => {
+    if (error) console.warn('[playExpress] incrementar_total_won error:', error);
+  });
+}
         } catch (e) {
           console.warn('[playExpress] Supabase persistence error:', e);
         }
