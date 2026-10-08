@@ -551,25 +551,23 @@ useEffect(() => {
   const autoStartInitiatedRef = useRef<string | null>(null);
   const lastAnnouncedFichaIndexRef = useRef<number>(-1);
 
-  // Cantador de voz en tiempo real durante la extracción de figuras
-  useEffect(() => {
-    if (!voiceEnabled || !isLiveDrawing) {
-      if (!isLiveDrawing) {
-        lastAnnouncedFichaIndexRef.current = -1;
-      }
-      return;
+ useEffect(() => {
+  if (!voiceEnabled || !isLiveDrawing || !isAccessAllowed) { // 🆕 FIX BUG 2
+    if (!isLiveDrawing) {
+      lastAnnouncedFichaIndexRef.current = -1;
     }
+    return;
+  }
 
-    if (liveDrawnFichas.length > 0 && liveDrawnFichas.length - 1 > lastAnnouncedFichaIndexRef.current) {
-      const newFichaIndex = liveDrawnFichas.length - 1;
-      const newFicha = liveDrawnFichas[newFichaIndex];
-      lastAnnouncedFichaIndexRef.current = newFichaIndex;
-      if (newFicha) {
-        soundService.speakFicha(newFicha);
-      }
+  if (liveDrawnFichas.length > 0 && liveDrawnFichas.length - 1 > lastAnnouncedFichaIndexRef.current) {
+    const newFichaIndex = liveDrawnFichas.length - 1;
+    const newFicha = liveDrawnFichas[newFichaIndex];
+    lastAnnouncedFichaIndexRef.current = newFichaIndex;
+    if (newFicha) {
+      soundService.speakFicha(newFicha);
     }
-  }, [liveDrawnFichas, voiceEnabled, isLiveDrawing]);
-
+  }
+}, [liveDrawnFichas, voiceEnabled, isLiveDrawing, isAccessAllowed]);
   useEffect(() => {
     if (!targetRound || isTargetFinished || isDrawCompleted || isLiveDrawing) {
       setSecondsUntilAutoStart(null);
