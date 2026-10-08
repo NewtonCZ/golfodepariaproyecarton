@@ -358,6 +358,21 @@ const currentRoundCards = useMemo(() => {
 
   const isAccessAllowed =
     isRegisteredAndAuthenticated && isKycVerified && hasActiveCardsForRound;
+  
+  // 🆕 FIX BUG 2: Sincronizar elegibilidad de audio con el servicio
+useEffect(() => {
+  soundService.setUserEligibleForAudio(isAccessAllowed);
+  
+  // Si el usuario pierde acceso, detener todo
+  if (!isAccessAllowed) {
+    soundService.stopAll();
+  }
+  
+  return () => {
+    // Cleanup al desmontar: detener todo
+    soundService.stopAll();
+  };
+}, [isAccessAllowed]);
 
   // =========================================================================
   // REPLICA / REPRODUCCIÓN SECUENCIAL DE BALOTAS EXTRAÍDAS (REGLA 7 MINUTOS)
@@ -384,37 +399,42 @@ const currentRoundCards = useMemo(() => {
     }
   }, [targetRound?.id, isWithin7Min, officialDrawnFichasIds.length]);
 
-  // Sequential replica runner
-  useEffect(() => {
-    if (!isWithin7Min || !isReplicaPlaying || officialDrawnFichasIds.length === 0) {
-      if (replicaTimerRef.current) clearInterval(replicaTimerRef.current);
-      return;
-    }
+ useEffect(() => {
+  if (!isWithin7Min || !isReplicaPlaying || officialDrawnFichasIds.length === 0) {
+    if (replicaTimerRef.current) clearInterval(replicaTimerRef.current);
+    return;
+  }
 
-    replicaTimerRef.current = setInterval(() => {
-      setReplicaStep((prev) => {
-        if (prev >= officialDrawnFichasIds.length) {
-          setIsReplicaPlaying(false);
-          if (replicaTimerRef.current) clearInterval(replicaTimerRef.current);
-          return prev;
-        }
-        const next = prev + 1;
-        const currentFichaId = officialDrawnFichasIds[next - 1];
-        if (currentFichaId) {
-          const fichaObj = getFichaById(currentFichaId);
-          if (voiceEnabled) {
-            soundService.playPop();
-            soundService.cantarFicha(fichaObj.pronunciation);
-          }
-        }
-        return next;
-      });
-    }, 1400);
+  // 🆕 FIX BUG 2: No reproducir si no tiene acceso
+  if (!isAccessAllowed) {
+    if (replicaTimerRef.current) clearInterval(replicaTimerRef.current);
+    return;
+  }
 
-    return () => {
-      if (replicaTimerRef.current) clearInterval(replicaTimerRef.current);
-    };
-  }, [isWithin7Min, isReplicaPlaying, officialDrawnFichasIds, voiceEnabled]);
+  replicaTimerRef.current = setInterval(() => {
+    setReplicaStep((prev) => {
+      if (prev >= officialDrawnFichasIds.length) {
+        setIsReplicaPlaying(false);
+        if (replicaTimerRef.current) clearInterval(replicaTimerRef.current);
+        return prev;
+      }
+      const next = prev + 1;
+      const currentFichaId = officialDrawnFichasIds[next - 1];
+      if (currentFichaId) {
+        const fichaObj = getFichaById(currentFichaId);
+        if (voiceEnabled && isAccessAllowed) { // 🆕 FIX BUG 2
+          soundService.playPop();
+          soundService.cantarFicha(fichaObj.pronunciation);
+        }
+      }
+      return next;
+    });
+  }, 1400);
+
+  return () => {
+    if (replicaTimerRef.current) clearInterval(replicaTimerRef.current);
+  };
+}, [isWithin7Min, isReplicaPlaying, officialDrawnFichasIds, voiceEnabled, isAccessAllowed]);
 
   // Drawn list for display:
   // - If in 7-minute replica mode: slice official drawn sequence up to replicaStep
