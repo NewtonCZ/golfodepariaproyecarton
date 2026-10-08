@@ -2979,11 +2979,18 @@ const roundPayload = {
             const balBefore = Number(profile?.saldo || 0);
             const balAfter = balBefore + wonAmount;
 
-            // RPC atómica (evita race conditions)
+                 // RPC atómica (evita race conditions)
             await supabase
               .rpc('incrementar_saldo', { p_user_id: userId, p_monto: wonAmount })
               .then(({ error }) => {
                 if (error) console.warn('[verifyWinners] incrementar_saldo error:', error);
+              });
+
+            // ✅ FIX: Persistir total_won_ves en Supabase
+            await supabase
+              .rpc('incrementar_total_won', { p_user_id: userId, p_monto: wonAmount })
+              .then(({ error }) => {
+                if (error) console.warn('[verifyWinners] incrementar_total_won error:', error);
               });
             console.log('[VW-DIAG] ABOUT TO INSERT LEDGER', { userId, wonAmount, roundId: targetRound.id });
             
