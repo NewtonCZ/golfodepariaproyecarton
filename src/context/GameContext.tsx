@@ -2067,7 +2067,7 @@ if (totalPrize > 0) {
         setLedger((prev) => [...ledgerEntries, ...prev]);
 
                 try {
-          supabase
+  supabase
   .from('profiles')
   .update({
     saldo: saldoFinal,
@@ -2083,6 +2083,23 @@ if (totalPrize > 0) {
                 }
               }
             });
+
+// ✅ FIX: Persistir total_spent_ves y total_won_ves en Supabase
+supabase.rpc('incrementar_total_spent', {
+  p_user_id: session.user.id,
+  p_monto: monto,
+}).then(({ error }) => {
+  if (error) console.warn('[playExpressAnimalito] incrementar_total_spent error:', error);
+});
+
+if (premio > 0) {
+  supabase.rpc('incrementar_total_won', {
+    p_user_id: session.user.id,
+    p_monto: premio,
+  }).then(({ error }) => {
+    if (error) console.warn('[playExpressAnimalito] incrementar_total_won error:', error);
+  });
+}
 
           const ledgerDbPayload = ledgerEntries.map((l) => ({
             id: l.id,
