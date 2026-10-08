@@ -3766,6 +3766,16 @@ const deleteSystemCredential = useCallback(
       supabase.removeChannel(channel);
     };
   }, [isAuthenticated, currentUserId, logout]);
+    // ✅ FIX GLOBAL: Activar audio cuando el usuario está autenticado
+// (va aquí porque currentUser, sessionToken e isAuthenticated ya están definidos)
+useEffect(() => {
+  if (isAuthenticated && sessionToken && currentUser) {
+    soundService.setUserEligibleForAudio(true);
+  } else {
+    soundService.setUserEligibleForAudio(false);
+    soundService.stopAll();
+  }
+}, [isAuthenticated, sessionToken, currentUser]);
 
    const value: GameContextType = {
     currentUser, currentRole, setCurrentRole, operatorRole, setOperatorRole, isAuthenticated, sessionToken, loggedUsername, permissions, activeCredential,
