@@ -1680,13 +1680,20 @@ const fetchJugadores = useCallback(async () => {
             if (error) console.warn('[GameContext] Supabase update round error:', error);
           });
 
-       supabase.from('profiles').update({
+supabase.from('profiles').update({
   saldo: balAfter,
   available_balance: balAfter,
   balance: balAfter,
 }).eq('id', targetUserId).then(() => {});
-      } catch (err) {}
 
+// ✅ FIX: Persistir total_spent_ves en Supabase
+supabase.rpc('incrementar_total_spent', {
+  p_user_id: targetUserId,
+  p_monto: effectivePrice,
+}).then(({ error }) => {
+  if (error) console.warn('[purchaseCards] incrementar_total_spent error:', error);
+});
+      } catch (err) {}
       try {
         syncEngine.broadcastCardsPurchased({
           cards: newCards,
