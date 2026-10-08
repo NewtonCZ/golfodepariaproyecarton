@@ -16,6 +16,9 @@ import { UserProfileModal } from './components/player/UserProfileModal';
 import { AdminPortal } from './components/admin/AdminPortal';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { CustomerSupportWidget } from './components/support/CustomerSupportWidget';
+import { CookieBanner } from './components/legal/CookieBanner';
+import { Footer } from './components/legal/Footer';
+import { PoliticaCookies } from './pages/PoliticaCookies';
 import {
   ShieldCheck,
   Smartphone,
