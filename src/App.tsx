@@ -190,10 +190,16 @@ const AppContent: React.FC = () => {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto mt-6 pt-4 border-t border-slate-900 text-center text-[10px] text-slate-600">
+      <div className="max-w-7xl mx-auto mt-6 pt-4 border-t border-slate-900 text-center text-[10px] text-slate-600">
           © {new Date().getFullYear()} TÚ SUPERCARTÓN Inc. Todos los derechos reservados. Liquidación automática y auditoría contable inmutable.
         </div>
       </footer>
+
+      {/* ✅ NUEVO: Footer legal con datos de empresa */}
+      <Footer />
+
+      {/* ✅ NUEVO: Banner de cookies */}
+      <CookieBanner />
    </div>
  </>
  );
