@@ -111,6 +111,9 @@ const AppContent: React.FC = () => {
               />
             )}
 
+            {/* ✅ NUEVO: Política de Cookies */}
+            {activeTab === 'politica-cookies' && <PoliticaCookies />}
+
             {activeTab === 'admin' && (
               <ProtectedRoute allowedRoles={['Super Admin', 'Operador Financiero', 'Auditor']}>
                 <AdminPortal />
