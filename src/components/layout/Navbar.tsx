@@ -410,71 +410,74 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
       </div>
-
-      {/* Mobile Sticky Bottom Action Bar (Ensures Retirar button is always visible at bottom for mobile) */}
+       {/* Mobile Sticky Bottom Action Bar — 5 botones con brillo diamante */}
       {viewMode === 'player' && (
-        <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-indigo-900/80 px-2 py-2 min-h-[60px] flex items-center justify-around gap-1 shadow-2xl">
-          <button
-            type="button"
-            onClick={() => onSelectTab('home')}
-            className={`flex flex-col items-center justify-center gap-0.5 px-2 py-1 min-h-[44px] min-w-[48px] rounded-xl transition-all cursor-pointer ${
-              currentTab === 'home' ? 'text-amber-400 font-black' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span className="text-[10px] font-bold">Sorteo</span>
-          </button>
+        <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-indigo-900/80 px-2 py-2 shadow-2xl">
+          <div className="grid grid-cols-5 gap-1.5">
 
-          <button
-            type="button"
-            onClick={() => onSelectTab('my-cards')}
-            className={`flex flex-col items-center justify-center gap-0.5 px-2 py-1 min-h-[44px] min-w-[48px] rounded-xl transition-all cursor-pointer ${
-              currentTab === 'my-cards' ? 'text-amber-400 font-black' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span className="text-[10px] font-bold">Cartones</span>
-          </button>
+            {/* 1. Saldo — Verde esmeralda */}
+            <button
+              type="button"
+              onClick={() => onSelectTab('wallet')}
+              className="relative overflow-hidden rounded-xl p-[1.5px] cursor-pointer active:scale-95 transition-all"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-emerald-100 via-emerald-300 to-emerald-100 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-xl" />
+              <div className="relative bg-emerald-500 text-white py-2.5 px-1 rounded-xl font-black text-[10px] text-center">
+                Saldo
+              </div>
+            </button>
 
-          {/* Quick Recharge Button */}
-          <button
-            type="button"
-            onClick={onOpenRecharge}
-            className="flex items-center justify-center gap-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-emerald-950 px-2.5 py-1.5 min-h-[44px] rounded-xl font-black text-xs shadow-md active:scale-95 transition-all cursor-pointer"
-          >
-            <PlusCircle className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Recargar</span>
-          </button>
+            {/* 2. Sorteo — Ámbar */}
+            <button
+              type="button"
+              onClick={() => onSelectTab('home')}
+              className="relative overflow-hidden rounded-xl p-[1.5px] cursor-pointer active:scale-95 transition-all"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-amber-100 via-yellow-300 to-amber-100 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-xl" />
+              <div className="relative bg-amber-500 text-slate-950 py-2.5 px-1 rounded-xl font-black text-[10px] text-center">
+                Sorteo
+              </div>
+            </button>
 
-          {/* Quick Withdraw Button (Mobile Bottom) */}
-          <button
-            type="button"
-            id="mobile-bottom-withdraw-btn"
-            onClick={onOpenWithdraw}
-            className="flex items-center justify-center gap-1 bg-gradient-to-r from-amber-500 to-yellow-400 text-indigo-950 px-2.5 py-1.5 min-h-[44px] rounded-xl font-black text-xs shadow-md shadow-amber-500/20 active:scale-95 transition-all cursor-pointer"
-          >
-            <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Retirar</span>
-          </button>
+            {/* 3. Cartones — Índigo */}
+            <button
+              type="button"
+              onClick={() => onSelectTab('my-cards')}
+              className="relative overflow-hidden rounded-xl p-[1.5px] cursor-pointer active:scale-95 transition-all"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-100 via-indigo-300 to-indigo-100 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-xl" />
+              <div className="relative bg-indigo-500 text-white py-2.5 px-1 rounded-xl font-black text-[10px] text-center">
+                Cartones
+              </div>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => onSelectTab('wallet')}
-            className={`flex flex-col items-center justify-center gap-0.5 px-2 py-1 min-h-[44px] min-w-[48px] rounded-xl transition-all cursor-pointer ${
-              currentTab === 'wallet' ? 'text-amber-400 font-black' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Wallet className="w-4 h-4" />
-            <span className="text-[10px] font-bold">Saldo</span>
-          </button>
+            {/* 4. Recargar — Verde */}
+            <button
+              type="button"
+              onClick={onOpenRecharge}
+              className="relative overflow-hidden rounded-xl p-[1.5px] cursor-pointer active:scale-95 transition-all"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-green-100 via-green-300 to-green-100 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-xl" />
+              <div className="relative bg-green-500 text-white py-2.5 px-1 rounded-xl font-black text-[10px] text-center">
+                Recargar
+              </div>
+            </button>
+
+            {/* 5. Retirar — Amarillo */}
+            <button
+              type="button"
+              onClick={onOpenWithdraw}
+              className="relative overflow-hidden rounded-xl p-[1.5px] cursor-pointer active:scale-95 transition-all"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-yellow-100 via-yellow-300 to-yellow-100 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-xl" />
+              <div className="relative bg-yellow-500 text-slate-950 py-2.5 px-1 rounded-xl font-black text-[10px] text-center">
+                Retirar
+              </div>
+            </button>
+
+          </div>
         </div>
       )}
-
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        initialTab={loginModalTab}
-      />
     </header>
   );
 };
