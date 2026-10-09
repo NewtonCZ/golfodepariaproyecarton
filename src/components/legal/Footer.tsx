@@ -8,9 +8,10 @@ interface FooterProps {
 }
 
 export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
- const reopenCookieBanner = () => {
-  window.dispatchEvent(new Event('open-cookie-config'));
-};
+  // ✅ FIX: usar el mismo evento que escucha el CookieBanner
+  const reopenCookieBanner = () => {
+    window.dispatchEvent(new Event('open-cookie-config'));
+  };
 
   return (
     <footer className="bg-slate-950 border-t border-slate-800 mt-12">
