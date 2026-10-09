@@ -1,164 +1,128 @@
-import React, { useEffect } from 'react';
-import { GameProvider } from './context/GameContext';
-import { useGameViewModel } from './viewmodels/useGameViewModel';
-import { Navbar } from './components/layout/Navbar';
-import { HomeDashboard } from './components/player/HomeDashboard';
-import { MyCardsView } from './components/player/MyCardsView';
-import { LiveDrawViewer } from './components/player/LiveDrawViewer';
-import { ExpressView } from './components/player/ExpressView';
-import { ResultsHistoryView } from './components/player/ResultsHistoryView';
-import { WalletLedgerView } from './components/player/WalletLedgerView';
-import { BuyCardsModal } from './components/player/BuyCardsModal';
-import { RechargeModal } from './components/player/RechargeModal';
-import { WithdrawModal } from './components/player/WithdrawModal';
-import { LoginModal } from './components/common/LoginModal';
-import { UserProfileModal } from './components/player/UserProfileModal';
-import { AdminPortal } from './components/admin/AdminPortal';
-import { ProtectedRoute } from './components/auth/ProtectedRoute';
-import { CustomerSupportWidget } from './components/support/CustomerSupportWidget';
-import { CookieBanner } from './components/legal/CookieBanner';
-import { Footer } from './components/legal/Footer';
-import { PoliticaCookies } from './pages/PoliticaCookies';
-import { TerminosCondiciones } from './pages/TerminosCondiciones';
-import { PoliticaPrivacidad } from './pages/PoliticaPrivacidad';
+import React from 'react';
+import { Mail, Phone, MapPin, FileText, Cookie, Shield, Trash2, Settings } from 'lucide-react';
 
-const ScrollToTop: React.FC<{ dep: string }> = ({ dep }) => {
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [dep]);
-  return null;
-};
+type LegalTab = 'terminos' | 'privacidad' | 'politica-cookies';
 
-const AppContent: React.FC = () => {
-  const {
-    viewMode,
-    activeTab,
-    setActiveTab,
-    selectedRoundId,
-    isBuyCardsOpen,
-    openBuyCards,
-    closeBuyCards,
-    isRechargeOpen,
-    openRecharge,
-    closeRecharge,
-    isWithdrawOpen,
-    openWithdraw,
-    closeWithdraw,
-    isLoginModalOpen,
-    loginModalTab,
-    openLogin,
-    closeLogin,
-    isUserProfileOpen,
-    closeUserProfile,
-  } = useGameViewModel();
-
-  return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col selection:bg-amber-400 selection:text-slate-900">
-      <Navbar
-        currentTab={activeTab}
-        onSelectTab={setActiveTab}
-        onOpenBuyCards={openBuyCards}
-        onOpenRecharge={openRecharge}
-        onOpenWithdraw={openWithdraw}
-        onOpenLogin={openLogin}
-      />
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-20 md:pb-6">
-        <ScrollToTop dep={activeTab} />
-
-        {viewMode === 'admin' ? (
-          <ProtectedRoute allowedRoles={['Super Admin', 'Operador Financiero', 'Auditor']}>
-            <AdminPortal />
-          </ProtectedRoute>
-        ) : (
-          <>
-            {activeTab === 'home' && (
-              <HomeDashboard
-                onOpenBuyCards={openBuyCards}
-                onOpenRecharge={openRecharge}
-                onOpenWithdraw={openWithdraw}
-                onOpenLiveDraw={() => setActiveTab('live-draw')}
-                onOpenMyCards={() => setActiveTab('my-cards')}
-                onOpenExpress={() => setActiveTab('express')}
-              />
-            )}
-
-            {activeTab === 'my-cards' && (
-              <MyCardsView onOpenBuyCards={openBuyCards} />
-            )}
-
-            {activeTab === 'live-draw' && (
-              <LiveDrawViewer
-                onOpenBuyCards={openBuyCards}
-                onOpenLogin={openLogin}
-                onOpenRecharge={openRecharge}
-                onOpenMyCards={() => setActiveTab('my-cards')}
-                onExit={() => setActiveTab('home')}
-              />
-            )}
-
-            {activeTab === 'results' && <ResultsHistoryView />}
-
-            {activeTab === 'express' && <ExpressView />}
-
-            {activeTab === 'wallet' && (
-              <WalletLedgerView
-                onClose={() => setActiveTab('home')}
-                onOpenRecharge={openRecharge}
-                onOpenWithdraw={openWithdraw}
-              />
-            )}
-
-            {activeTab === 'politica-cookies' && <PoliticaCookies />}
-            {activeTab === 'terminos' && <TerminosCondiciones />}
-            {activeTab === 'privacidad' && <PoliticaPrivacidad />}
-
-            {activeTab === 'admin' && (
-              <ProtectedRoute allowedRoles={['Super Admin', 'Operador Financiero', 'Auditor']}>
-                <AdminPortal />
-              </ProtectedRoute>
-            )}
-          </>
-        )}
-      </main>
-
-      <BuyCardsModal
-        isOpen={isBuyCardsOpen}
-        targetRoundId={selectedRoundId}
-        onClose={closeBuyCards}
-        onOpenRecharge={() => {
-          closeBuyCards();
-          openRecharge();
-        }}
-      />
-
-      <RechargeModal isOpen={isRechargeOpen} onClose={closeRecharge} />
-      <WithdrawModal isOpen={isWithdrawOpen} onClose={closeWithdraw} />
-
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={closeLogin}
-        initialTab={loginModalTab}
-      />
-
-      <UserProfileModal
-        isOpen={isUserProfileOpen}
-        onClose={closeUserProfile}
-      />
-
-      <CustomerSupportWidget />
-
-      <Footer onNavigate={setActiveTab} />
-
-      <CookieBanner />
-    </div>
-  );
-};
-
-export default function App() {
-  return (
-    <GameProvider>
-      <AppContent />
-    </GameProvider>
-  );
+interface FooterProps {
+  onNavigate: (tab: LegalTab) => void;
 }
+
+export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
+  const reopenCookieBanner = () => {
+    localStorage.removeItem('cookie-consent');
+    window.dispatchEvent(new Event('open-cookie-banner'));
+  };
+
+  return (
+    <footer className="bg-slate-950 border-t border-slate-800 mt-12">
+      <div className="max-w-6xl mx-auto py-6 px-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div>
+            <h3 className="font-bold text-slate-300 text-[11px] uppercase tracking-wider mb-2">
+              Grupo Agro Cajigal, S.A.
+            </h3>
+            <ul className="space-y-1.5 text-[10px] text-slate-500 leading-relaxed">
+              <li className="flex items-start gap-1.5">
+                <FileText className="w-3 h-3 mt-0.5 shrink-0" />
+                <span>RIF: J-50769027-0</span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
+                <span>
+                  Av. Sucre de Yaguaraparo, Local Nro. S/N,
+                  Zona Yaguaraparo, Yaguaraparo, Sucre, Zona 6155
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 className="font-bold text-slate-300 text-[11px] uppercase tracking-wider mb-2">
+              Contacto
+            </h3>
+            <ul className="space-y-1.5 text-[10px] text-slate-500">
+              <li className="flex items-center gap-1.5">
+                <Mail className="w-3 h-3 shrink-0" />
+                <a href="mailto:grupoagrocajigalsa@gmail.com" className="hover:text-amber-400 transition-colors">
+                  grupoagrocajigalsa@gmail.com
+                </a>
+              </li>
+              <li className="flex items-center gap-1.5">
+                <Phone className="w-3 h-3 shrink-0" />
+                <a href="tel:+584245156225" className="hover:text-amber-400 transition-colors">
+                  0424-5156225
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 className="font-bold text-slate-300 text-[11px] uppercase tracking-wider mb-2">
+              Legal
+            </h3>
+            <ul className="space-y-1.5 text-[10px] text-slate-500">
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('terminos')}
+                  className="flex items-center gap-1.5 hover:text-amber-400 transition-colors text-left"
+                >
+                  <FileText className="w-3 h-3" />
+                  <span>Términos y Condiciones</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('privacidad')}
+                  className="flex items-center gap-1.5 hover:text-amber-400 transition-colors text-left"
+                >
+                  <Shield className="w-3 h-3" />
+                  <span>Política de Privacidad</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('politica-cookies')}
+                  className="flex items-center gap-1.5 hover:text-amber-400 transition-colors text-left"
+                >
+                  <Cookie className="w-3 h-3" />
+                  <span>Política de Cookies</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={reopenCookieBanner}
+                  className="flex items-center gap-1.5 hover:text-amber-400 transition-colors text-left"
+                >
+                  <Settings className="w-3 h-3" />
+                  <span>Configurar cookies</span>
+                </button>
+              </li>
+              <li>
+                <a
+                  href="mailto:grupoagrocajigalsa@gmail.com?subject=Solicitud%20de%20eliminaci%C3%B3n%20de%20datos"
+                  className="flex items-center gap-1.5 hover:text-amber-400 transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Eliminar mis datos</span>
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-slate-900 text-center">
+          <p className="text-[9px] text-slate-600 leading-relaxed">
+            © {new Date().getFullYear()} Grupo Agro Cajigal, S.A. Todos los derechos reservados.
+          </p>
+          <p className="text-[9px] text-slate-700 mt-0.5">
+            Juego responsable · Solo para mayores de 18 años
+          </p>
+        </div>
+      </div>
+    </footer>
+  );
+};
