@@ -205,8 +205,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return;
     }
 
-    if (!agreedToTerms) {
-      setErrorMsg('Debes declarar tu mayoría de edad (+18) y aceptar los términos y condiciones.');
+    if (!agreedToTerms || !agreedToPrivacy || !agreedToCookies) {
+      setErrorMsg('Debes aceptar los Términos y Condiciones, la Política de Privacidad y la Política de Cookies para registrarte.');
       return;
     }
 
