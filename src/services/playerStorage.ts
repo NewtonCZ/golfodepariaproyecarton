@@ -1,7 +1,7 @@
 /**
- * Player Storage Service
+ * Profile Storage Service
  * Handles cloud database persistence for 'profiles' using Supabase.
- * Strictly stores: id, nombre, apellido, cedula, correo, telefono, fechaNacimiento, fechaRegistro.
+ * Strictly stores: id, nombre, apellido, cedula, correo, email, telefono, fecha_nacimiento, is_of_age.
  * No photo/avatar/image properties.
  *
  * NOTA: La única tabla fuente de verdad es 'profiles'.
@@ -10,7 +10,7 @@
 
 import { supabase } from './supabaseClient';
 
-export interface JugadorBingo {
+export interface Profile {
   id: string;
   nombre: string;
   apellido: string;
@@ -24,12 +24,12 @@ export interface JugadorBingo {
 }
 
 // Caché en memoria para acceso rápido y renderizado reactivo instantáneo
-let cachedJugadores: JugadorBingo[] = [];
+let cachedProfiles: Profile[] = [];
 
 /**
- * Normaliza cualquier registro proveniente de Supabase a la interfaz JugadorBingo
+ * Normaliza cualquier registro proveniente de Supabase a la interfaz Profile
  */
-function mapToJugadorBingo(item: any): JugadorBingo {
+function mapToProfile(item: any): Profile {
   let nombre = (item.nombre || item.name || item.first_name || item.firstName || '').trim();
   let apellido = (item.apellido || item.last_name || item.lastName || '').trim();
   if (!apellido && nombre.includes(' ')) {
@@ -39,8 +39,8 @@ function mapToJugadorBingo(item: any): JugadorBingo {
   }
 
   return {
-    id: String(item.id || `jug-${Date.now()}`),
-    nombre: nombre || 'Jugador',
+    id: String(item.id || `prof-${Date.now()}`),
+    nombre: nombre || 'Usuario',
     apellido: apellido || '',
     cedula: String(item.cedula || item.document_id || item.documentId || '').trim().toUpperCase(),
     correo: String(item.correo || item.email || '').trim().toLowerCase(),
@@ -66,9 +66,9 @@ function mapToJugadorBingo(item: any): JugadorBingo {
 }
 
 /**
- * Obtiene la lista de jugadores directamente desde Supabase en la nube
+ * Obtiene la lista de profiles directamente desde Supabase en la nube
  */
-export async function getJugadores(): Promise<JugadorBingo[]> {
+export async function getProfiles(): Promise<Profile[]> {
   try {
     if (supabase.isConfigured || supabase.rawClient) {
       const { data, error } = await supabase
@@ -81,50 +81,50 @@ export async function getJugadores(): Promise<JugadorBingo[]> {
       }
 
       if (!error && Array.isArray(data) && data.length > 0) {
-        const formatted = data.map(mapToJugadorBingo);
-        cachedJugadores = formatted;
+        const formatted = data.map(mapToProfile);
+        cachedProfiles = formatted;
         return formatted;
       }
     }
   } catch (error) {
-    console.error('[playerStorage] Error al leer jugadores desde Supabase:', error);
+    console.error('[playerStorage] Error al leer profiles desde Supabase:', error);
   }
 
-  return cachedJugadores;
+  return cachedProfiles;
 }
 
 /**
- * Acceso sincrónico a la última lista de jugadores obtenida
+ * Acceso sincrónico a la última lista de profiles obtenida
  */
-export function getJugadoresSync(): JugadorBingo[] {
-  return cachedJugadores;
+export function getProfilesSync(): Profile[] {
+  return cachedProfiles;
 }
 
 /**
- * Guarda o actualiza un jugador directamente en Supabase y actualiza la caché local.
+ * Guarda o actualiza un profile directamente en Supabase y actualiza la caché local.
  * Única tabla destino: 'profiles'.
  */
-export async function saveJugador(
-  jugador: Partial<JugadorBingo> & { id: string; cedula: string }
-): Promise<JugadorBingo[]> {
-  let nombre = (jugador.nombre || '').trim();
-  let apellido = (jugador.apellido || '').trim();
+export async function saveProfile(
+  profile: Partial<Profile> & { id: string; cedula: string }
+): Promise<Profile[]> {
+  let nombre = (profile.nombre || '').trim();
+  let apellido = (profile.apellido || '').trim();
   if (!apellido && nombre.includes(' ')) {
     const parts = nombre.split(' ');
     nombre = parts[0];
     apellido = parts.slice(1).join(' ');
   }
 
-  const cleanRecord: JugadorBingo = {
-    id: jugador.id,
-    nombre: nombre || 'Jugador',
+  const cleanRecord: Profile = {
+    id: profile.id,
+    nombre: nombre || 'Usuario',
     apellido: apellido || '',
-    cedula: jugador.cedula.trim().toUpperCase(),
-    correo: (jugador.correo || '').trim().toLowerCase(),
-    telefono: (jugador.telefono || '0412-0000000').trim(),
-    fechaNacimiento: (jugador.fechaNacimiento || '').trim(),
+    cedula: profile.cedula.trim().toUpperCase(),
+    correo: (profile.correo || '').trim().toLowerCase(),
+    telefono: (profile.telefono || '0412-0000000').trim(),
+    fechaNacimiento: (profile.fechaNacimiento || '').trim(),
     fechaRegistro:
-      jugador.fechaRegistro ||
+      profile.fechaRegistro ||
       new Date().toLocaleDateString('es-VE', {
         year: 'numeric',
         month: '2-digit',
@@ -132,7 +132,7 @@ export async function saveJugador(
         hour: '2-digit',
         minute: '2-digit',
       }),
-    password: jugador.password || undefined,
+    password: profile.password || undefined,
   };
 
   try {
@@ -142,11 +142,18 @@ export async function saveJugador(
         nombre: cleanRecord.nombre,
         apellido: cleanRecord.apellido,
         cedula: cleanRecord.cedula,
+        correo: cleanRecord.correo,
         email: cleanRecord.correo,
         telefono: cleanRecord.telefono,
       };
 
-      // Único upsert: 'profiles' es la fuente de verdad
+      // Solo agregar fecha_nacimiento si existe
+      if (cleanRecord.fechaNacimiento) {
+        dbPayload.fecha_nacimiento = cleanRecord.fechaNacimiento;
+        dbPayload.is_of_age = true;
+      }
+
+      // Upsert: 'profiles' es la fuente de verdad
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert(dbPayload, { onConflict: 'id' });
@@ -157,38 +164,56 @@ export async function saveJugador(
       }
     }
   } catch (error) {
-    console.error('[playerStorage] Error al guardar jugador en Supabase:', error);
+    console.error('[playerStorage] Error al guardar profile en Supabase:', error);
   }
 
   // Actualizar caché en memoria
-  const filtered = cachedJugadores.filter(
-    (j) => j.id !== cleanRecord.id && j.cedula.toLowerCase() !== cleanRecord.cedula.toLowerCase()
+  const filtered = cachedProfiles.filter(
+    (p) => p.id !== cleanRecord.id && p.cedula.toLowerCase() !== cleanRecord.cedula.toLowerCase()
   );
-  cachedJugadores = [cleanRecord, ...filtered];
+  cachedProfiles = [cleanRecord, ...filtered];
 
   // Notificación para actualización instantánea en la interfaz
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('profiles_updated', { detail: cachedJugadores }));
+    window.dispatchEvent(new CustomEvent('profiles_updated', { detail: cachedProfiles }));
   }
 
-  return cachedJugadores;
+  return cachedProfiles;
 }
 
-export async function deleteJugador(id: string): Promise<JugadorBingo[]> {
+export async function deleteProfile(id: string): Promise<Profile[]> {
   try {
     if (supabase.isConfigured || supabase.rawClient) {
-      // ✅ Solo borrar de 'profiles'
       await supabase.from('profiles').delete().eq('id', id);
     }
   } catch (error) {
-    console.error('[playerStorage] Error al eliminar jugador en Supabase:', error);
+    console.error('[playerStorage] Error al eliminar profile en Supabase:', error);
   }
 
-  cachedJugadores = cachedJugadores.filter((j) => j.id !== id);
+  cachedProfiles = cachedProfiles.filter((p) => p.id !== id);
 
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('profiles_updated', { detail: cachedJugadores }));
+    window.dispatchEvent(new CustomEvent('profiles_updated', { detail: cachedProfiles }));
   }
 
-  return cachedJugadores;
+  return cachedProfiles;
 }
+
+// ============================================================
+// ALIAS DE COMPATIBILIDAD (para no romper imports viejos)
+// ============================================================
+
+/** @deprecated Usar getProfiles() */
+export const getJugadores = getProfiles;
+
+/** @deprecated Usar getProfilesSync() */
+export const getJugadoresSync = getProfilesSync;
+
+/** @deprecated Usar saveProfile() */
+export const saveJugador = saveProfile;
+
+/** @deprecated Usar deleteProfile() */
+export const deleteJugador = deleteProfile;
+
+/** @deprecated Usar Profile */
+export type JugadorBingo = Profile;
