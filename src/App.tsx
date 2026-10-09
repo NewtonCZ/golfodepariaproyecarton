@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { GameProvider } from './context/GameContext';
 import { useGameViewModel } from './viewmodels/useGameViewModel';
 import { Navbar } from './components/layout/Navbar';
@@ -19,20 +19,19 @@ import { CustomerSupportWidget } from './components/support/CustomerSupportWidge
 import { CookieBanner } from './components/legal/CookieBanner';
 import { Footer } from './components/legal/Footer';
 import { PoliticaCookies } from './pages/PoliticaCookies';
-import {
-  ShieldCheck,
-  Smartphone,
-  Trophy,
-  Sparkles,
-  HelpCircle,
-  Volume2,
-  Lock,
-} from 'lucide-react';
+import { TerminosCondiciones } from './pages/TerminosCondiciones';
+import { PoliticaPrivacidad } from './pages/PoliticaPrivacidad';
+
+const ScrollToTop: React.FC<{ dep: string }> = ({ dep }) => {
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [dep]);
+  return null;
+};
 
 const AppContent: React.FC = () => {
   const {
     viewMode,
-    commercialConfig,
     activeTab,
     setActiveTab,
     selectedRoundId,
@@ -53,10 +52,8 @@ const AppContent: React.FC = () => {
     closeUserProfile,
   } = useGameViewModel();
 
-     return (
-    <>
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col selection:bg-amber-400 selection:text-slate-900">
-      {/* Top Global Navigation */}
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col selection:bg-amber-400 selection:text-slate-900">
       <Navbar
         currentTab={activeTab}
         onSelectTab={setActiveTab}
@@ -66,15 +63,16 @@ const AppContent: React.FC = () => {
         onOpenLogin={openLogin}
       />
 
-      {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-20 md:pb-6">
+        <ScrollToTop dep={activeTab} />
+
         {viewMode === 'admin' ? (
           <ProtectedRoute allowedRoles={['Super Admin', 'Operador Financiero', 'Auditor']}>
             <AdminPortal />
           </ProtectedRoute>
         ) : (
           <>
-                       {activeTab === 'home' && (
+            {activeTab === 'home' && (
               <HomeDashboard
                 onOpenBuyCards={openBuyCards}
                 onOpenRecharge={openRecharge}
@@ -100,7 +98,7 @@ const AppContent: React.FC = () => {
             )}
 
             {activeTab === 'results' && <ResultsHistoryView />}
-            
+
             {activeTab === 'express' && <ExpressView />}
 
             {activeTab === 'wallet' && (
@@ -111,8 +109,9 @@ const AppContent: React.FC = () => {
               />
             )}
 
-            {/* ✅ NUEVO: Política de Cookies */}
             {activeTab === 'politica-cookies' && <PoliticaCookies />}
+            {activeTab === 'terminos' && <TerminosCondiciones />}
+            {activeTab === 'privacidad' && <PoliticaPrivacidad />}
 
             {activeTab === 'admin' && (
               <ProtectedRoute allowedRoles={['Super Admin', 'Operador Financiero', 'Auditor']}>
@@ -123,7 +122,6 @@ const AppContent: React.FC = () => {
         )}
       </main>
 
-      {/* Global Modals */}
       <BuyCardsModal
         isOpen={isBuyCardsOpen}
         targetRoundId={selectedRoundId}
@@ -134,15 +132,8 @@ const AppContent: React.FC = () => {
         }}
       />
 
-      <RechargeModal
-        isOpen={isRechargeOpen}
-        onClose={closeRecharge}
-      />
-
-      <WithdrawModal
-        isOpen={isWithdrawOpen}
-        onClose={closeWithdraw}
-      />
+      <RechargeModal isOpen={isRechargeOpen} onClose={closeRecharge} />
+      <WithdrawModal isOpen={isWithdrawOpen} onClose={closeWithdraw} />
 
       <LoginModal
         isOpen={isLoginModalOpen}
@@ -155,55 +146,15 @@ const AppContent: React.FC = () => {
         onClose={closeUserProfile}
       />
 
-      {/* Floating Customer Support Widget & Ticket Modal */}
       <CustomerSupportWidget />
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800 bg-slate-950 text-slate-400 py-8 px-4 sm:px-6 mt-12 text-xs">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 text-indigo-950 font-black flex items-center justify-center text-sm shadow-md">
-              LF
-            </div>
-            <div>
-              <span className="font-black text-white text-sm block">
-                TÚ SUPERCARTÓN • Sorteos
-              </span>
-              <span className="text-[11px] text-slate-500">
-                Plataforma de Gestión de Cartones con Matriz 4×4 y Cantador por Voz en Español
-              </span>
-            </div>
-          </div>
+      <Footer onNavigate={setActiveTab} />
 
-          <div className="flex flex-wrap items-center gap-4 text-[11px]">
-            <div className="flex items-center gap-1.5 text-slate-300">
-              <Smartphone className="w-4 h-4 text-emerald-400" />
-              <span>Pago Móvil Inmediato (Tasa: {commercialConfig.exchangeRateVesUsd} Bs/$)</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-slate-300">
-              <ShieldCheck className="w-4 h-4 text-indigo-400" />
-              <span>Matriz Certificada 70 Figuras</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-amber-400 font-bold">
-              <span>+18 Juega Responsablemente</span>
-            </div>
-          </div>
-        </div>
-
-      <div className="max-w-7xl mx-auto mt-6 pt-4 border-t border-slate-900 text-center text-[10px] text-slate-600">
-          © {new Date().getFullYear()} TÚ SUPERCARTÓN Inc. Todos los derechos reservados. Liquidación automática y auditoría contable inmutable.
-        </div>
-      </footer>
-
-      {/* ✅ NUEVO: Footer legal con datos de empresa */}
-      <Footer />
-
-      {/* ✅ NUEVO: Banner de cookies */}
       <CookieBanner />
-   </div>
- </>
- );
- };
+    </div>
+  );
+};
+
 export default function App() {
   return (
     <GameProvider>
