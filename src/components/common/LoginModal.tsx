@@ -1243,7 +1243,7 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                       className="mt-0.5 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-400 cursor-pointer"
                     />
                     <label htmlFor="terms-checkbox-step2" className="text-xs text-slate-300 font-medium leading-tight cursor-pointer">
-                      Declaro bajo fe de juramento ser mayor de 18 años y acepto los Términos, Políticas de Privacidad y Reglamento de Juego Responsable (+18) de SuperMillonario Destiny.
+                      Declaro bajo fe de juramento ser mayor de 18 años y acepto los Términos, Políticas de Privacidad y Reglamento de Juego Responsable (+18) de Tú SúperCartón.
                     </label>
                   </div>
                 </div>
