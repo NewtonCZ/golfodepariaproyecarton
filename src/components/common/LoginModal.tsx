@@ -86,6 +86,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
+  const [agreedToCookies, setAgreedToCookies] = useState(false);
+  const [showLegalModal, setShowLegalModal] = useState<null | 'terminos' | 'privacidad' | 'politica-cookies'>(null);
   const [isRegistering, setIsRegistering] = useState(false);
 
   // Visibility toggles for password fields (Show/Hide with eye icon)
