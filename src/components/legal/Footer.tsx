@@ -17,6 +17,8 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
     <footer className="bg-slate-950 border-t border-slate-800 mt-12">
       <div className="max-w-6xl mx-auto py-6 px-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+
+          {/* Empresa */}
           <div>
             <h3 className="font-bold text-slate-300 text-[11px] uppercase tracking-wider mb-2">
               Grupo Agro Cajigal, S.A.
@@ -36,6 +38,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
             </ul>
           </div>
 
+          {/* Contacto */}
           <div>
             <h3 className="font-bold text-slate-300 text-[11px] uppercase tracking-wider mb-2">
               Contacto
@@ -56,6 +59,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
             </ul>
           </div>
 
+          {/* Enlaces legales */}
           <div>
             <h3 className="font-bold text-slate-300 text-[11px] uppercase tracking-wider mb-2">
               Legal
@@ -114,6 +118,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           </div>
         </div>
 
+        {/* Copyright */}
         <div className="mt-5 pt-4 border-t border-slate-900 text-center">
           <p className="text-[9px] text-slate-600 leading-relaxed">
             © {new Date().getFullYear()} Grupo Agro Cajigal, S.A. Todos los derechos reservados.
