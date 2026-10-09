@@ -1,34 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useGame } from '../../context/GameContext';
 import {
-  LogIn,
-  LogOut,
-  Lock,
-  User,
-  X,
-  AlertCircle,
-  CheckCircle2,
-  ShieldCheck,
-  UserPlus,
-  Calendar,
-  Mail,
-  FileText,
-  Phone,
-  ShieldAlert,
-  Sparkles,
-  ArrowRight,
-  ArrowLeft,
-  Check,
-  KeyRound,
-  RefreshCw,
-  Send,
-  HelpCircle,
-  Eye,
-  EyeOff,
+  LogIn, LogOut, Lock, User, X, AlertCircle, CheckCircle2,
+  ShieldCheck, UserPlus, Calendar, Mail, FileText, Phone,
+  ShieldAlert, Sparkles, ArrowRight, ArrowLeft, Check,
+  KeyRound, RefreshCw, Send, HelpCircle, Eye, EyeOff,
 } from 'lucide-react';
 import { LotteryStorageService } from '../../services/storageService';
-import { saveJugador, JugadorBingo,
-} from '../../services/playerStorage';
+import { saveJugador, JugadorBingo } from '../../services/playerStorage';
 import { supabase } from '../../services/supabaseClient';
 import { SuperSparkleBadge } from './SuperSparkleBadge';
 import { API_ENDPOINTS, getSupabaseFunctionHeaders } from '../../services/apiConfig';
@@ -45,28 +24,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   initialTab = 'login',
 }) => {
   const {
-    login,
-    logout,
-    registerUser,
-    requestPasswordRecovery,
-    verifyRecoveryCode,
-    resetPasswordWithCode,
-    isAuthenticated,
-    loggedUsername,
-    currentRole,
+    login, logout, registerUser,
+    requestPasswordRecovery, verifyRecoveryCode, resetPasswordWithCode,
+    isAuthenticated, loggedUsername, currentRole,
   } = useGame();
 
   const [activeTab, setActiveTab] = useState<'login' | 'register' | 'recover'>(initialTab);
-
-  // Registration step wizard: 1 = Personal Data (+18), 2 = Password & Confirmation (+18)
   const [regStep, setRegStep] = useState<1 | 2>(1);
 
   // Login state
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  // Password Recovery state
-  // Steps: 1 = Enter Email / Username, 2 = Enter 6-digit Code, 3 = Enter New Password
+  // Recovery state
   const [recoverStep, setRecoverStep] = useState<1 | 2 | 3>(1);
   const [recoverIdentifier, setRecoverIdentifier] = useState('');
   const [recoverEmail, setRecoverEmail] = useState('');
@@ -91,25 +61,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [showLegalModal, setShowLegalModal] = useState<null | 'terminos' | 'privacidad' | 'politica-cookies'>(null);
   const [isRegistering, setIsRegistering] = useState(false);
 
-  // Visibility toggles for password fields (Show/Hide with eye icon)
+  // Password visibility
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRecoverNewPassword, setShowRecoverNewPassword] = useState(false);
   const [showRecoverConfirmPassword, setShowRecoverConfirmPassword] = useState(false);
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
 
-  // Status feedback
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Check if current typed username is locked out
   const currentLockoutStatus = useMemo(() => {
     if (!username.trim()) return null;
     const check = LotteryStorageService.checkLockoutStatus(username.trim());
     return check.isLocked ? check : null;
   }, [username]);
 
-  // Sync tab with initialTab prop when modal opens
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab);
@@ -118,7 +85,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   }, [isOpen, initialTab]);
 
-  // Age calculation
   const calculatedAge = useMemo(() => {
     if (!birthDate) return null;
     const dob = new Date(birthDate);
@@ -126,9 +92,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     const today = new Date();
     let age = today.getFullYear() - dob.getFullYear();
     const m = today.getMonth() - dob.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
-      age--;
-    }
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
     return age;
   }, [birthDate]);
 
@@ -220,7 +184,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       const cleanLast = lastName.trim();
       const cleanPassword = regPassword.trim();
 
-      // 1. Registro oficial en Supabase Auth con mapeo correcto de credenciales
+      // 1. Registro en Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: cleanEmail,
         password: cleanPassword,
@@ -240,10 +204,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
       if (authError) {
         let customError = authError.message || 'Error al registrar el usuario en Supabase Auth.';
-        if (
-          customError.toLowerCase().includes('already registered') ||
-          customError.toLowerCase().includes('user already exists')
-        ) {
+        if (customError.toLowerCase().includes('already registered') || customError.toLowerCase().includes('user already exists')) {
           customError = 'Este correo electrónico ya se encuentra registrado. Por favor, inicia sesión.';
         } else if (customError.toLowerCase().includes('password')) {
           customError = 'La contraseña no cumple con los requisitos de seguridad de Supabase.';
@@ -253,10 +214,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         return;
       }
 
-      // 2. Determinar ID asignado por Supabase Auth o identificador persistente
       const authUserId = authData?.user?.id || `jug-${Date.now()}`;
 
-      // 3. Persistir registro en la base de datos Supabase (jugadores_bingo)
+      // 2. Persistir en profiles
       const nuevoJugador: JugadorBingo = {
         id: authUserId,
         nombre: cleanFirst,
@@ -266,18 +226,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         telefono: cleanPhone,
         fechaNacimiento: birthDate,
         fechaRegistro: new Date().toLocaleDateString('es-VE', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit',
         }),
       };
       await saveJugador(nuevoJugador);
 
-           await saveJugador(nuevoJugador);
-
-      // 3.5. Registrar consentimiento legal en user_consents (BLOQUEANTE)
+      // 3. Registrar consentimiento legal (BLOQUEANTE)
       try {
         const { error: consentError } = await supabase
           .from('user_consents')
@@ -305,7 +260,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         setIsRegistering(false);
         return;
       }
-      // 4. Sincronizar estado local en el contexto de juego
+
+      // 4. Sincronizar estado local
       const res = registerUser({
         id: authUserId,
         firstName: cleanFirst,
@@ -320,7 +276,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         kycStatus: 'Aprobado',
       });
 
-      // Confirmar mayoría de edad en backend
       try {
         fetch('/api/users/confirm-age', {
           method: 'POST',
@@ -329,7 +284,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         }).catch(() => {});
       } catch {}
 
-      // 5. Gestión del estado de éxito
       const successMessage =
         authData?.session
           ? '¡Cuenta creada y autenticada exitosamente en Supabase!'
@@ -339,7 +293,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
       setSuccessMsg(res?.message || successMessage);
 
-      // Limpiar campos y cerrar modal tras feedback exitoso
       setTimeout(() => {
         onClose();
         setSuccessMsg(null);
@@ -355,138 +308,135 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
- // Password Recovery Step 1: Send Code via Supabase Edge Function
-const handleRequestRecovery = async (e?: React.FormEvent) => {
-  if (e) e.preventDefault();
-  setErrorMsg(null);
-  setSuccessMsg(null);
+  const handleRequestRecovery = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
 
-  const targetIdentifier = (recoverIdentifier || username).trim();
-  if (!targetIdentifier) {
-    setErrorMsg('Por favor ingresa tu correo electrónico, usuario o número de cédula.');
-    return;
-  }
-
-  setIsSendingCode(true);
-
-  try {
-    const resp = await fetch(API_ENDPOINTS.AUTH_SEND_RECOVERY, {
-      method: 'POST',
-      headers: getSupabaseFunctionHeaders(),
-      body: JSON.stringify({ identifier: targetIdentifier }),
-    });
-
-    const contentType = resp.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      throw new Error('El servidor de recuperación no está disponible.');
+    const targetIdentifier = (recoverIdentifier || username).trim();
+    if (!targetIdentifier) {
+      setErrorMsg('Por favor ingresa tu correo electrónico, usuario o número de cédula.');
+      return;
     }
 
-    const data = await resp.json();
-    setIsSendingCode(false);
+    setIsSendingCode(true);
 
-    if (data.success) {
-      setRecoverEmail(data.email || targetIdentifier);
-      setRecoverStep(2);
-      setSuccessMsg(data.message || 'Código enviado. Revisá tu correo y la carpeta de spam.');
-    } else {
-      setErrorMsg(data.error || data.message || 'No se pudo enviar el código.');
+    try {
+      const resp = await fetch(API_ENDPOINTS.AUTH_SEND_RECOVERY, {
+        method: 'POST',
+        headers: getSupabaseFunctionHeaders(),
+        body: JSON.stringify({ identifier: targetIdentifier }),
+      });
+
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('El servidor de recuperación no está disponible.');
+      }
+
+      const data = await resp.json();
+      setIsSendingCode(false);
+
+      if (data.success) {
+        setRecoverEmail(data.email || targetIdentifier);
+        setRecoverStep(2);
+        setSuccessMsg(data.message || 'Código enviado. Revisá tu correo y la carpeta de spam.');
+      } else {
+        setErrorMsg(data.error || data.message || 'No se pudo enviar el código.');
+      }
+    } catch (err: any) {
+      setIsSendingCode(false);
+      setErrorMsg(err?.message || 'Error al enviar el código de recuperación.');
     }
-  } catch (err: any) {
-    setIsSendingCode(false);
-    setErrorMsg(err?.message || 'Error al enviar el código de recuperación.');
-  }
-};
+  };
 
-// Password Recovery Step 2: Verify Code
-const handleVerifyCodeSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setErrorMsg(null);
-  setSuccessMsg(null);
+  const handleVerifyCodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
 
-  const cleanCode = recoverCode.trim();
-  if (!cleanCode || cleanCode.length !== 6) {
-    setErrorMsg('Por favor ingresa el código de 6 dígitos enviado a tu correo.');
-    return;
-  }
-
-  try {
-    const resp = await fetch(API_ENDPOINTS.AUTH_VERIFY_RECOVERY, {
-      method: 'POST',
-      headers: getSupabaseFunctionHeaders(),
-      body: JSON.stringify({ email: recoverEmail, code: cleanCode }),
-    });
-
-    const contentType = resp.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      throw new Error('El servidor de verificación no está disponible.');
-    }
-
-    const data = await resp.json();
-
-    if (data.valid || data.success) {
-      setSuccessMsg('Código verificado con éxito.');
-      setRecoverStep(3);
-    } else {
-      setErrorMsg(data.error || data.message || 'Código incorrecto o expirado.');
-    }
-  } catch (err: any) {
-    setErrorMsg(err?.message || 'Error al verificar el código.');
-  }
-};
-
-// Password Recovery Step 3: Set New Password
-const handleResetPasswordSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setErrorMsg(null);
-  setSuccessMsg(null);
-
-  if (!recoverNewPassword || recoverNewPassword.length < 6) {
-    setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.');
-    return;
-  }
-
-  if (recoverNewPassword !== recoverConfirmPassword) {
-    setErrorMsg('Las contraseñas no coinciden.');
-    return;
-  }
-
-  try {
-    const resp = await fetch(API_ENDPOINTS.AUTH_RESET_PASSWORD, {
-      method: 'POST',
-      headers: getSupabaseFunctionHeaders(),
-      body: JSON.stringify({
-        email: recoverEmail,
-        code: recoverCode,
-        newPassword: recoverNewPassword,
-      }),
-    });
-
-    const contentType = resp.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      throw new Error('El servidor de cambio de contraseña no está disponible.');
+    const cleanCode = recoverCode.trim();
+    if (!cleanCode || cleanCode.length !== 6) {
+      setErrorMsg('Por favor ingresa el código de 6 dígitos enviado a tu correo.');
+      return;
     }
 
-    const data = await resp.json();
+    try {
+      const resp = await fetch(API_ENDPOINTS.AUTH_VERIFY_RECOVERY, {
+        method: 'POST',
+        headers: getSupabaseFunctionHeaders(),
+        body: JSON.stringify({ email: recoverEmail, code: cleanCode }),
+      });
 
-    if (data.success) {
-      setSuccessMsg(data.message || '¡Contraseña restablecida exitosamente!');
-      setTimeout(() => {
-        setActiveTab('login');
-        setUsername(recoverEmail);
-        setPassword('');
-        setRecoverStep(1);
-        setRecoverCode('');
-        setRecoverNewPassword('');
-        setRecoverConfirmPassword('');
-        setDemoRecoveryCode(null);
-      }, 1500);
-    } else {
-      setErrorMsg(data.error || data.message || 'No se pudo cambiar la contraseña.');
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('El servidor de verificación no está disponible.');
+      }
+
+      const data = await resp.json();
+
+      if (data.valid || data.success) {
+        setSuccessMsg('Código verificado con éxito.');
+        setRecoverStep(3);
+      } else {
+        setErrorMsg(data.error || data.message || 'Código incorrecto o expirado.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Error al verificar el código.');
     }
-  } catch (err: any) {
-    setErrorMsg(err?.message || 'Error al cambiar la contraseña.');
-  }
-};
+  };
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (!recoverNewPassword || recoverNewPassword.length < 6) {
+      setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    if (recoverNewPassword !== recoverConfirmPassword) {
+      setErrorMsg('Las contraseñas no coinciden.');
+      return;
+    }
+
+    try {
+      const resp = await fetch(API_ENDPOINTS.AUTH_RESET_PASSWORD, {
+        method: 'POST',
+        headers: getSupabaseFunctionHeaders(),
+        body: JSON.stringify({
+          email: recoverEmail,
+          code: recoverCode,
+          newPassword: recoverNewPassword,
+        }),
+      });
+
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('El servidor de cambio de contraseña no está disponible.');
+      }
+
+      const data = await resp.json();
+
+      if (data.success) {
+        setSuccessMsg(data.message || '¡Contraseña restablecida exitosamente!');
+        setTimeout(() => {
+          setActiveTab('login');
+          setUsername(recoverEmail);
+          setPassword('');
+          setRecoverStep(1);
+          setRecoverCode('');
+          setRecoverNewPassword('');
+          setRecoverConfirmPassword('');
+          setDemoRecoveryCode(null);
+        }, 1500);
+      } else {
+        setErrorMsg(data.error || data.message || 'No se pudo cambiar la contraseña.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Error al cambiar la contraseña.');
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -499,10 +449,9 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
 
   return (
     <div className="fixed inset-0 z-50 w-screen h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-3 sm:p-6 lg:p-8 animate-fadeIn overflow-hidden">
-      {/* Container aligned to full viewport height without internal scrollbars */}
       <div className="max-w-2xl mx-auto w-full h-full flex flex-col justify-between overflow-hidden">
-        
-        {/* Top Header */}
+
+        {/* Header */}
         <div className="shrink-0 space-y-2.5 pb-2 border-b border-slate-800">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -529,10 +478,8 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                 </p>
               </div>
             </div>
-
             <button
               type="button"
-              id="close-login-modal-btn"
               onClick={onClose}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition-all text-xs font-bold cursor-pointer"
             >
@@ -541,58 +488,33 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
             </button>
           </div>
 
-          {/* Mode Selector Tabs */}
+          {/* Mode Selector */}
           <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 gap-1">
             <button
               type="button"
-              id="login-tab-btn"
-              onClick={() => {
-                setActiveTab('login');
-                setErrorMsg(null);
-                setSuccessMsg(null);
-              }}
+              onClick={() => { setActiveTab('login'); setErrorMsg(null); setSuccessMsg(null); }}
               className={`flex-1 py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'login'
-                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                  : 'text-slate-400 hover:text-white'
+                activeTab === 'login' ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-white'
               }`}
             >
               <LogIn className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Iniciar Sesión</span>
             </button>
-
             <button
               type="button"
-              id="register-tab-btn"
-              onClick={() => {
-                setActiveTab('register');
-                setErrorMsg(null);
-                setSuccessMsg(null);
-              }}
+              onClick={() => { setActiveTab('register'); setErrorMsg(null); setSuccessMsg(null); }}
               className={`flex-1 py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'register'
-                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                  : 'text-slate-400 hover:text-white'
+                activeTab === 'register' ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-white'
               }`}
             >
               <UserPlus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Registro (+18)</span>
             </button>
-
             <button
               type="button"
-              id="recover-tab-btn"
-              onClick={() => {
-                setActiveTab('recover');
-                setRecoverStep(1);
-                if (username) setRecoverIdentifier(username);
-                setErrorMsg(null);
-                setSuccessMsg(null);
-              }}
+              onClick={() => { setActiveTab('recover'); setRecoverStep(1); if (username) setRecoverIdentifier(username); setErrorMsg(null); setSuccessMsg(null); }}
               className={`flex-1 py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'recover'
-                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                  : 'text-slate-400 hover:text-white'
+                activeTab === 'recover' ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-white'
               }`}
             >
               <KeyRound className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -600,7 +522,7 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
             </button>
           </div>
 
-          {/* Step Progress Bar (Register mode - 2 Steps) */}
+          {/* Progress (Register) */}
           {activeTab === 'register' && (
             <div className="flex items-center justify-between text-xs pt-1">
               {[
@@ -625,11 +547,9 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                   {regStep > s.step ? (
                     <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
                   ) : (
-                    <span
-                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
-                        regStep === s.step ? 'bg-amber-400 text-slate-950 font-black' : 'bg-slate-800 text-slate-400'
-                      }`}
-                    >
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
+                      regStep === s.step ? 'bg-amber-400 text-slate-950 font-black' : 'bg-slate-800 text-slate-400'
+                    }`}>
                       {s.step}
                     </span>
                   )}
@@ -639,7 +559,7 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
             </div>
           )}
 
-          {/* Step Progress Bar (Recover mode) */}
+          {/* Progress (Recover) */}
           {activeTab === 'recover' && (
             <div className="flex items-center justify-between text-xs pt-1">
               {[
@@ -660,11 +580,9 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                   {recoverStep > s.step ? (
                     <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
                   ) : (
-                    <span
-                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
-                        recoverStep === s.step ? 'bg-amber-400 text-slate-950 font-black' : 'bg-slate-800 text-slate-400'
-                      }`}
-                    >
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
+                      recoverStep === s.step ? 'bg-amber-400 text-slate-950 font-black' : 'bg-slate-800 text-slate-400'
+                    }`}>
                       {s.step}
                     </span>
                   )}
@@ -675,18 +593,15 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
           )}
         </div>
 
-        {/* Middle Body Section (Fits screen without internal scroll bars) */}
+        {/* Body */}
         <div className="flex-1 my-auto flex flex-col justify-center py-2 space-y-3 overflow-hidden">
-          
-          {/* Active Session Notice */}
+
           {isAuthenticated && (
             <div className="p-2.5 bg-emerald-950/50 border border-emerald-500/40 rounded-xl flex items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
                 <div>
-                  <span className="text-[10px] text-emerald-400 font-bold uppercase block">
-                    Sesión Activa ({currentRole})
-                  </span>
+                  <span className="text-[10px] text-emerald-400 font-bold uppercase block">Sesión Activa ({currentRole})</span>
                   <span className="text-xs font-black text-white">@{loggedUsername || 'Usuario'}</span>
                 </div>
               </div>
@@ -701,25 +616,17 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
             </div>
           )}
 
-          {/* Security Alert: Temporary Lockout Active */}
           {currentLockoutStatus && (
             <div className="p-2.5 bg-rose-950/90 border border-rose-600 rounded-xl text-xs text-rose-200 flex items-start gap-2 animate-fadeIn shrink-0">
               <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <p className="font-bold text-rose-100">
-                  ¡Cuenta Bloqueada por Seguridad (3 intentos fallidos)!
-                </p>
+                <p className="font-bold text-rose-100">¡Cuenta Bloqueada por Seguridad (3 intentos fallidos)!</p>
                 <p className="text-[11px] text-rose-300 leading-tight">
-                  Tiempo restante de bloqueo: {currentLockoutStatus.remainingMinutes} minuto(s). Puedes restablecer tu clave inmediatamente con tu correo electrónico.
+                  Tiempo restante de bloqueo: {currentLockoutStatus.remainingMinutes} minuto(s).
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveTab('recover');
-                    setRecoverIdentifier(username);
-                    setRecoverStep(1);
-                    setErrorMsg(null);
-                  }}
+                  onClick={() => { setActiveTab('recover'); setRecoverIdentifier(username); setRecoverStep(1); setErrorMsg(null); }}
                   className="inline-flex items-center gap-1 text-[11px] font-black text-amber-300 underline hover:text-amber-200 cursor-pointer pt-0.5"
                 >
                   <KeyRound className="w-3 h-3" />
@@ -729,7 +636,6 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
             </div>
           )}
 
-          {/* Feedback Banners */}
           {errorMsg && (
             <div className="p-2.5 bg-rose-950/90 border border-rose-800 text-rose-200 text-xs rounded-xl flex items-center gap-2 animate-fadeIn shrink-0">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
@@ -744,7 +650,7 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
             </div>
           )}
 
-          {/* TAB 1: LOGIN FORM */}
+          {/* LOGIN TAB */}
           {activeTab === 'login' && (
             <form onSubmit={handleLoginSubmit} className="space-y-3 my-auto">
               <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
@@ -772,13 +678,7 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                   <label className="block text-xs font-bold text-slate-300">Contraseña</label>
                   <button
                     type="button"
-                    onClick={() => {
-                      setActiveTab('recover');
-                      setRecoverIdentifier(username);
-                      setRecoverStep(1);
-                      setErrorMsg(null);
-                      setSuccessMsg(null);
-                    }}
+                    onClick={() => { setActiveTab('recover'); setRecoverIdentifier(username); setRecoverStep(1); setErrorMsg(null); setSuccessMsg(null); }}
                     className="text-[11px] text-amber-400 hover:underline font-bold cursor-pointer"
                   >
                     ¿Olvidaste tu contraseña?
@@ -799,7 +699,6 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                     onClick={() => setShowLoginPassword((prev) => !prev)}
                     className="absolute right-3 top-2.5 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer p-0.5"
                     tabIndex={-1}
-                    title={showLoginPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
                   >
                     {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -818,11 +717,7 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                 <span className="text-slate-400">¿No posees cuenta?</span>
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveTab('register');
-                    setErrorMsg(null);
-                    setSuccessMsg(null);
-                  }}
+                  onClick={() => { setActiveTab('register'); setErrorMsg(null); setSuccessMsg(null); }}
                   className="font-black text-amber-400 hover:underline cursor-pointer"
                 >
                   Regístrate gratis (+18 y KYC)
@@ -831,10 +726,9 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
             </form>
           )}
 
-          {/* TAB 2: PASSWORD RECOVERY (EMAIL 3-STEP FLOW) */}
+          {/* RECOVER TAB */}
           {activeTab === 'recover' && (
             <div className="space-y-3 my-auto">
-              {/* Recover Step 1: Request code to email */}
               {recoverStep === 1 && (
                 <form onSubmit={handleRequestRecovery} className="space-y-3 animate-fadeIn">
                   <div className="p-3 bg-amber-950/30 border border-amber-500/40 rounded-xl flex items-start gap-2.5 text-xs text-amber-300">
@@ -842,15 +736,12 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                     <div>
                       <p className="font-black text-amber-200">Recuperación Segura por Correo Electrónico</p>
                       <p className="text-[11px] text-amber-300/90 mt-0.5 leading-tight">
-                        Ingresa tu correo electrónico registrado, nombre de usuario o Cédula. Te enviaremos un código de seguridad de 6 dígitos para restablecer tu clave y desbloquear tu cuenta.
+                        Ingresa tu correo electrónico registrado, nombre de usuario o Cédula.
                       </p>
                     </div>
                   </div>
-
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">
-                      Correo Electrónico, Usuario o Cédula *
-                    </label>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Correo Electrónico, Usuario o Cédula *</label>
                     <div className="relative">
                       <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                       <input
@@ -863,39 +754,25 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                       />
                     </div>
                   </div>
-
                   <button
                     type="submit"
                     disabled={isSendingCode}
                     className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                   >
                     {isSendingCode ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Enviando código de verificación...</span>
-                      </>
+                      <><RefreshCw className="w-4 h-4 animate-spin" /><span>Enviando...</span></>
                     ) : (
-                      <>
-                        <Send className="w-4 h-4 stroke-[2.5]" />
-                        <span>Enviar Código de Recuperación</span>
-                      </>
+                      <><Send className="w-4 h-4 stroke-[2.5]" /><span>Enviar Código de Recuperación</span></>
                     )}
                   </button>
-
                   <div className="text-center pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('login')}
-                      className="text-xs text-slate-400 hover:text-white font-bold cursor-pointer inline-flex items-center gap-1"
-                    >
-                      <ArrowLeft className="w-3.5 h-3.5" />
-                      <span>Volver al inicio de sesión</span>
+                    <button type="button" onClick={() => setActiveTab('login')} className="text-xs text-slate-400 hover:text-white font-bold cursor-pointer inline-flex items-center gap-1">
+                      <ArrowLeft className="w-3.5 h-3.5" /><span>Volver al inicio de sesión</span>
                     </button>
                   </div>
                 </form>
               )}
 
-              {/* Recover Step 2: Validate 6-digit Code */}
               {recoverStep === 2 && (
                 <form onSubmit={handleVerifyCodeSubmit} className="space-y-3 animate-fadeIn">
                   <div className="p-3 bg-indigo-950/50 border border-indigo-500/40 rounded-xl space-y-1.5 text-xs text-indigo-200">
@@ -904,33 +781,22 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                         <KeyRound className="w-4 h-4 text-amber-400" />
                         Código de Verificación Enviado
                       </span>
-                      <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold">
-                        Válido por 30 min
-                      </span>
+                      <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold">Válido por 30 min</span>
                     </div>
                     <p className="text-[11px] text-slate-300">
                       Hemos enviado un código a: <strong className="text-amber-300">{recoverEmail}</strong>
                     </p>
-
-                    {/* Simulation helper banner for quick testing */}
                     {demoRecoveryCode && (
                       <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center justify-between text-[11px]">
                         <span className="text-amber-200">Código de seguridad (Bandeja / Demo):</span>
-                        <button
-                          type="button"
-                          onClick={() => setRecoverCode(demoRecoveryCode)}
-                          className="font-black text-amber-400 bg-amber-950 px-2 py-0.5 rounded border border-amber-600 hover:bg-amber-900 cursor-pointer"
-                        >
+                        <button type="button" onClick={() => setRecoverCode(demoRecoveryCode)} className="font-black text-amber-400 bg-amber-950 px-2 py-0.5 rounded border border-amber-600 hover:bg-amber-900 cursor-pointer">
                           Usar {demoRecoveryCode}
                         </button>
                       </div>
                     )}
                   </div>
-
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">
-                      Código de 6 Dígitos *
-                    </label>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Código de 6 Dígitos *</label>
                     <input
                       type="text"
                       required
@@ -941,7 +807,6 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                       className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-amber-400 tracking-widest text-center py-2.5 rounded-xl text-base font-black focus:outline-none"
                     />
                   </div>
-
                   <button
                     type="submit"
                     className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
@@ -949,46 +814,29 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                     <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
                     <span>Verificar Código</span>
                   </button>
-
                   <div className="flex items-center justify-between text-xs pt-1 px-1">
-                    <button
-                      type="button"
-                      onClick={() => setRecoverStep(1)}
-                      className="text-slate-400 hover:text-white font-bold cursor-pointer inline-flex items-center gap-1"
-                    >
-                      <ArrowLeft className="w-3.5 h-3.5" />
-                      <span>Cambiar correo</span>
+                    <button type="button" onClick={() => setRecoverStep(1)} className="text-slate-400 hover:text-white font-bold cursor-pointer inline-flex items-center gap-1">
+                      <ArrowLeft className="w-3.5 h-3.5" /><span>Cambiar correo</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRequestRecovery()}
-                      className="text-amber-400 hover:underline font-bold cursor-pointer inline-flex items-center gap-1"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      <span>Reenviar código</span>
+                    <button type="button" onClick={() => handleRequestRecovery()} className="text-amber-400 hover:underline font-bold cursor-pointer inline-flex items-center gap-1">
+                      <RefreshCw className="w-3 h-3" /><span>Reenviar código</span>
                     </button>
                   </div>
                 </form>
               )}
 
-              {/* Recover Step 3: Enter New Password */}
               {recoverStep === 3 && (
                 <form onSubmit={handleResetPasswordSubmit} className="space-y-3 animate-fadeIn">
                   <div className="p-3 bg-emerald-950/40 border border-emerald-500/40 rounded-xl text-xs text-emerald-200 flex items-center gap-2">
                     <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                     <div>
                       <p className="font-black text-emerald-100">Identidad Confirmada</p>
-                      <p className="text-[11px] text-emerald-300">
-                        Crea tu nueva contraseña para la cuenta <strong>{recoverEmail}</strong>.
-                      </p>
+                      <p className="text-[11px] text-emerald-300">Crea tu nueva contraseña para <strong>{recoverEmail}</strong>.</p>
                     </div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                        Nueva Contraseña *
-                      </label>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">Nueva Contraseña *</label>
                       <div className="relative">
                         <input
                           type={showRecoverNewPassword ? 'text' : 'password'}
@@ -999,21 +847,13 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                           placeholder="Mínimo 6 caracteres"
                           className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white pl-3 pr-8 py-2 rounded-xl text-xs font-medium focus:outline-none"
                         />
-                        <button
-                          type="button"
-                          onClick={() => setShowRecoverNewPassword((prev) => !prev)}
-                          className="absolute right-2 top-2 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer p-0.5"
-                          tabIndex={-1}
-                          title={showRecoverNewPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
-                        >
+                        <button type="button" onClick={() => setShowRecoverNewPassword((prev) => !prev)} className="absolute right-2 top-2 text-slate-400 hover:text-amber-400 cursor-pointer p-0.5" tabIndex={-1}>
                           {showRecoverNewPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                        Confirmar Nueva Clave *
-                      </label>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">Confirmar Nueva Clave *</label>
                       <div className="relative">
                         <input
                           type={showRecoverConfirmPassword ? 'text' : 'password'}
@@ -1024,19 +864,12 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                           placeholder="Repite la contraseña"
                           className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white pl-3 pr-8 py-2 rounded-xl text-xs font-medium focus:outline-none"
                         />
-                        <button
-                          type="button"
-                          onClick={() => setShowRecoverConfirmPassword((prev) => !prev)}
-                          className="absolute right-2 top-2 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer p-0.5"
-                          tabIndex={-1}
-                          title={showRecoverConfirmPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
-                        >
+                        <button type="button" onClick={() => setShowRecoverConfirmPassword((prev) => !prev)} className="absolute right-2 top-2 text-slate-400 hover:text-amber-400 cursor-pointer p-0.5" tabIndex={-1}>
                           {showRecoverConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </div>
                   </div>
-
                   <button
                     type="submit"
                     className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
@@ -1049,11 +882,10 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
             </div>
           )}
 
-          {/* TAB 3: REGISTER FORM (FULL SCREEN 2-STEP FLOW) */}
+          {/* REGISTER TAB */}
           {activeTab === 'register' && (
             <form onSubmit={(e) => { e.preventDefault(); if (regStep === 1) handleNextStep(); else handleRegisterSubmit(e); }} className="space-y-3 my-auto">
-              
-              {/* STEP 1: PERSONAL DATA (+18 VALIDATION) */}
+
               {regStep === 1 && (
                 <div className="space-y-2.5 animate-fadeIn">
                   <div className="bg-amber-950/40 border border-amber-500/40 p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs text-amber-300">
@@ -1069,90 +901,41 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1">Nombre *</label>
-                      <input
-                        type="text"
-                        required
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        placeholder="Ej. Juan"
-                        className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none"
-                      />
+                      <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Ej. Juan" className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none" />
                     </div>
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1">Apellido *</label>
-                      <input
-                        type="text"
-                        required
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        placeholder="Ej. Pérez"
-                        className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none"
-                      />
+                      <input type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Ej. Pérez" className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none" />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1">Cédula de Identidad (DNI) *</label>
-                      <input
-                        type="text"
-                        required
-                        value={documentId}
-                        onChange={(e) => setDocumentId(e.target.value)}
-                        placeholder="V-28123456"
-                        className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none"
-                      />
+                      <input type="text" required value={documentId} onChange={(e) => setDocumentId(e.target.value)} placeholder="V-28123456" className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none" />
                     </div>
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1">Correo Electrónico *</label>
-                      <input
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="correo@ejemplo.com"
-                        className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none"
-                      />
+                      <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@ejemplo.com" className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none" />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1">Teléfono Móvil</label>
-                      <input
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="0412-1234567"
-                        className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none"
-                      />
+                      <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0412-1234567" className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none" />
                     </div>
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1">Fecha de Nacimiento *</label>
-                      <input
-                        type="date"
-                        required
-                        value={birthDate}
-                        onChange={(e) => setBirthDate(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none"
-                      />
+                      <input type="date" required value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white px-3 py-2 rounded-xl text-xs font-medium focus:outline-none" />
                     </div>
                   </div>
 
-                  {/* Dynamic Age Badge */}
                   {birthDate && (
-                    <div
-                      className={`p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all ${
-                        isAdult
-                          ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-300'
-                          : 'bg-rose-950/60 border-rose-500/60 text-rose-300'
-                      }`}
-                    >
-                      {isAdult ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                      )}
+                    <div className={`p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all ${
+                      isAdult ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-300' : 'bg-rose-950/60 border-rose-500/60 text-rose-300'
+                    }`}>
+                      {isAdult ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}
                       <span>
                         {isAdult
                           ? `Edad: ${calculatedAge} años — Mayoría de Edad Aprobada (+18)`
@@ -1163,7 +946,6 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                 </div>
               )}
 
-              {/* STEP 2: PASSWORD & CONFIRMATION */}
               {regStep === 2 && (
                 <div className="space-y-3 animate-fadeIn">
                   <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between">
@@ -1184,22 +966,8 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1">Crear Contraseña *</label>
                       <div className="relative">
-                        <input
-                          type={showRegPassword ? 'text' : 'password'}
-                          required
-                          minLength={6}
-                          value={regPassword}
-                          onChange={(e) => setRegPassword(e.target.value)}
-                          placeholder="Mínimo 6 caracteres"
-                          className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white pl-3 pr-8 py-2 rounded-xl text-xs font-medium focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowRegPassword((prev) => !prev)}
-                          className="absolute right-2 top-2 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer p-0.5"
-                          tabIndex={-1}
-                          title={showRegPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
-                        >
+                        <input type={showRegPassword ? 'text' : 'password'} required minLength={6} value={regPassword} onChange={(e) => setRegPassword(e.target.value)} placeholder="Mínimo 6 caracteres" className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white pl-3 pr-8 py-2 rounded-xl text-xs font-medium focus:outline-none" />
+                        <button type="button" onClick={() => setShowRegPassword((prev) => !prev)} className="absolute right-2 top-2 text-slate-400 hover:text-amber-400 cursor-pointer p-0.5" tabIndex={-1}>
                           {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
                       </div>
@@ -1207,22 +975,8 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1">Confirmar Contraseña *</label>
                       <div className="relative">
-                        <input
-                          type={showRegConfirmPassword ? 'text' : 'password'}
-                          required
-                          minLength={6}
-                          value={regConfirmPassword}
-                          onChange={(e) => setRegConfirmPassword(e.target.value)}
-                          placeholder="Repite la contraseña"
-                          className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white pl-3 pr-8 py-2 rounded-xl text-xs font-medium focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowRegConfirmPassword((prev) => !prev)}
-                          className="absolute right-2 top-2 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer p-0.5"
-                          tabIndex={-1}
-                          title={showRegConfirmPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
-                        >
+                        <input type={showRegConfirmPassword ? 'text' : 'password'} required minLength={6} value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} placeholder="Repite la contraseña" className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white pl-3 pr-8 py-2 rounded-xl text-xs font-medium focus:outline-none" />
+                        <button type="button" onClick={() => setShowRegConfirmPassword((prev) => !prev)} className="absolute right-2 top-2 text-slate-400 hover:text-amber-400 cursor-pointer p-0.5" tabIndex={-1}>
                           {showRegConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
                       </div>
@@ -1231,20 +985,63 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
 
                   <div className="bg-slate-900/90 border border-slate-800 p-2 rounded-xl flex items-center gap-2 text-xs text-slate-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Tu cuenta se creará con estado <strong>Aprobado</strong> y saldo inicial de <strong>0,00 Bs.</strong> Podrás recargar saldo vía Pago Móvil cuando lo desees.</span>
+                    <span>Tu cuenta se creará con estado <strong>Aprobado</strong> y saldo inicial de <strong>0,00 Bs.</strong></span>
                   </div>
 
-                  <div className="flex items-start gap-2 pt-0.5">
-                    <input
-                      type="checkbox"
-                      id="terms-checkbox-step2"
-                      checked={agreedToTerms}
-                      onChange={(e) => setAgreedToTerms(e.target.checked)}
-                      className="mt-0.5 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-400 cursor-pointer"
-                    />
-                    <label htmlFor="terms-checkbox-step2" className="text-xs text-slate-300 font-medium leading-tight cursor-pointer">
-                      Declaro bajo fe de juramento ser mayor de 18 años y acepto los Términos, Políticas de Privacidad y Reglamento de Juego Responsable (+18) de Tú SúperCartón.
-                    </label>
+                  <div className="space-y-2 pt-0.5">
+                    {/* Checkbox 1 */}
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        id="adult-checkbox"
+                        checked={agreedToTerms}
+                        onChange={(e) => setAgreedToTerms(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-400 cursor-pointer"
+                      />
+                      <label htmlFor="adult-checkbox" className="text-xs text-slate-300 font-medium leading-tight cursor-pointer">
+                        Declaro bajo fe de juramento ser <strong>mayor de 18 años</strong> y acepto los{' '}
+                        <button type="button" onClick={() => setShowLegalModal('terminos')} className="text-amber-400 underline hover:text-amber-300 font-bold">
+                          Términos y Condiciones
+                        </button>
+                        .
+                      </label>
+                    </div>
+
+                    {/* Checkbox 2 */}
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        id="privacy-checkbox"
+                        checked={agreedToPrivacy}
+                        onChange={(e) => setAgreedToPrivacy(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-400 cursor-pointer"
+                      />
+                      <label htmlFor="privacy-checkbox" className="text-xs text-slate-300 font-medium leading-tight cursor-pointer">
+                        He leído y acepto la{' '}
+                        <button type="button" onClick={() => setShowLegalModal('privacidad')} className="text-amber-400 underline hover:text-amber-300 font-bold">
+                          Política de Privacidad
+                        </button>
+                        .
+                      </label>
+                    </div>
+
+                    {/* Checkbox 3 */}
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        id="cookies-checkbox"
+                        checked={agreedToCookies}
+                        onChange={(e) => setAgreedToCookies(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-400 cursor-pointer"
+                      />
+                      <label htmlFor="cookies-checkbox" className="text-xs text-slate-300 font-medium leading-tight cursor-pointer">
+                        He leído y acepto la{' '}
+                        <button type="button" onClick={() => setShowLegalModal('politica-cookies')} className="text-amber-400 underline hover:text-amber-300 font-bold">
+                          Política de Cookies
+                        </button>
+                        .
+                      </label>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1254,15 +1051,11 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
 
         </div>
 
-        {/* Bottom Footer Navigation Bar (Only for Register Mode) */}
+        {/* Footer Navigation */}
         {activeTab === 'register' && (
           <div className="shrink-0 pt-2 border-t border-slate-800 flex items-center gap-2">
             {regStep === 2 && (
-              <button
-                type="button"
-                onClick={() => setRegStep(1)}
-                className="px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-xs rounded-xl border border-slate-800 transition-all flex items-center gap-1.5 cursor-pointer"
-              >
+              <button type="button" onClick={() => setRegStep(1)} className="px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 font-bold text-xs rounded-xl border border-slate-800 transition-all flex items-center gap-1.5 cursor-pointer">
                 <ArrowLeft className="w-4 h-4" />
                 <span>Atrás</span>
               </button>
@@ -1286,9 +1079,19 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
               <button
                 type="button"
                 onClick={handleRegisterSubmit}
-                disabled={(calculatedAge !== null && calculatedAge < 18) || isRegistering}
+                disabled={
+                  (calculatedAge !== null && calculatedAge < 18) ||
+                  isRegistering ||
+                  !agreedToTerms ||
+                  !agreedToPrivacy ||
+                  !agreedToCookies
+                }
                 className={`flex-1 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer ${
-                  (calculatedAge !== null && calculatedAge < 18) || isRegistering
+                  (calculatedAge !== null && calculatedAge < 18) ||
+                  isRegistering ||
+                  !agreedToTerms ||
+                  !agreedToPrivacy ||
+                  !agreedToCookies
                     ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                     : 'bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/20 active:scale-95'
                 }`}
@@ -1310,6 +1113,71 @@ const handleResetPasswordSubmit = async (e: React.FormEvent) => {
         )}
 
       </div>
+
+      {/* MODAL DE DOCUMENTOS LEGALES */}
+      {showLegalModal && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
+          onClick={() => setShowLegalModal(null)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+              <h2 className="text-lg font-black text-white">
+                {showLegalModal === 'terminos' && 'Términos y Condiciones'}
+                {showLegalModal === 'privacidad' && 'Política de Privacidad'}
+                {showLegalModal === 'politica-cookies' && 'Política de Cookies'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowLegalModal(null)}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all text-xs font-bold cursor-pointer flex items-center gap-1.5"
+              >
+                <span>Cerrar</span>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="prose prose-invert max-w-none text-xs leading-relaxed space-y-4">
+              {showLegalModal === 'terminos' && (
+                <>
+                  <p><strong>Última actualización:</strong> 08/10/2026 · Versión 1.0</p>
+                  <p>La plataforma <strong>Tú SúperCartón</strong> es operada por Grupo Agro Cajigal, S.A., RIF J-50769027-0, con domicilio en Av. Sucre de Yaguaraparo, Local Nro. S/N, Zona Yaguaraparo, Yaguaraparo, Sucre, Zona 6155, Venezuela.</p>
+                  <p>El acceso, registro o uso de la Plataforma implica la aceptación plena de estos Términos, de la Política de Privacidad y de la Política de Cookies.</p>
+                  <p>Los servicios están dirigidos exclusivamente a <strong>personas mayores de 18 años</strong>. El registro requiere verificación KYC y validación de cédula venezolana.</p>
+                  <p>La participación en sorteos es voluntaria y de carácter recreativo. No hay garantía de ganancia.</p>
+                  <p>Los retiros requieren verificación de identidad previa. Los reembolsos proceden solo en casos de cargos duplicados o fallas técnicas comprobadas.</p>
+                  <p>El usuario puede ejercer sus derechos ARCO escribiendo a <strong>grupoagrocajigalsa@gmail.com</strong>.</p>
+                  <p className="text-slate-500 italic">Para leer los Términos completos, cerrá este modal y hacé clic en "Términos y Condiciones" en el footer.</p>
+                </>
+              )}
+
+              {showLegalModal === 'privacidad' && (
+                <>
+                  <p><strong>Última actualización:</strong> 08/10/2026 · Versión 1.0</p>
+                  <p><strong>Responsable:</strong> Grupo Agro Cajigal, S.A. — RIF J-50769027-0.</p>
+                  <p><strong>Datos que recopilamos:</strong> nombre, correo, cédula, teléfono, transacciones, IP y datos del dispositivo.</p>
+                  <p><strong>Finalidad:</strong> verificar identidad (+18), gestionar la cuenta, procesar pagos, prevenir fraude y cumplir obligaciones legales.</p>
+                  <p><strong>Compartición:</strong> Supabase (base de datos), Render (infraestructura), Cloudflare (seguridad), pasarelas de pago y autoridades cuando sea requerido.</p>
+                  <p><strong>Derechos ARCO:</strong> acceso, rectificación, cancelación, oposición y portabilidad. Escribí a <strong>grupoagrocajigalsa@gmail.com</strong> con asunto "Solicitud ARCO".</p>
+                  <p className="text-slate-500 italic">Para leer la Política completa, cerrá este modal y hacé clic en "Política de Privacidad" en el footer.</p>
+                </>
+              )}
+
+              {showLegalModal === 'politica-cookies' && (
+                <>
+                  <p><strong>Última actualización:</strong> 08/10/2026 · Versión 1.0</p>
+                  <p>Usamos cookies esenciales (obligatorias para el funcionamiento), de rendimiento, de funcionalidad y de terceros (Supabase, Render, Cloudflare).</p>
+                  <p>Podés aceptar todas, rechazar las no esenciales o configurar tus preferencias desde el banner de cookies.</p>
+                  <p className="text-slate-500 italic">Para leer la Política completa, cerrá este modal y hacé clic en "Política de Cookies" en el footer.</p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
