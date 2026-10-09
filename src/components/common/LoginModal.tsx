@@ -275,6 +275,36 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       };
       await saveJugador(nuevoJugador);
 
+           await saveJugador(nuevoJugador);
+
+      // 3.5. Registrar consentimiento legal en user_consents (BLOQUEANTE)
+      try {
+        const { error: consentError } = await supabase
+          .from('user_consents')
+          .insert({
+            user_id: authUserId,
+            terms_accepted: true,
+            privacy_accepted: true,
+            cookies_accepted: true,
+            terms_version: '1.0',
+            privacy_version: '1.0',
+            cookies_version: '1.0',
+            user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+            accepted_at: new Date().toISOString(),
+          });
+
+        if (consentError) {
+          console.error('[LoginModal] Error guardando consentimiento:', consentError);
+          setErrorMsg('No se pudo registrar tu consentimiento legal. Por favor, intentá de nuevo.');
+          setIsRegistering(false);
+          return;
+        }
+      } catch (consentErr) {
+        console.error('[LoginModal] Excepción guardando consentimiento:', consentErr);
+        setErrorMsg('Error crítico al registrar el consentimiento. Contactá a soporte.');
+        setIsRegistering(false);
+        return;
+      }
       // 4. Sincronizar estado local en el contexto de juego
       const res = registerUser({
         id: authUserId,
