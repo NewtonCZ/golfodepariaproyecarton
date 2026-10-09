@@ -17,15 +17,27 @@ interface CookiePreferences {
 export const CookieBanner: React.FC = () => {
   const [showBanner, setShowBanner] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
+
+  // ✅ FIX: Todo desactivado por defecto excepto esenciales
   const [preferences, setPreferences] = useState<CookiePreferences>({
     essential: true,
-    performance: true,
-    functionality: true,
-    thirdParty: true,
+    performance: false,
+    functionality: false,
+    thirdParty: false,
     acceptedAt: '',
     expiresAt: '',
     version: '1.0',
   });
+
+  // ✅ FIX: Escuchar evento para reabrir configuración desde el footer
+  useEffect(() => {
+    const handleOpenConfig = () => {
+      setShowBanner(true);
+      setShowConfig(true);
+    };
+    window.addEventListener('open-cookie-config', handleOpenConfig);
+    return () => window.removeEventListener('open-cookie-config', handleOpenConfig);
+  }, []);
 
   useEffect(() => {
     try {
@@ -45,7 +57,8 @@ export const CookieBanner: React.FC = () => {
         return;
       }
 
-      // Consentimiento válido → no mostrar banner
+      // Consentimiento válido → cargar preferencias guardadas
+      setPreferences(parsed);
     } catch {
       setShowBanner(true);
     }
@@ -80,6 +93,7 @@ export const CookieBanner: React.FC = () => {
   const handleSaveConfig = () => {
     const prefs: CookiePreferences = {
       ...preferences,
+      essential: true, // Siempre true
       acceptedAt: new Date().toISOString(),
       expiresAt: getExpirationDate(),
       version: '1.0',
@@ -92,10 +106,10 @@ export const CookieBanner: React.FC = () => {
     return new Date(Date.now() + expirationMs).toISOString();
   };
 
-  const savePreferences = (prefs: CookiePreferences) => {
+  const savePreferences = async (prefs: CookiePreferences) => {
     try {
       localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(prefs));
-      // TODO: Persistir en Supabase (tabla user_consents)
+      // TODO: Persistir en Supabase (tabla user_consents) si el usuario está logueado
     } catch (e) {
       console.warn('[CookieBanner] Error guardando preferencias:', e);
     }
@@ -119,8 +133,9 @@ export const CookieBanner: React.FC = () => {
                   🍪 Usamos cookies
                 </h3>
                 <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                  Utilizamos cookies para mejorar tu experiencia, analizar el tráfico y personalizar contenido.
+                  Utilizamos cookies para mejorar tu experiencia y analizar el tráfico.
                   Podés aceptar todas, rechazar las no esenciales o configurar tus preferencias.
+                  Las cookies no esenciales <strong>no se cargan hasta que las aceptes</strong>.
                   {' '}
                   <a
                     href="/politica-cookies"
@@ -196,6 +211,7 @@ export const CookieBanner: React.FC = () => {
                     className={`w-12 h-6 rounded-full transition-all cursor-pointer ${
                       preferences.performance ? 'bg-emerald-500' : 'bg-slate-700'
                     }`}
+                    aria-label="Activar cookies de rendimiento"
                   >
                     <div
                       className={`w-5 h-5 rounded-full bg-white transition-all ${
@@ -219,6 +235,7 @@ export const CookieBanner: React.FC = () => {
                     className={`w-12 h-6 rounded-full transition-all cursor-pointer ${
                       preferences.functionality ? 'bg-emerald-500' : 'bg-slate-700'
                     }`}
+                    aria-label="Activar cookies de funcionalidad"
                   >
                     <div
                       className={`w-5 h-5 rounded-full bg-white transition-all ${
@@ -234,7 +251,7 @@ export const CookieBanner: React.FC = () => {
                   <div>
                     <h4 className="font-bold text-white text-sm">Cookies de terceros</h4>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Supabase, Render, Cloudflare.
+                      Servicios externos (analíticas, marketing).
                     </p>
                   </div>
                   <button
@@ -242,6 +259,7 @@ export const CookieBanner: React.FC = () => {
                     className={`w-12 h-6 rounded-full transition-all cursor-pointer ${
                       preferences.thirdParty ? 'bg-emerald-500' : 'bg-slate-700'
                     }`}
+                    aria-label="Activar cookies de terceros"
                   >
                     <div
                       className={`w-5 h-5 rounded-full bg-white transition-all ${
