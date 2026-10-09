@@ -2,7 +2,17 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useGame } from '../context/GameContext';
 import { Ficha, MatrixCard } from '../types';
 
-export type MainTabType = 'home' | 'my-cards' | 'live-draw' | 'results' | 'wallet' | 'admin' | 'express';
+export type MainTabType =
+  | 'home'
+  | 'my-cards'
+  | 'live-draw'
+  | 'results'
+  | 'wallet'
+  | 'admin'
+  | 'express'
+  | 'terminos'
+  | 'privacidad'
+  | 'politica-cookies';
 
 interface SavedUiState {
   activeTab: MainTabType;
