@@ -5,7 +5,7 @@ export const TerminosCondiciones: React.FC = () => {
     <div className="max-w-4xl mx-auto py-8 px-4 text-slate-200">
       <h1 className="text-3xl font-black text-white mb-2">Términos y Condiciones</h1>
       <p className="text-sm text-slate-400 mb-8">
-        Última actualización: 08/10/2026 · Versión 1.0
+        Última actualización: 09/10/2026 · Versión 1.0
       </p>
 
       <div className="prose prose-invert max-w-none space-y-6 text-sm leading-relaxed">
@@ -88,7 +88,27 @@ export const TerminosCondiciones: React.FC = () => {
         </section>
 
         <section>
-          <h2 className="text-xl font-black text-white mb-3">8. Privacidad, Datos y Derechos ARCO</h2>
+          <h2 className="text-xl font-black text-white mb-3">8. Uso de Inteligencia Artificial</h2>
+          <p>
+            El servicio utiliza sistemas de inteligencia artificial desarrollados internamente para:
+          </p>
+          <ul className="list-disc pl-6 mt-2 space-y-1">
+            <li>La generación y distribución aleatoria de fichas y cartones de bingo.</li>
+            <li>La moderación automática de contenido generado por los usuarios.</li>
+          </ul>
+          <p className="mt-3">
+            Estos sistemas operan con datos anónimos y conforme a nuestra Política de Privacidad.
+            El usuario acepta que su participación en el servicio implique el uso de estas tecnologías.
+          </p>
+          <p className="mt-3">
+            Nos reservamos el derecho de incorporar en el futuro sistemas de IA de terceros para
+            otras funciones (como atención al cliente), lo que será informado mediante la
+            actualización de estas políticas.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-black text-white mb-3">9. Privacidad, Datos y Derechos ARCO</h2>
           <p>
             El tratamiento de datos cumple con la normativa venezolana de protección de datos. Los datos se
             almacenan en <strong>Supabase</strong> y se gestionan con <strong>Render</strong> y <strong>Cloudflare</strong>.
@@ -108,7 +128,7 @@ export const TerminosCondiciones: React.FC = () => {
         </section>
 
         <section>
-          <h2 className="text-xl font-black text-white mb-3">9. Propiedad Intelectual</h2>
+          <h2 className="text-xl font-black text-white mb-3">10. Propiedad Intelectual</h2>
           <p>
             Todos los activos gráficos, textos, software, algoritmos, marcas y el nombre <strong>"Tú SúperCartón"</strong>
             son propiedad exclusiva de la empresa y están protegidos por las leyes de propiedad intelectual
@@ -117,7 +137,7 @@ export const TerminosCondiciones: React.FC = () => {
         </section>
 
         <section>
-          <h2 className="text-xl font-black text-white mb-3">10. Limitación de Responsabilidad</h2>
+          <h2 className="text-xl font-black text-white mb-3">11. Limitación de Responsabilidad</h2>
           <p>
             La empresa no será responsable por interrupciones ajenas a su control, uso indebido de la cuenta,
             ni daños indirectos. <strong>Esta limitación no aplica en casos de dolo o culpa grave</strong> de la
@@ -130,7 +150,7 @@ export const TerminosCondiciones: React.FC = () => {
         </section>
 
         <section>
-          <h2 className="text-xl font-black text-white mb-3">11. Prohibiciones</h2>
+          <h2 className="text-xl font-black text-white mb-3">12. Prohibiciones</h2>
           <p>El usuario se obliga a no:</p>
           <ul className="list-disc pl-6 space-y-1 mt-1">
             <li>Usar bots, scripts o automatizaciones.</li>
@@ -147,7 +167,7 @@ export const TerminosCondiciones: React.FC = () => {
         </section>
 
         <section>
-          <h2 className="text-xl font-black text-white mb-3">12. Modificaciones</h2>
+          <h2 className="text-xl font-black text-white mb-3">13. Modificaciones</h2>
           <p>
             La empresa puede modificar estos Términos en cualquier momento. Los cambios se notificarán por
             correo o dentro de la Plataforma con <strong>15 días de antelación</strong>. El uso continuado implica
@@ -156,7 +176,7 @@ export const TerminosCondiciones: React.FC = () => {
         </section>
 
         <section>
-          <h2 className="text-xl font-black text-white mb-3">13. Resolución de Disputas</h2>
+          <h2 className="text-xl font-black text-white mb-3">14. Resolución de Disputas</h2>
           <p>
             Las partes intentarán resolver cualquier controversia de buena fe mediante negociación directa.
             Si no hay acuerdo, se somete a mediación ante un centro reconocido en Venezuela. En última
@@ -166,7 +186,7 @@ export const TerminosCondiciones: React.FC = () => {
         </section>
 
         <section>
-          <h2 className="text-xl font-black text-white mb-3">14. Contacto</h2>
+          <h2 className="text-xl font-black text-white mb-3">15. Contacto</h2>
           <ul className="list-disc pl-6 space-y-1">
             <li><strong>Email:</strong> grupoagrocajigalsa@gmail.com</li>
             <li><strong>Teléfono:</strong> 0424-5156225</li>
