@@ -250,7 +250,7 @@ export const supabase = {
    * Sin esto, `supabase.rpc('nombre_funcion', { ... })` revienta con
    * "TypeError: ... .rpc is not a function".
    */
-  rpc(fn: string, params?: Record<string, any>): Promise<{ data: any; error: any }> {
+    rpc(fn: string, params?: Record<string, any>): Promise<{ data: any; error: any }> {
     if (realSupabaseClient) {
       return realSupabaseClient.rpc(fn, params);
     }
@@ -263,6 +263,38 @@ export const supabase = {
       },
     });
   },
+  /**
+   * Supabase Edge Functions — llamada a función serverless.
+   * Sin esto, `supabase.functions.invoke('record-consent', ...)` revienta con
+   * "TypeError: Cannot read properties of undefined (reading 'invoke')".
+   */
+  functions: {
+    async invoke(
+      fnName: string,
+      options?: { body?: any; headers?: Record<string, string> }
+    ): Promise<{ data: any; error: any }> {
+      if (realSupabaseClient) {
+        try {
+          const res = await realSupabaseClient.functions.invoke(fnName, options);
+          return res;
+        } catch (err: any) {
+          console.warn(`[supabaseClient] functions.invoke("${fnName}") exception:`, err);
+          return {
+            data: null,
+            error: { message: err?.message || 'Error calling edge function' },
+          };
+        }
+      }
+      return {
+        data: null,
+        error: {
+          code: 'OFFLINE',
+          message: `[supabaseClient] Cliente Supabase NO inicializado. Function "${fnName}" NO se ejecutó.`,
+        },
+      };
+    },
+  },
+  from(tableName: string): any {
   from(tableName: string): any {
     if (realSupabaseClient) {
       return realSupabaseClient.from(tableName);
