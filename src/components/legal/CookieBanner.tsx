@@ -123,23 +123,23 @@ export const CookieBanner: React.FC = () => {
       if (userId) {
         const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : null;
 
-        const { error: upsertError } = await supabase
+        // La fila SIEMPRE existe (el registro la crea con un INSERT bloqueante).
+        // Usamos UPDATE para no chocar con las constraints NOT NULL del resto de columnas
+        // (terms_version, privacy_version, etc.) que el INSERT hubiera puesto en NULL.
+        const { error: updateError } = await supabase
           .from('user_consents')
-          .upsert(
-            {
-              user_id: userId,
-              cookies_accepted: true,
-              cookies_version: prefs.version,
-              user_agent: userAgent,
-              accepted_at: prefs.acceptedAt,
-            },
-            { onConflict: 'user_id' }
-          );
+          .update({
+            cookies_accepted: true,
+            cookies_version: prefs.version,
+            user_agent: userAgent,
+            accepted_at: prefs.acceptedAt,
+          })
+          .eq('user_id', userId);
 
-        if (upsertError) {
-          console.warn('[CookieBanner] Error persistiendo consent en Supabase:', upsertError);
+        if (updateError) {
+          console.warn('[CookieBanner] Error actualizando consent en Supabase:', updateError);
         } else {
-          console.log('[CookieBanner] Consentimiento persistido en Supabase para user:', userId);
+          console.log('[CookieBanner] Consentimiento actualizado en Supabase para user:', userId);
         }
       }
     } catch (e) {
