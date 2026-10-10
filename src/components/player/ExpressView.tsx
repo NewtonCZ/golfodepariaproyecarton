@@ -4,7 +4,7 @@ import { getFichaById } from '../../data/fichasPool';
 import { FichaBadge } from '../common/FichaBadge';
 import { FichaImg } from '../common/FichaImg';
 import { soundService } from '../../services/soundAndSpeech';
-import { Sparkles, Zap, Trophy, AlertCircle, RotateCcw, Play } from 'lucide-react';
+import { Sparkles, Zap, Trophy, AlertCircle, RotateCcw, Play, ArrowLeft } from 'lucide-react';
 
 interface PlayResult {
   drawnFichas: number[];
@@ -18,7 +18,11 @@ type Phase = 'idle' | 'dealing' | 'drawing' | 'result';
 const DRAW_INTERVAL_MS = 3000;
 const DEAL_DELAY_MS = 300;
 
-export const ExpressView: React.FC = () => {
+interface ExpressViewProps {
+  onExit?: () => void;
+}
+
+export const ExpressView: React.FC<ExpressViewProps> = ({ onExit }) => {
   const { playExpress, formatMoney, commercialConfig, currentUser } = useGame();
 
   const [phase, setPhase] = useState<Phase>('idle');
@@ -120,7 +124,18 @@ export const ExpressView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto py-6 px-4">
+    <div className="max-w-5xl mx-auto py-6 px-4 relative">
+      {/* ✅ BOTÓN DE RETORNO — Esquina superior izquierda */}
+      <button
+        type="button"
+        onClick={onExit}
+        className="absolute top-2 left-2 z-50 w-10 h-10 rounded-full bg-slate-800/90 hover:bg-rose-600 border border-slate-700 hover:border-rose-500 text-slate-300 hover:text-white flex items-center justify-center transition-all shadow-lg active:scale-95 cursor-pointer"
+        title="Volver al inicio"
+        aria-label="Volver al inicio"
+      >
+        <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
+      </button>
+
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider shadow-lg shadow-amber-500/30">
           <Zap className="w-4 h-4 fill-current" />
@@ -290,7 +305,6 @@ const PackButton: React.FC<{
     onClick={() => onPlay(pack)}
     className="group relative w-full overflow-hidden rounded-[18px] p-[2px] text-left transition-all hover:scale-[1.01] active:scale-[0.99]"
   >
-    {/* ESTE ES EL BRILLO QUE BRILLA ALREDEDOR - MISMO QUE EL AZUL */}
     <div className="absolute inset-0 bg-gradient-to-r from-cyan-100 via-blue-500 to-cyan-100 bg-[length:200%_100%] animate-[shimmer_3s_linear_infinite] rounded-[18px]" />
 
     <div className="relative flex w-full items-center gap-3 rounded-[16px] bg-[#121a2e] px-3 py-2.5">
