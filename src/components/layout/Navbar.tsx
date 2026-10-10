@@ -50,7 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     activeCredential,
     formatMoney,
     activeRound,
-    rounds,                    // ← AGREGAR
+    rounds,
     isLiveDrawing,
     isAuthenticated,
     loggedUsername,
@@ -408,7 +408,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
       </div>
-       {/* Mobile Sticky Bottom Action Bar — 5 botones con brillo diamante */}
+
+      {/* Mobile Sticky Bottom Action Bar — 5 botones con brillo diamante */}
       {viewMode === 'player' && (
         <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-indigo-900/80 px-2 py-2 shadow-2xl">
           <div className="grid grid-cols-5 gap-1.5">
@@ -476,6 +477,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
       )}
+
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        initialTab={loginModalTab}
+      />
     </header>
   );
 };
