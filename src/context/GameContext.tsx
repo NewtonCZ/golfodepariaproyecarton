@@ -2531,7 +2531,7 @@ if (premio > 0) {
     [currentUser, formatMoney, addAuditLog]
   );
 
-  const completeWithdrawal = useCallback(
+    const completeWithdrawal = useCallback(
     (transactionId: string): { success: boolean; message: string } => {
       const target = withdrawals.find((w) => w.id === transactionId);
       if (!target) return { success: false, message: 'Retiro no encontrado.' };
@@ -2539,19 +2539,27 @@ if (premio > 0) {
       const processedAt = new Date().toISOString();
       const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
 
+      // 1. Actualizar withdrawal local
       setWithdrawals((prev) =>
-        prev.map((w) => (w.id === transactionId ? { ...w, status: 'completed', processedAt, processedBy } : w))
+        prev.map((w) =>
+          w.id === transactionId ? { ...w, status: 'completed', processedAt, processedBy } : w
+        )
       );
 
+      // 2. ✅ FIX: pendingBalance baja + lockedBalance sube
       setUsers((prev) =>
         prev.map((u) =>
           u.id === target.userId
-            ? { ...u, pendingBalance: Math.max(0, (u.pendingBalance || 0) - target.amountVes) }
+            ? {
+                ...u,
+                pendingBalance: Math.max(0, (u.pendingBalance || 0) - target.amountVes),
+                lockedBalance: (u.lockedBalance || 0) + target.amountVes,
+              }
             : u
         )
       );
 
-      // Backend API
+      // 3. Backend API
       try {
         fetch('/api/withdrawals/complete', {
           method: 'POST',
@@ -2560,14 +2568,43 @@ if (premio > 0) {
         }).catch(() => {});
       } catch {}
 
-          // Supabase sync: En withdrawals solo existe status
+      // 4. ✅ FIX: Actualizar withdrawals + profiles en Supabase
       try {
+        // 4.1 Actualizar withdrawal
         supabase
           .from('withdrawals')
           .update({ status: 'completed' })
           .eq('id', transactionId)
           .then(({ error }) => {
             if (error) console.warn('[GameContext] Supabase update withdrawal error:', error);
+          });
+
+        // 4.2 ✅ FIX: Actualizar profiles (pending_balance baja + locked_balance sube)
+        supabase
+          .from('profiles')
+          .select('pending_balance, locked_balance')
+          .eq('id', target.userId)
+          .maybeSingle()
+          .then(({ data: profile }) => {
+            if (profile) {
+              const currentPending = Number(profile.pending_balance || 0);
+              const currentLocked = Number(profile.locked_balance || 0);
+              const newPending = Math.max(0, currentPending - target.amountVes);
+              const newLocked = currentLocked + target.amountVes;
+
+              supabase
+                .from('profiles')
+                .update({
+                  pending_balance: newPending,
+                  locked_balance: newLocked,
+                })
+                .eq('id', target.userId)
+                .then(({ error: updateError }) => {
+                  if (updateError) {
+                    console.warn('[GameContext] Error updating profiles balances:', updateError);
+                  }
+                });
+            }
           });
       } catch (err) {
         console.warn('[GameContext] Error completando withdrawal en Supabase:', err);
@@ -2582,7 +2619,7 @@ if (premio > 0) {
     },
     [withdrawals, loggedUsername, activeCredential, operatorRole, formatMoney, addAuditLog]
   );
-  
+
   const rejectWithdrawal = useCallback(
     (transactionId: string, reason: string): { success: boolean; message: string } => {
       const target = withdrawals.find((w) => w.id === transactionId);
@@ -2591,11 +2628,16 @@ if (premio > 0) {
       const processedAt = new Date().toISOString();
       const processedBy = loggedUsername || activeCredential?.displayName || operatorRole;
 
+      // 1. Actualizar withdrawal local
       setWithdrawals((prev) =>
-        prev.map((w) => (w.id === transactionId ? { ...w, status: 'rejected', rejectionReason: reason, processedAt, processedBy } : w))
+        prev.map((w) =>
+          w.id === transactionId
+            ? { ...w, status: 'rejected', rejectionReason: reason, processedAt, processedBy }
+            : w
+        )
       );
 
-      // Devolver saldo al usuario localmente
+      // 2. ✅ FIX: Devolver saldo + bajar pendingBalance
       let balBefore = 0;
       let balAfter = 0;
       setUsers((prev) =>
@@ -2615,7 +2657,7 @@ if (premio > 0) {
         })
       );
 
-      // Backend API
+      // 3. Backend API
       try {
         fetch('/api/withdrawals/reject', {
           method: 'POST',
@@ -2624,8 +2666,9 @@ if (premio > 0) {
         }).catch(() => {});
       } catch {}
 
-      // Supabase sync: Reintegrar balance en profiles.saldo y actualizar status en withdrawals
+      // 4. ✅ FIX: Supabase - actualizar withdrawal + profiles + ledger
       try {
+        // 4.1 Actualizar withdrawal
         supabase
           .from('withdrawals')
           .update({ status: 'rejected' })
@@ -2634,37 +2677,57 @@ if (premio > 0) {
             if (error) console.warn('[GameContext] Supabase reject withdrawal error:', error);
           });
 
-        // Registrar devolución en ledger
-        supabase.from('ledger').insert({
-          id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-          user_id: target.userId,
-          user_name: target.userName,
-          type: 'withdrawal_refund',
-          amount_ves: target.amountVes,
-          balance_before: balBefore,
-          balance_after: balAfter,
-          description: `Reembolso por retiro rechazado (${reason})`,
-          reference_id: target.id,
-          created_at: processedAt,
-        }).then(() => {});
+        // 4.2 Registrar devolución en ledger
+        supabase
+          .from('ledger')
+          .insert({
+            id: `led-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+            user_id: target.userId,
+            user_name: target.userName,
+            type: 'withdrawal_refund',
+            amount_ves: target.amountVes,
+            balance_before: balBefore,
+            balance_after: balAfter,
+            description: `Reembolso por retiro rechazado (${reason})`,
+            reference_id: target.id,
+            created_at: processedAt,
+          })
+          .then(() => {});
 
-        // Reintegrar en profiles
+        // 4.3 ✅ FIX: Actualizar profiles (saldo sube + pending_balance baja)
         supabase
           .from('profiles')
-          .select('saldo')
+          .select('saldo, available_balance, pending_balance')
           .eq('id', target.userId)
           .maybeSingle()
-          .then(({ data: jb }) => {
-            if (jb) {
-              const currentSaldo = Number(jb.saldo || 0);
+          .then(({ data: profile }) => {
+            if (profile) {
+              const currentSaldo = Number(profile.saldo || 0);
+              const currentAvailable = Number(profile.available_balance || 0);
+              const currentPending = Number(profile.pending_balance || 0);
+
+              const newSaldo = currentSaldo + target.amountVes;
+              const newAvailable = currentAvailable + target.amountVes;
+              const newPending = Math.max(0, currentPending - target.amountVes);
+
               supabase
                 .from('profiles')
-                .update({ saldo: currentSaldo + target.amountVes })
+                .update({
+                  saldo: newSaldo,
+                  available_balance: newAvailable,
+                  pending_balance: newPending,
+                })
                 .eq('id', target.userId)
-                .then(() => {});
+                .then(({ error: updateError }) => {
+                  if (updateError) {
+                    console.warn('[GameContext] Error updating profiles balances:', updateError);
+                  }
+                });
             }
           });
-      } catch {}
+      } catch (err) {
+        console.warn('[GameContext] Error rechazando withdrawal en Supabase:', err);
+      }
 
       addAuditLog('RECHAZAR_RETIRO', `Retiro ${transactionId} rechazado. Motivo: ${reason}`);
       return { success: true, message: 'Retiro rechazado y saldo reintegrado al usuario.' };
