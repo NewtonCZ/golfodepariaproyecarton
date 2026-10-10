@@ -294,25 +294,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Sparkles className="w-3.5 h-3.5" />
               <span>Exprés</span>
             </button>
-
-            <button
-              id="nav-tab-admin"
-              onClick={() => {
-                if (typeof window !== 'undefined' && window.history?.pushState) {
-                  window.history.pushState({}, '', '/admin');
-                }
-                onSelectTab('admin');
-              }}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 min-h-[36px] rounded-xl font-bold text-xs transition-all ${
-                currentTab === 'admin'
-                  ? 'bg-amber-500 text-indigo-950 shadow-md font-black'
-                  : 'text-indigo-200 hover:text-white hover:bg-indigo-800/60'
-              }`}
-              title="Panel /admin - Listado de Jugadores Registrados"
-            >
-              <Users className="w-3.5 h-3.5 text-amber-300" />
-              <span>Jugadores /admin</span>
-            </button>
           </nav>
         )}
 
