@@ -1273,11 +1273,29 @@ const fetchJugadores = useCallback(async () => {
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'withdrawals' }, (payload: any) => {
           if (payload?.new) {
-            const item = payload.new as WithdrawalTransaction;
+            const row = payload.new as any;
+            const d = row.data || {};
+            const item: WithdrawalTransaction = {
+              id: String(row.id),
+              userId: String(row.user_id || ''),
+              userName: d.titularName || d.userName || row.user_name || 'Jugador',
+              userPhone: d.userPhone || d.phoneOrAccount || row.phone_or_account || '',
+              amountVes: Number(row.amount || row.amount_ves || 0),
+              channel: d.channel || row.channel || 'pago_movil',
+              bankDest: d.bankDest || row.bank_dest || 'Banco de Venezuela',
+              phoneOrAccount: d.phoneOrAccount || row.phone_or_account || '',
+              documentId: d.documentId || row.document_id || '',
+              titularName: d.titularName || d.userName || row.titular_name || 'Jugador',
+              accountType: d.accountType || row.account_type || '',
+              status: row.status || 'pending',
+              createdAt: row.created_at || new Date().toISOString(),
+              processedAt: row.processed_at,
+              processedBy: row.processed_by,
+            };
             setWithdrawals((prev) => (prev.some((w) => w.id === item.id) ? prev : [item, ...prev]));
           }
         })
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, (payload: any) => {
           // Manejo en tiempo real de eliminación (DELETE) de sorteos
           if (payload?.eventType === 'DELETE' || (!payload?.new && payload?.old?.id)) {
             const deletedId = String(payload?.old?.id || payload?.id || '');
