@@ -107,13 +107,46 @@ export const CookieBanner: React.FC = () => {
     return new Date(Date.now() + expirationMs).toISOString();
   };
 
-  const savePreferences = async (prefs: CookiePreferences) => {
+   const savePreferences = async (prefs: CookiePreferences) => {
+    // 1. Guardar siempre en localStorage (para visitantes anónimos)
     try {
       localStorage.setItem(COOKIE_CONSENT_KEY, JSON.stringify(prefs));
-      // TODO: Persistir en Supabase (tabla user_consents) si el usuario está logueado
     } catch (e) {
-      console.warn('[CookieBanner] Error guardando preferencias:', e);
+      console.warn('[CookieBanner] Error guardando en localStorage:', e);
     }
+
+    // 2. Si hay usuario logueado, persistir también en Supabase
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (userId) {
+        const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : null;
+
+        const { error: upsertError } = await supabase
+          .from('user_consents')
+          .upsert(
+            {
+              user_id: userId,
+              cookies_accepted: true,
+              cookies_version: prefs.version,
+              user_agent: userAgent,
+              accepted_at: prefs.acceptedAt,
+            },
+            { onConflict: 'user_id' }
+          );
+
+        if (upsertError) {
+          console.warn('[CookieBanner] Error persistiendo consent en Supabase:', upsertError);
+        } else {
+          console.log('[CookieBanner] Consentimiento persistido en Supabase para user:', userId);
+        }
+      }
+    } catch (e) {
+      console.warn('[CookieBanner] Excepción persistiendo en Supabase:', e);
+    }
+
+    // 3. UI
     setShowBanner(false);
     setShowConfig(false);
   };
