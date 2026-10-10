@@ -55,8 +55,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [birthDate, setBirthDate] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
+    // Opción B: Términos + Privacidad comparten 1 solo checkbox
+  const [agreedToLegal, setAgreedToLegal] = useState(false);
   const [agreedToCookies, setAgreedToCookies] = useState(false);
   const [showLegalModal, setShowLegalModal] = useState<null | 'terminos' | 'privacidad' | 'politica-cookies'>(null);
   const [isRegistering, setIsRegistering] = useState(false);
