@@ -99,7 +99,9 @@ const AppContent: React.FC = () => {
 
             {activeTab === 'results' && <ResultsHistoryView />}
 
-            {activeTab === 'express' && <ExpressView />}
+            {activeTab === 'express' && (
+              <ExpressView onExit={() => setActiveTab('home')} />
+           )}
 
             {activeTab === 'wallet' && (
               <WalletLedgerView
