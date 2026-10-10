@@ -183,8 +183,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
-
       {/* Main Navigation Bar */}
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 min-h-[64px] flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
         {/* Brand Logo */}
