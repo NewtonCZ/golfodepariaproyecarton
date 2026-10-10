@@ -1068,15 +1068,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 disabled={
                   (calculatedAge !== null && calculatedAge < 18) ||
                   isRegistering ||
-                  !agreedToTerms ||
-                  !agreedToPrivacy ||
+                  !agreedToLegal ||
                   !agreedToCookies
                 }
                 className={`flex-1 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer ${
                   (calculatedAge !== null && calculatedAge < 18) ||
                   isRegistering ||
-                  !agreedToTerms ||
-                  !agreedToPrivacy ||
+                  !agreedToLegal ||
                   !agreedToCookies
                     ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                     : 'bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-indigo-950 shadow-amber-500/20 active:scale-95'
