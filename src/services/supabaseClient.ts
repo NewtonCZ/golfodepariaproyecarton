@@ -294,10 +294,9 @@ export const supabase = {
       };
     },
   },
-  from(tableName: string): any {
-  from(tableName: string): any {
-    if (realSupabaseClient) {
-      return realSupabaseClient.from(tableName);
+    from(tableName: string): any {
+      if (realSupabaseClient) {
+        return realSupabaseClient.from(tableName);
     }
 
     // Fallback Query Builder for local dev / offline mode
