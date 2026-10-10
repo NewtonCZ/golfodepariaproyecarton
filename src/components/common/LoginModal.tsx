@@ -988,36 +988,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     <span>Tu cuenta se creará con estado <strong>Aprobado</strong> y saldo inicial de <strong>0,00 Bs.</strong></span>
                   </div>
 
-                  <div className="space-y-2 pt-0.5">
-                    {/* Checkbox 1 */}
+                   <div className="space-y-2 pt-0.5">
+                    {/* Checkbox 1 — Términos + Privacidad juntos */}
                     <div className="flex items-start gap-2">
                       <input
                         type="checkbox"
-                        id="adult-checkbox"
-                        checked={agreedToTerms}
-                        onChange={(e) => setAgreedToTerms(e.target.checked)}
+                        id="legal-checkbox"
+                        checked={agreedToLegal}
+                        onChange={(e) => setAgreedToLegal(e.target.checked)}
                         className="mt-0.5 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-400 cursor-pointer"
                       />
-                      <label htmlFor="adult-checkbox" className="text-xs text-slate-300 font-medium leading-tight cursor-pointer">
+                      <label htmlFor="legal-checkbox" className="text-xs text-slate-300 font-medium leading-tight cursor-pointer">
                         Declaro bajo fe de juramento ser <strong>mayor de 18 años</strong> y acepto los{' '}
                         <button type="button" onClick={() => setShowLegalModal('terminos')} className="text-amber-400 underline hover:text-amber-300 font-bold">
                           Términos y Condiciones
-                        </button>
-                        .
-                      </label>
-                    </div>
-
-                    {/* Checkbox 2 */}
-                    <div className="flex items-start gap-2">
-                      <input
-                        type="checkbox"
-                        id="privacy-checkbox"
-                        checked={agreedToPrivacy}
-                        onChange={(e) => setAgreedToPrivacy(e.target.checked)}
-                        className="mt-0.5 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-amber-400 cursor-pointer"
-                      />
-                      <label htmlFor="privacy-checkbox" className="text-xs text-slate-300 font-medium leading-tight cursor-pointer">
-                        He leído y acepto la{' '}
+                        </button>{' '}
+                        y la{' '}
                         <button type="button" onClick={() => setShowLegalModal('privacidad')} className="text-amber-400 underline hover:text-amber-300 font-bold">
                           Política de Privacidad
                         </button>
@@ -1025,7 +1011,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                       </label>
                     </div>
 
-                    {/* Checkbox 3 */}
+                    {/* Checkbox 2 — Cookies aparte */}
                     <div className="flex items-start gap-2">
                       <input
                         type="checkbox"
