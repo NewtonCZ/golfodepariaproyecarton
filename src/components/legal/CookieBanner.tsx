@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Cookie, X, Settings, Check } from 'lucide-react';
-import { supabase } from '../services/supabaseClient';
+import { supabase } from '../../services/supabaseClient';
 
 const COOKIE_CONSENT_KEY = 'tusupercarton_cookie_consent_v1';
 const COOKIE_EXPIRATION_MONTHS = 12;
