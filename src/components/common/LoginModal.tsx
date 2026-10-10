@@ -232,28 +232,30 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       };
       await saveJugador(nuevoJugador);
 
-      // 3. Registrar consentimiento legal (BLOQUEANTE)
+            // 3. Registrar consentimiento legal vía Edge Function (BLOQUEANTE)
       try {
-        const { error: consentError } = await supabase
-          .from('user_consents')
-          .insert({
-            user_id: authUserId,
-            terms_accepted: true,
-            privacy_accepted: true,
-            cookies_accepted: true,
-            terms_version: '1.0',
-            privacy_version: '1.0',
-            cookies_version: '1.0',
-            user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-            accepted_at: new Date().toISOString(),
-          });
+        const { data: consentData, error: consentError } = await supabase.functions.invoke(
+          'record-consent',
+          {
+            body: {
+              terms_accepted: true,
+              privacy_accepted: true,
+              cookies_accepted: true,
+              terms_version: '1.0',
+              privacy_version: '1.0',
+              cookies_version: '1.0',
+            },
+          }
+        );
 
-        if (consentError) {
-          console.error('[LoginModal] Error guardando consentimiento:', consentError);
+        if (consentError || !consentData?.success) {
+          console.error('[LoginModal] Error consent (edge function):', consentError || consentData);
           setErrorMsg('No se pudo registrar tu consentimiento legal. Por favor, intentá de nuevo.');
           setIsRegistering(false);
           return;
         }
+
+        console.log('[LoginModal] Consentimiento registrado con IP:', consentData.ip);
       } catch (consentErr) {
         console.error('[LoginModal] Excepción guardando consentimiento:', consentErr);
         setErrorMsg('Error crítico al registrar el consentimiento. Contactá a soporte.');
