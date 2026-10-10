@@ -169,8 +169,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return;
     }
 
-    if (!agreedToTerms || !agreedToPrivacy || !agreedToCookies) {
-      setErrorMsg('Debes aceptar los Términos y Condiciones, la Política de Privacidad y la Política de Cookies para registrarte.');
+    if (!agreedToLegal || !agreedToCookies) {
+      setErrorMsg('Debes aceptar los Términos y Condiciones + Política de Privacidad, y la Política de Cookies para registrarte.');
       return;
     }
 
