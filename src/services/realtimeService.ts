@@ -11,6 +11,7 @@
  */
 
 import { GameRound } from '../types';
+import { supabase } from './supabaseClient';
 
 export type RealtimeEventHandler = (data: any) => void;
 
