@@ -521,7 +521,7 @@ useEffect(() => {
     const timer = setTimeout(() => {
       for (let i = 1; i <= 70; i++) {
         const link = document.createElement('link');
-        link.rel = 'preload';
+        link.rel = 'prefetch';
         link.as = 'image';
         link.href = `/fichas/${i}.avif`;
         document.head.appendChild(link);
