@@ -510,7 +510,26 @@ useEffect(() => {
       }
     }
   }, [isWithin7Min, replicaStep, officialDrawnFichasIds.length, currentRoundCards]);
+     // =========================================================================
+  // PRELOAD DE FICHAS — Acelera la carga de imágenes en la sala
+  // =========================================================================
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isAccessAllowed) return;
 
+    // Esperar 500ms para no competir con la carga inicial de la app
+    const timer = setTimeout(() => {
+      for (let i = 1; i <= 70; i++) {
+        const link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'image';
+        link.href = `/fichas/${i}.avif`;
+        document.head.appendChild(link);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [isAccessAllowed]);
   // Handle Quick KYC verification
   const handleVerifyKyc = () => {
     const res = verifyCurrentAccount();
