@@ -669,7 +669,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="ej. limitlessmarketve@gmail.com"
+                    placeholder="Ingresá tu correo o usuario"
                     className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 text-white pl-9 pr-3 py-2.5 rounded-xl text-xs font-medium focus:outline-none"
                   />
                 </div>
