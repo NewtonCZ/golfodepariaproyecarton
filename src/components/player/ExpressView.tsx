@@ -42,7 +42,27 @@ export const ExpressView: React.FC<ExpressViewProps> = ({ onExit }) => {
   };
 
   const drawnSet = useMemo(() => new Set(drawnFichas), [drawnFichas]);
+  
+  // =========================================================================
+  // PRELOAD DE FICHAS — Carga todas las imágenes antes de que el usuario juegue
+  // =========================================================================
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
 
+    const timer = setTimeout(() => {
+      for (let i = 1; i <= 70; i++) {
+        const link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'image';
+        link.href = `/fichas/${i}.avif`;
+        document.head.appendChild(link);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handlePlay = async (packCount: 2 | 4 | 6) => {
   const handlePlay = async (packCount: 2 | 4 | 6) => {
     setErrorMsg(null);
     setResult(null);
