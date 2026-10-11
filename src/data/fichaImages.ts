@@ -7,7 +7,9 @@ import React from 'react';
  * También hay versión AVIF optimizada: {id}.avif
  * Si mañana migrás a Supabase Storage, cambiás SOLO esta línea.
  */
-export const getFichaImageUrl = (id: number) => `/fichas/${id}.png`;
+// Fallback AVIF: no hay PNG en el repo, solo AVIF.
+// Usamos AVIF también en el <img> de fallback para evitar 404s.
+export const getFichaImageUrl = (id: number) => `/fichas/${id}.avif`;
 export const getFichaImageAvifUrl = (id: number) => `/fichas/${id}.avif`;
 
 /**
