@@ -10,7 +10,7 @@
  * 6. Non-destructive caching (strictly preserves localStorage and sessionStorage state).
  */
 
-const CACHE_VERSION = 'supermillonario-v2.1-live';
+const CACHE_VERSION = 'supermillonario-v2.2-live';
 const STATIC_CACHE_NAME = `static-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `runtime-${CACHE_VERSION}`;
 
@@ -18,6 +18,8 @@ const RUNTIME_CACHE_NAME = `runtime-${CACHE_VERSION}`;
 const PRECACHE_URLS = [
   '/',
   '/index.html',
+  // Fichas AVIF (1 al 70) — precacheadas para carga instantánea en sala de sorteo
+  ...Array.from({ length: 70 }, (_, i) => `/fichas/${i + 1}.avif`),
 ];
 
 // Install Event: Cache shell assets and immediately activate
