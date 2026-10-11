@@ -49,7 +49,25 @@ export const ExpressAnimalitoModal: React.FC<ExpressAnimalitoModalProps> = ({
     monto >= MONTO_MINIMO &&
     monto <= MONTO_MAXIMO &&
     (currentUser?.availableBalance || 0) >= monto;
+    // =========================================================================
+  // PRELOAD DE ANIMALITOS — Carga las 25 imágenes al abrir el modal
+  // =========================================================================
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') return;
 
+    const timer = setTimeout(() => {
+      // ANIMALITOS_POOL usa las fichas 1-25 (animales)
+      for (let i = 1; i <= 25; i++) {
+        const link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'image';
+        link.href = `/fichas/${i}.avif`;
+        document.head.appendChild(link);
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [isOpen]);
   const handleJugar = async () => {
     setErrorMsg(null);
 
