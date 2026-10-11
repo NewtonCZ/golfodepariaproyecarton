@@ -1209,7 +1209,7 @@ useEffect(() => {
                           <picture className="w-[90%] h-[90%] flex items-center justify-center">
                             <source srcSet={`/fichas/${currentDrawn.id}.avif`} type="image/avif" />
                             <img
-                              src={`/fichas/${currentDrawn.id}.png`}
+                              src={`/fichas/${currentDrawn.id}.avif`}
                               alt={currentDrawn.name}
                               loading="eager"
                               decoding="async"
