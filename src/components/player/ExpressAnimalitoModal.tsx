@@ -59,7 +59,7 @@ export const ExpressAnimalitoModal: React.FC<ExpressAnimalitoModalProps> = ({
       // ANIMALITOS_POOL usa las fichas 1-25 (animales)
       for (let i = 1; i <= 25; i++) {
         const link = document.createElement('link');
-        link.rel = 'preload';
+        link.rel = 'prefetch';
         link.as = 'image';
         link.href = `/fichas/${i}.avif`;
         document.head.appendChild(link);
