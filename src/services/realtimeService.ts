@@ -544,6 +544,5 @@ class RealtimeService {
 
 export const realtimeService = new RealtimeService();
 
-export { supabase } from './supabaseClient';
-
+export { supabase };   // ← reusa el que importaste arriba
 export { onSnapshot, doc, db } from './configService';
