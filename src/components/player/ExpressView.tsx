@@ -63,7 +63,6 @@ export const ExpressView: React.FC<ExpressViewProps> = ({ onExit }) => {
   }, []);
 
   const handlePlay = async (packCount: 2 | 4 | 6) => {
-  const handlePlay = async (packCount: 2 | 4 | 6) => {
     setErrorMsg(null);
     setResult(null);
     setDealtCardsCount(0);
