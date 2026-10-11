@@ -193,7 +193,6 @@ class RealtimeService {
       this.emit('poll_tick', { timestamp: Date.now() });
 
       // ✅ Chequeo de ban: expulsa al usuario si fue baneado/suspendido/eliminado
-      const { supabase } = await import('./supabaseClient');
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.id) {
         const { data: profile } = await supabase
