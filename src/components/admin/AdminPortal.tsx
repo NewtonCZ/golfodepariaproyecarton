@@ -50,6 +50,7 @@ import { normalizeRechargeTransaction } from '../../utils/rechargeNormalizer';
 import { soundService } from '../../services/soundAndSpeech';
 import { syncEngine } from '../../services/syncService';
 import { PremiosTotalesPanel } from '../../components/PremiosTotalesPanel';
+import { GamesPnlPanel } from './GamesPnlPanel';
 
 export const AdminPortal: React.FC = () => {
   const {
