@@ -93,7 +93,7 @@ export const ROLE_PERMISSIONS: Record<
     displayName: 'Auditor',
     badgeColor: 'from-cyan-600 to-blue-600',
     description: 'Acceso exclusivo de solo lectura para supervisar y verificar los registros en "Libro y Auditoría".',
-    allowedTabs: ['audit', 'reclamos'],  // ← NUEVO
+    allowedTabs: ['audit', 'pnl', 'reclamos'],
     canManageOperators: false,
     canManageWithdrawals: false,
     canManageRecharges: false,
