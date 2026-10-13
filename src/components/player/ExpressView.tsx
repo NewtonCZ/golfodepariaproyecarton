@@ -428,6 +428,7 @@ const CardOnTable: React.FC<{
                     showNumber={false}
                     isMatched={isMarked && !isLatest}
                     isRecent={isLatest}
+                    eager
                   />
                 </div>
               );
