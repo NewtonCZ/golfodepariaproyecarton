@@ -2232,7 +2232,104 @@ const [expressCardPrice, setExpressCardPrice] = useState<number>(
               </div>
             </div>
           </div>
+          {/* 🆕 SECCIÓN: SORTEO EXPRÉS — PRECIOS DINÁMICOS */}
+          <div className="pt-4 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-black uppercase text-indigo-950 tracking-wider flex items-center gap-2">
+                <span>⚡ Sorteo Exprés — Precios Dinámicos</span>
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                  Juego Instantáneo
+                </span>
+              </h4>
+              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                Sincronizado en vivo
+              </span>
+            </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Pack 2 Cartones (VES)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={expressPack2Price}
+                    onChange={(e) => setExpressPack2Price(Math.max(1, Number(e.target.value) || 0))}
+                    className="w-full bg-amber-50/60 border-2 border-amber-400 rounded-xl px-3 py-2 text-xs font-mono font-black text-indigo-950 focus:bg-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none transition-all shadow-xs"
+                  />
+                  <span className="absolute right-3 top-2 text-[11px] font-bold text-amber-700">VES</span>
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block">Precio total pack 2</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Pack 4 Cartones (VES)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={expressPack4Price}
+                    onChange={(e) => setExpressPack4Price(Math.max(1, Number(e.target.value) || 0))}
+                    className="w-full bg-amber-50/60 border-2 border-amber-400 rounded-xl px-3 py-2 text-xs font-mono font-black text-indigo-950 focus:bg-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none transition-all shadow-xs"
+                  />
+                  <span className="absolute right-3 top-2 text-[11px] font-bold text-amber-700">VES</span>
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block">Precio total pack 4</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Pack 6 Cartones (VES)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={expressPack6Price}
+                    onChange={(e) => setExpressPack6Price(Math.max(1, Number(e.target.value) || 0))}
+                    className="w-full bg-amber-50/60 border-2 border-amber-400 rounded-xl px-3 py-2 text-xs font-mono font-black text-indigo-950 focus:bg-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none transition-all shadow-xs"
+                  />
+                  <span className="absolute right-3 top-2 text-[11px] font-bold text-amber-700">VES</span>
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block">Precio total pack 6</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Precio Unitario (VES)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={expressCardPrice}
+                    onChange={(e) => setExpressCardPrice(Math.max(1, Number(e.target.value) || 0))}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:bg-white focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 outline-none transition-all"
+                  />
+                  <span className="absolute right-3 top-2 text-[11px] font-bold text-slate-500">VES</span>
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block">Valor por cartón individual</span>
+              </div>
+            </div>
+
+            <div className="mt-3 bg-slate-50 rounded-xl p-3 border border-slate-200 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-[11px] font-bold text-slate-600">
+              <span className="text-[10px] uppercase text-slate-400 font-black">Vista previa:</span>
+              <span>Pack 2: <span className="text-indigo-950 font-mono">{formatMoney(expressPack2Price)}</span></span>
+              <span>Pack 4: <span className="text-indigo-950 font-mono">{formatMoney(expressPack4Price)}</span></span>
+              <span>Pack 6: <span className="text-indigo-950 font-mono">{formatMoney(expressPack6Price)}</span></span>
+              <span className="ml-auto text-[10px] text-slate-400 italic">
+                * Los cambios se aplican al guardar
+              </span>
+            </div>
+          </div>
           <div className="flex items-center justify-between pt-3">
             <div className="text-[11px] text-slate-500 font-medium">
               Al guardar, los datos se enviarán inmediatamente a la base de datos y a la vista de recargas de todos los usuarios.
