@@ -2354,7 +2354,12 @@ const [expressCardPrice, setExpressCardPrice] = useState<number>(
           </div>
         </form>
       )}
-
+      {/* ======================================================== */}
+      {/* TAB NUEVO: GANANCIAS Y PÉRDIDAS */}
+      {/* ======================================================== */}
+      {activeTab === 'pnl' && (
+        <GamesPnlPanel formatMoney={formatMoney} />
+      )}
       {/* ======================================================== */}
       {/* TAB 7: LIBRO CONTABLE & BITÁCORA DE AUDITORÍA */}
       {/* ======================================================== */}
