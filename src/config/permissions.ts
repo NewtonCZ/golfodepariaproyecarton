@@ -40,17 +40,18 @@ export const ROLE_PERMISSIONS: Record<
     displayName: 'Super Administrador',
     badgeColor: 'from-amber-500 to-yellow-500',
     description: 'Acceso total y administración completa de todas las funciones, módulos y personal del sistema.',
-    allowedTabs: [
+       allowedTabs: [
       'dashboard',
       'recharges',
       'withdrawals',
       'rounds',
       'results',
       'commercial',
+      'pnl',
       'audit',
       'users',
       'operators',
-      'reclamos',  // ← NUEVO
+      'reclamos',
     ],
     canManageOperators: true,
     canManageWithdrawals: true,
