@@ -470,7 +470,7 @@ const [expressCardPrice, setExpressCardPrice] = useState<number>(
   const [configSaveMsg, setConfigSaveMsg] = useState<string | null>(null);
 
   // Synchronize local form inputs when commercialConfig updates from server/websocket
-  useEffect(() => {
+   useEffect(() => {
     setConfigBankName(commercialConfig.adminBank.bankName);
     setConfigPhone(commercialConfig.adminBank.phone);
     setConfigRif(commercialConfig.adminBank.rif);
@@ -478,6 +478,11 @@ const [expressCardPrice, setExpressCardPrice] = useState<number>(
     const liveBase = commercialConfig.precio_carton_base_ves ?? commercialConfig.singleCardPriceVes ?? (commercialConfig.cardPrices?.pack2 ? commercialConfig.cardPrices.pack2 / 2 : 25);
     setPrecioCartonBaseVes(liveBase);
     setConfigFullCardMult(commercialConfig.prizeMultipliers.fullCard);
+    // 🆕 Sincronizar precios de Exprés
+    setExpressPack2Price(Number((commercialConfig as any).expressPack2Price ?? 150));
+    setExpressPack4Price(Number((commercialConfig as any).expressPack4Price ?? 300));
+    setExpressPack6Price(Number((commercialConfig as any).expressPack6Price ?? 450));
+    setExpressCardPrice(Number((commercialConfig as any).expressCardPrice ?? 75));
   }, [
     commercialConfig.adminBank.bankName,
     commercialConfig.adminBank.phone,
@@ -489,6 +494,10 @@ const [expressCardPrice, setExpressCardPrice] = useState<number>(
     commercialConfig.cardPrices?.pack4,
     commercialConfig.cardPrices?.pack6,
     commercialConfig.prizeMultipliers.fullCard,
+    (commercialConfig as any).expressPack2Price,
+    (commercialConfig as any).expressPack4Price,
+    (commercialConfig as any).expressPack6Price,
+    (commercialConfig as any).expressCardPrice,
   ]);
 
   // Search & filters
