@@ -23,9 +23,10 @@ interface ExpressViewProps {
 }
 
 // =========================================================================
-// CASCADA SIN BLANCOS — Espera a que las 16 fichas del cartón estén listas
-// antes de revelarlo. Evita espacios blancos durante el dealing.
+// CASCADA SIN BLANCOS v2 — decode() + cache de Image para evitar eviction
 // =========================================================================
+const _imgCache = new Map<number, HTMLImageElement>();
+
 const waitForCardImages = (card: any): Promise<void> => {
   const matrix: number[] = Array.isArray(card?.matrix) ? card.matrix : [];
   if (matrix.length === 0) return Promise.resolve();
@@ -33,15 +34,27 @@ const waitForCardImages = (card: any): Promise<void> => {
   return Promise.all(
     matrix.map((fichaId) =>
       new Promise<void>((resolve) => {
+        const cached = _imgCache.get(fichaId);
+        if (cached && cached.complete) {
+          resolve();
+          return;
+        }
         const img = new Image();
-        img.onload = () => resolve();
+        img.decoding = 'sync';
+        const finish = () => {
+          _imgCache.set(fichaId, img);
+          resolve();
+        };
+        img.onload = finish;
         img.onerror = () => resolve();
         img.src = `/fichas/${fichaId}.avif`;
+        if (typeof img.decode === 'function') {
+          img.decode().then(finish).catch(() => resolve());
+        }
       })
     )
   ).then(() => undefined);
 };
-
 export const ExpressView: React.FC<ExpressViewProps> = ({ onExit }) => {
   const { playExpress, formatMoney, commercialConfig, currentUser } = useGame();
 
