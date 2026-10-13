@@ -940,9 +940,9 @@ const [expressCardPrice, setExpressCardPrice] = useState<number>(
           <span>Actualizado Automáticamente</span>
         </div>
       </div>
-
-      {/* Main Navigation Tab Bar */}
-          {[
+              {/* Main Navigation Tab Bar */}
+      <div className="bg-white rounded-2xl p-1.5 shadow-sm border border-slate-200 flex flex-wrap gap-1">
+        {[
           { id: 'dashboard' as AdminTab, label: 'Tablero Principal', icon: LayoutDashboard, badge: 0 },
           { id: 'recharges' as AdminTab, label: 'Auditoría Pago Móvil', icon: CreditCard, badge: pendingRechargesCount },
           { id: 'withdrawals' as AdminTab, label: 'Gestión de Retiros', icon: ArrowUpRight, badge: pendingWithdrawalsCount },
