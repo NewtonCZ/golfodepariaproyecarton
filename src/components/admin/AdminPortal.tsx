@@ -18,6 +18,7 @@ import {
   Sparkles,
   Settings,
   FileSpreadsheet,
+  BarChart3,
   Users,
   Shield,
   ShieldCheck,
