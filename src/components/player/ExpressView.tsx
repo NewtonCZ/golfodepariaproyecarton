@@ -16,11 +16,31 @@ interface PlayResult {
 type Phase = 'idle' | 'dealing' | 'drawing' | 'result';
 
 const DRAW_INTERVAL_MS = 3000;
-const DEAL_DELAY_MS = 300;
+// 🆕 CASCADA SIN BLANCOS: DEAL_DELAY_MS eliminado, ya no se usa.
 
 interface ExpressViewProps {
   onExit?: () => void;
 }
+
+// =========================================================================
+// CASCADA SIN BLANCOS — Espera a que las 16 fichas del cartón estén listas
+// antes de revelarlo. Evita espacios blancos durante el dealing.
+// =========================================================================
+const waitForCardImages = (card: any): Promise<void> => {
+  const matrix: number[] = Array.isArray(card?.matrix) ? card.matrix : [];
+  if (matrix.length === 0) return Promise.resolve();
+
+  return Promise.all(
+    matrix.map((fichaId) =>
+      new Promise<void>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+        img.src = `/fichas/${fichaId}.avif`;
+      })
+    )
+  ).then(() => undefined);
+};
 
 export const ExpressView: React.FC<ExpressViewProps> = ({ onExit }) => {
   const { playExpress, formatMoney, commercialConfig, currentUser } = useGame();
@@ -42,7 +62,7 @@ export const ExpressView: React.FC<ExpressViewProps> = ({ onExit }) => {
   };
 
   const drawnSet = useMemo(() => new Set(drawnFichas), [drawnFichas]);
-  
+
   // =========================================================================
   // PRELOAD DE FICHAS — Carga todas las imágenes antes de que el usuario juegue
   // =========================================================================
@@ -82,50 +102,53 @@ export const ExpressView: React.FC<ExpressViewProps> = ({ onExit }) => {
       const playResult = res.result as PlayResult;
       setResult(playResult);
 
-      const totalCards = playResult.cards?.length || packCount;
-      for (let i = 1; i <= totalCards; i++) {
-        setTimeout(() => setDealtCardsCount(i), i * DEAL_DELAY_MS);
+      const cardsArray = playResult.cards || [];
+      const totalCards = cardsArray.length || packCount;
+
+      // 🆕 CASCADA SIN BLANCOS: revelar cada cartón solo cuando sus 16
+      // imágenes estén cargadas. De arriba hacia abajo, sin espacios blancos.
+      for (let i = 0; i < totalCards; i++) {
+        await waitForCardImages(cardsArray[i]);
+        setDealtCardsCount(i + 1);
+        await new Promise((r) => setTimeout(r, 200));
       }
 
-      const dealDuration = totalCards * DEAL_DELAY_MS + 400;
+      // Arrancar el sorteo una vez que TODOS los cartones están revelados
+      setPhase('drawing');
+      let idx = 0;
+      const totalFichas = playResult.drawnFichas.length;
 
-      setTimeout(() => {
-        setPhase('drawing');
-        let idx = 0;
-        const totalFichas = playResult.drawnFichas.length;
+      const drawInterval = setInterval(() => {
+        if (idx >= totalFichas) {
+          clearInterval(drawInterval);
+          setCurrentFichaId(null);
 
-        const drawInterval = setInterval(() => {
-          if (idx >= totalFichas) {
-            clearInterval(drawInterval);
-            setCurrentFichaId(null);
+          setTimeout(() => {
+            setPhase('result');
+            if (playResult.totalPrize > 0) {
+              setShowWinnerBanner(true);
+              try {
+                soundService.playFanfare();
+                soundService.cantarFicha('¡Felicidades, ganaste!');
+              } catch {}
+            }
+          }, 800);
+          return;
+        }
 
-            setTimeout(() => {
-              setPhase('result');
-              if (playResult.totalPrize > 0) {
-                setShowWinnerBanner(true);
-                try {
-                  soundService.playFanfare();
-                  soundService.cantarFicha('¡Felicidades, ganaste!');
-                } catch {}
-              }
-            }, 800);
-            return;
-          }
+        const fichaId = playResult.drawnFichas[idx];
+        setCurrentFichaId(fichaId);
+        setDrawnFichas((prev) => [...prev, fichaId]);
 
-          const fichaId = playResult.drawnFichas[idx];
-          setCurrentFichaId(fichaId);
-          setDrawnFichas((prev) => [...prev, fichaId]);
+        try {
+          const ficha = getFichaById(fichaId);
+          if (ficha) soundService.speakFicha(ficha);
+        } catch (err) {
+          console.warn('[ExpressView] speakFicha error:', err);
+        }
 
-          try {
-            const ficha = getFichaById(fichaId);
-            if (ficha) soundService.speakFicha(ficha);
-          } catch (err) {
-            console.warn('[ExpressView] speakFicha error:', err);
-          }
-
-          idx++;
-        }, DRAW_INTERVAL_MS);
-      }, dealDuration);
+        idx++;
+      }, DRAW_INTERVAL_MS);
     } catch (e: any) {
       setErrorMsg(e?.message || 'Error inesperado');
       setPhase('idle');
