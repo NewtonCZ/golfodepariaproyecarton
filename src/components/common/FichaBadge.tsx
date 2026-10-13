@@ -12,6 +12,7 @@ interface FichaBadgeProps {
   isRecent?: boolean;
   onClick?: () => void;
   className?: string;
+  eager?: boolean;
 }
 
 export const FichaBadge: React.FC<FichaBadgeProps> = ({
@@ -24,6 +25,7 @@ export const FichaBadge: React.FC<FichaBadgeProps> = ({
   isRecent = false,
   onClick,
   className = '',
+  eager = false,
 }) => {
   const ficha = propFicha || (fichaId ? getFichaById(fichaId) : null);
 
@@ -93,14 +95,14 @@ export const FichaBadge: React.FC<FichaBadgeProps> = ({
           #{ficha.id}
         </span>
       )}
-      {/* Main Ficha Image — AVIF con fallback PNG */}
+      {/* Main Ficha Image — AVIF con fallback AVIF (sin 404) */}
       <div className="w-full flex-1 flex items-center justify-center min-h-0 my-auto">
         <picture className="w-[90%] h-[90%] flex items-center justify-center">
           <source srcSet={`/fichas/${ficha.id}.avif`} type="image/avif" />
           <img
-            src={`/fichas/${ficha.id}.png`}
+            src={`/fichas/${ficha.id}.avif`}
             alt={ficha.name}
-            loading="lazy"
+            loading={eager ? 'eager' : 'lazy'}
             decoding="async"
             draggable={false}
             className="w-full h-full object-contain"
