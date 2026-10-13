@@ -942,14 +942,14 @@ const [expressCardPrice, setExpressCardPrice] = useState<number>(
       </div>
 
       {/* Main Navigation Tab Bar */}
-      <div className="bg-white rounded-2xl p-1.5 shadow-sm border border-slate-200 flex flex-wrap gap-1">
-        {[
+          {[
           { id: 'dashboard' as AdminTab, label: 'Tablero Principal', icon: LayoutDashboard, badge: 0 },
           { id: 'recharges' as AdminTab, label: 'Auditoría Pago Móvil', icon: CreditCard, badge: pendingRechargesCount },
           { id: 'withdrawals' as AdminTab, label: 'Gestión de Retiros', icon: ArrowUpRight, badge: pendingWithdrawalsCount },
           { id: 'rounds' as AdminTab, label: 'Gestión de Sorteos', icon: Calendar, badge: 0 },
           { id: 'results' as AdminTab, label: 'Ingreso de Resultados', icon: Sparkles, badge: 0 },
           { id: 'commercial' as AdminTab, label: 'Configuración Comercial', icon: Settings, badge: 0 },
+          { id: 'pnl' as AdminTab, label: 'Ganancias y Pérdidas', icon: BarChart3, badge: 0 },
           { id: 'audit' as AdminTab, label: 'Libro y Auditoría', icon: FileSpreadsheet, badge: 0 },
           { id: 'users' as AdminTab, label: 'Usuarios y Balances', icon: Users, badge: 0 },
           { id: 'operators' as AdminTab, label: 'Gestión de Personal', icon: KeyRound, badge: 0 },
