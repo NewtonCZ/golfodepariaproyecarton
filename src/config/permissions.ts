@@ -69,12 +69,13 @@ export const ROLE_PERMISSIONS: Record<
     displayName: 'Operador Financiero',
     badgeColor: 'from-emerald-600 to-teal-600',
     description: 'Acceso financiero para auditar comprobantes Pago Móvil, confirmar el ingreso de fondos, aprobar recargas y liquidar retiros.',
-    allowedTabs: [
+       allowedTabs: [
       'dashboard',
       'recharges',
       'withdrawals',
+      'pnl',
       'audit',
-      'reclamos',  // ← NUEVO
+      'reclamos',
     ],
     canManageOperators: false,
     canManageWithdrawals: true,
