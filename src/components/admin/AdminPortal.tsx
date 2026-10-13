@@ -453,6 +453,19 @@ export const AdminPortal: React.FC = () => {
   const [precioCartonBaseVes, setPrecioCartonBaseVes] = useState<number>(initialBasePrice);
   const [configFullCardMult, setConfigFullCardMult] = useState(commercialConfig.prizeMultipliers.fullCard);
   const [configSavedToast, setConfigSavedToast] = useState(false);
+  // 🆕 Sorteo Exprés — precios dinámicos
+const [expressPack2Price, setExpressPack2Price] = useState<number>(
+  Number((commercialConfig as any).expressPack2Price ?? 150)
+);
+const [expressPack4Price, setExpressPack4Price] = useState<number>(
+  Number((commercialConfig as any).expressPack4Price ?? 300)
+);
+const [expressPack6Price, setExpressPack6Price] = useState<number>(
+  Number((commercialConfig as any).expressPack6Price ?? 450)
+);
+const [expressCardPrice, setExpressCardPrice] = useState<number>(
+  Number((commercialConfig as any).expressCardPrice ?? 75)
+);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [configSaveMsg, setConfigSaveMsg] = useState<string | null>(null);
 
