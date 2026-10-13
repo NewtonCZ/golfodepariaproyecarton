@@ -8,8 +8,8 @@ export type AdminTab =
   | 'audit'
   | 'users'
   | 'operators'
-  | 'reclamos';  // ← NUEVO
-  | 'pnl';  // ← NUEVO: Ganancias y Pérdidas
+  | 'reclamos'
+  | 'pnl';
 
 export type AdminRole = 'Super Admin' | 'Operador Financiero' | 'Auditor';
 
