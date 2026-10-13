@@ -849,7 +849,12 @@ const [expressCardPrice, setExpressCardPrice] = useState<number>(
           ...commercialConfig.prizeMultipliers,
           fullCard: Number(configFullCardMult) || 50,
         },
-      };
+        // 🆕 Sorteo Exprés — precios dinámicos
+        expressPack2Price: Math.max(1, Number(expressPack2Price) || 150),
+        expressPack4Price: Math.max(1, Number(expressPack4Price) || 300),
+        expressPack6Price: Math.max(1, Number(expressPack6Price) || 450),
+        expressCardPrice: Math.max(1, Number(expressCardPrice) || 75),
+      } as any;
 
       const [res] = await Promise.all([
         updateCommercialConfig(payload),
