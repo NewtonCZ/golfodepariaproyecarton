@@ -78,11 +78,6 @@ export const GamesPnlPanel: React.FC<GamesPnlPanelProps> = ({ formatMoney }) => 
         return;
       }
 
-      // 🔍 Debug — quitar después de verificar
-      console.log('[PnL] session user:', session.user?.email, '| uid:', session.user?.id);
-      const { data: roleDebug } = await supabase.rpc('get_my_role');
-      console.log('[PnL] get_my_role():', roleDebug);
-
       const { start, end } = getDateRange(rangeKey);
 
       const [instantRes, programmedRes] = await Promise.all([
