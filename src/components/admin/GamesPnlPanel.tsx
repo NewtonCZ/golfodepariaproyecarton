@@ -50,7 +50,7 @@ const GAME_META: Record<GameKey, { label: string; emoji: string; cardBg: string;
 export const GamesPnlPanel: React.FC<GamesPnlPanelProps> = ({ formatMoney }) => {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<PnlRow[]>([]);
-  const [rangeKey, setRangeKey] = useState<RangeKey>('today');
+    const [rangeKey, setRangeKey] = useState<RangeKey>('7d');
   const [error, setError] = useState<string | null>(null);
 
   const getDateRange = (key: RangeKey) => {
@@ -58,7 +58,7 @@ export const GamesPnlPanel: React.FC<GamesPnlPanelProps> = ({ formatMoney }) => 
     const end = now.toISOString();
     const start = new Date(now);
     if (key === 'today') start.setHours(0, 0, 0, 0);
-    else if (key === '7d') start.setDate(now.getDate() - 7);
+    else if (key === '7d') start.setDate(now.getDate() - 7)
     else if (key === '30d') start.setDate(now.getDate() - 30);
     else if (key === 'month') start.setDate(1);
     else if (key === 'all') start.setFullYear(2020);
