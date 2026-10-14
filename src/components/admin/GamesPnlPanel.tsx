@@ -211,7 +211,22 @@ export const GamesPnlPanel: React.FC<GamesPnlPanelProps> = ({ formatMoney }) => 
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {!loading && !error && rows.length > 0 && rows.every((r) => r.transacciones === 0) && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold p-3 rounded-xl flex items-center justify-between gap-3">
+          <span>
+            No hay movimientos en este rango ({rangeKey}). Probá con otro período.
+          </span>
+          <button
+            type="button"
+            onClick={() => setRangeKey('all')}
+            className="shrink-0 text-[11px] font-black px-3 py-1 rounded-lg bg-amber-900 text-amber-100 hover:bg-amber-800"
+          >
+            Ver todo
+          </button>
+        </div>
+      )}
+
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {(['express', 'animalito', 'programado'] as GameKey[]).map((g) => {
           const meta = GAME_META[g];
           const row = getRow(g);
