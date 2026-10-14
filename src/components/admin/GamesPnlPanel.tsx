@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../services/realtimeService';
+import { ensureSession } from '../../services/supabaseClient';
 import { BarChart3, RefreshCw } from 'lucide-react';
 
 type GameKey = 'express' | 'animalito' | 'programado';
