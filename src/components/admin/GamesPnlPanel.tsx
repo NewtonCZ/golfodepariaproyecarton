@@ -66,10 +66,23 @@ export const GamesPnlPanel: React.FC<GamesPnlPanelProps> = ({ formatMoney }) => 
     return { start: start.toISOString(), end };
   };
 
-  const fetchPnl = useCallback(async () => {
+   const fetchPnl = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      // 🔑 Garantizar sesión válida antes de consultar
+      const session = await ensureSession();
+      if (!session) {
+        setError('Sesión no válida o expirada. Cerrá sesión y volvé a iniciar.');
+        setLoading(false);
+        return;
+      }
+
+      // 🔍 Debug — quitar después de verificar
+      console.log('[PnL] session user:', session.user?.email, '| uid:', session.user?.id);
+      const { data: roleDebug } = await supabase.rpc('get_my_role');
+      console.log('[PnL] get_my_role():', roleDebug);
+
       const { start, end } = getDateRange(rangeKey);
 
       const [instantRes, programmedRes] = await Promise.all([
